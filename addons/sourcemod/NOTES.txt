@@ -1,0 +1,3 @@
+NOTES:
+- Triggers will not detect ghosts
+- If using func_breakable or any other similar entity, make sure to use a damage filter that filters out BLU team or else they'll be able to break it in Ghost Mode!

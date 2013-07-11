@@ -1,0 +1,64 @@
+Version 0.1.6 (July 4, 2013):
+- Added "Sprinting and Stamina" to the Help Menu section
+- Added "Class Info" to the Help Menu section, which displays changes made to classes and/or their weapons, if any
+- Melee and hitscan weapons are now semi-lag compensated against teammates in the PvP arena (excluding the Sniper Rifle due to technical difficulties)
+- The Escape Plan will now dynamically change a player's sprinting speed based on health
+- The Disciplinary Action's speed boost will now affect a player's walking and sprinting speed
+- The Gloves of Running Urgently now gives the Heavy a 30% boost in sprinting speed
+- The Powerjack now only gives 20 health per kill instead of 75
+- The Half-Zatoichi now only gives 20 health per kill instead of restoring all health
+- Chasing bosses are now sensitive to sound, including voices and footsteps (crouching will be quieter)
+- Added different viewbob when sprinting
+- HUD will now reset back to normal once you escape
+- Your stamina will recharge faster if you're standing still or crouched
+- The Scout now has a 15% increase in stamina recharge rate
+- The Spy's sounds are 35% more quieter to bosses
+- The Flamethrowers and the Sniper Rifles now damage other players in PvP (not perfectly)
+- Added sf2_player_viewbob_hurt_enabled cvar, which enables/disables view tilt when hurt (default is 0)
+- Added sf2_player_viewbob_sprint_enabled cvar, which enables/disables step viewbobbing when sprinting (default is 0)
+- Added sf2_player_fakelagcompensation cvar, which enables/disables fake lag compensation for the Sniper Rifle (default is 0)
+- Fixed a bug where setting of opting in/out of the Proxy selection would not save across maps
+- Fixed a case where ghosts were able to break func_breakables flagged with "Break on Touch" spawnflag
+- (Undocumented) Player ragdolls will no longer fly when caught by a boss (deathcam sequence)
+
+Version 0.1.5 (July 3, 2013):
+- Adjusted sprinting so that energy will not drain while stuck in place, moving slowly, or in the air
+- Jumping will now reduce your sprint energy (you can jump about 13 times before running out of energy)
+- Fixed a bug with the player anti-camping system where distance between bosses wasn't being calculated correctly
+- Admin commands are now easily accessable via sm_admin (!admin or /admin in chat). Commands are located in Player/Server Commands.
+- Admin commands will now be logged in the server's logs
+- Death notifications will no longer show for RED during the grace period
+- Fixed a bug where the speed boost gained from a chasing boss will suddenly disappear when the boss performs an attack
+- Attempt to fix a bug where proxies and bosses would occasionally spawn in the ground
+- Getting a scare from a boss will now result in a 3 second speed boost
+- Proxies will now be teleported back to BLU once the round ends
+- Ghost Mode and the sm_sf2_setplaystate command is no longer accessable during warmup rounds
+- Server owners can now edit how much percent of a victim's max health is taken when backstabbed by a Proxy via the keyvalue "proxies_damage_scale_vs_enemy_backstab" (default is 0.25, which is 25%)
+- Spies in PvP will now be invisible to other players in PvP
+- Chasing bosses will no longer attack at half their range, but when the target is at the edge of their range (this was the reason the Rake's and Slowerno's range had to be a bit large)
+
+Version 0.1.4 (June 02, 2013):
+- Added Sprinting feature.
+- Various bug fixes
+
+Version 0.1.3 (May 29, 2013):
+- Added the SFF_ATTACKWAITERS flag for bosses
+- Added the sm_sf2_boss_attack_waiters and sm_sf2_boss_no_teleport admin commands
+- Implemented group page spawning
+- Added a missing phrase in translation phrases
+
+Version 0.1.2A (May 23, 2013):
+- Added the sm_sf2_getbossindexes, sm_sf2_add_boss, sm_sf2_remove_boss admin commands
+- Added the LIGHTS OUT! special round
+- Fixed weapons not being restricted properly
+- Fixed a case where a round would end again before map change even though the round already ended
+- Fixed a case where a special round would not start up properly
+- Fixed flashlights not turning off at the start of a LIGHTS OUT! special round
+- Added support for group page spawning
+- Added the SF2_IsClientProxy(), SF2_Get/SetClientProxyMaster(), SF2_Get/SetClientProxyControlAmount(), SF2_Get/SetClientProxyControlRate() natives
+- Added the SF2_GetBossName(), SF2_GetBossTarget(), SF2_GetBossMaster(), SF2_GetBossState() natives
+- Renamed the SF2_ClientSeesBoss() native to SF2_IsClientLookingAtBoss()
+- Moved and renamed configs/sf2.profiles.txt to configs/sf2/profiles.cfg
+- Moved and renamed configs/sf2.restrictedweapons.txt to configs/sf2/restrictedweapons.cfg
+- Special round names and data can now be added/modified in configs/specialrounds.cfg
+- Added more support for translation phrases
