@@ -54,6 +54,8 @@ static String:g_strPlayerLagCompensationWeapons[][] =
 	"tf_weapon_sniperrifle_decap"
 };
 
+#if defined _dhooks_included
+
 public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, Handle:hParams)
 {
 	if (!g_bEnabled || IsFakeClient(this)) return MRES_Ignored;
@@ -63,12 +65,22 @@ public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, 
 	return MRES_Supercede;
 }
 
+#endif
+
 ClientResetHints(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetHints(%d)", client);
+#endif
+
 	for (new i = 0; i < PlayerHint_MaxNum; i++)
 	{
 		g_bPlayerHints[client][i] = false;
 	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetHints(%d)", client);
+#endif
 }
 
 ClientShowHint(client, iHint)
@@ -123,27 +135,36 @@ stock ClientSDKFlashlightTurnOff(client)
 
 ClientEscape(client)
 {
-	if (g_bPlayerEscaped[client]) return;
+#if defined DEBUG
+	DebugMessage("START ClientEscape(%d)", client);
+#endif
+
+	if (!g_bPlayerEscaped[client])
+	{
+		ClientResetBreathing(client);
+		
+		decl String:sName[MAX_NAME_LENGTH];
+		g_bPlayerEscaped[client] = true;
+		GetClientName(client, sName, sizeof(sName));
+		
+		CPrintToChatAll("%t", "SF2 Player Escaped", sName);
+		
+		// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
+		TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
+		
+		// Reset HUD.
+		SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
+		
+		CheckRoundState();
+		
+		Call_StartForward(fOnClientEscape);
+		Call_PushCell(client);
+		Call_Finish();
+	}
 	
-	ClientResetBreathing(client);
-	
-	decl String:sName[MAX_NAME_LENGTH];
-	g_bPlayerEscaped[client] = true;
-	GetClientName(client, sName, sizeof(sName));
-	
-	CPrintToChatAll("%t", "SF2 Player Escaped", sName);
-	
-	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
-	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
-	
-	// Reset HUD.
-	SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
-	
-	CheckRoundState();
-	
-	Call_StartForward(fOnClientEscape);
-	Call_PushCell(client);
-	Call_Finish();
+#if defined DEBUG
+	DebugMessage("END ClientEscape(%d)", client);
+#endif
 }
 
 #define SF2_PLAYER_VIEWBOB_TIMER 10.0
@@ -162,7 +183,7 @@ stock Float:ClientGetDistanceFromEntity(client, entity)
 ClientEnableFakeLagCompensation(client)
 {
 	if (!GetConVarBool(g_cvPlayerFakeLagCompensation)) return;
-
+	
 	if (!IsValidClient(client) || !IsPlayerAlive(client) || g_bPlayerLagCompensation[client]) return;
 	
 	// Can only enable lag compensation if we're in either of these two teams only.
@@ -992,14 +1013,30 @@ ClientProcessGlow(client)
 
 ClientResetGlow(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetGlow(%d)", client);
+#endif
+
 	ClientRemoveGlow(client);
 	g_iPlayerGlowLookAtEntity[client] = INVALID_ENT_REFERENCE;
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetGlow(%d)", client);
+#endif
 }
 
 ClientResetBreathing(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetBreathing(%d)", client);
+#endif
+
 	g_bPlayerBreath[client] = false;
 	g_hPlayerBreathTimer[client] = INVALID_HANDLE;
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetBreathing(%d)", client);
+#endif
 }
 
 Float:ClientCalculateBreathingCooldown(client)
@@ -1057,6 +1094,10 @@ public Action:Timer_ClientBreath(Handle:timer, any:userid)
 
 ClientResetSprint(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetSprint(%d)", client);
+#endif
+
 	g_bPlayerSprint[client] = false;
 	g_iPlayerSprintPoints[client] = 100;
 	g_hPlayerSprintTimer[client] = INVALID_HANDLE;
@@ -1066,6 +1107,10 @@ ClientResetSprint(client)
 		SDKUnhook(client, SDKHook_PreThink, Hook_ClientSprintingPreThink);
 		SDKUnhook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
 	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetSprint(%d)", client);
+#endif
 }
 
 ClientStartSprint(client)
@@ -1307,7 +1352,15 @@ public Action:Hook_GlowSetTransmit(ent, other)
 
 ClientResetProxyGlow(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetProxyGlow(%d)", client);
+#endif
+
 	ClientRemoveProxyGlow(client);
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetProxyGlow(%d)", client);
+#endif
 }
 
 ClientRemoveProxyGlow(client)
@@ -1416,8 +1469,6 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 	
 	if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
 	{
-		//ClientEnableFakeLagCompensation(client);
-		
 		if (StrEqual(sWeaponName, "tf_weapon_sniperrifle"))
 		{
 			// TRACE!
@@ -1604,9 +1655,17 @@ public OnClientGetDesiredFOV(QueryCookie:cookie, client, ConVarQueryResult:resul
 
 InitializeClient(client)
 {
+#if defined DEBUG
+	DebugMessage("START InitializeClient(%d)", client);
+#endif
+
 	g_iPlayerGhostModeTarget[client] = INVALID_ENT_REFERENCE;
 	g_iPlayerStaticMaster[client] = -1;
 	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
+	
+#if defined DEBUG
+	DebugMessage("InitializeClient(%d): QueryClientConVar fov_desired", client);
+#endif
 	
 	if (!IsFakeClient(client))
 	{
@@ -1616,6 +1675,10 @@ InitializeClient(client)
 	{
 		g_iPlayerDesiredFOV[client] = 90;
 	}
+	
+#if defined DEBUG
+	DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
+#endif
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
@@ -1653,10 +1716,18 @@ InitializeClient(client)
 	ClientResetHints(client);
 	ClientResetScare(client);
 	ClientDisableFakeLagCompensation(client);
+	
+#if defined DEBUG
+	DebugMessage("END InitializeClient(%d)", client);
+#endif
 }
 
 ClientResetProxy(client, bool:bResetFull=true)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetProxy(%d)", client);
+#endif
+
 	new iOldMaster = g_iPlayerProxyMaster[client];
 	new String:sOldProfileName[64];
 	if (iOldMaster >= 0)
@@ -1694,6 +1765,10 @@ ClientResetProxy(client, bool:bResetFull=true)
 			}
 		}
 	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetProxy(%d)", client);
+#endif
 }
 
 stock TF2_GetClassName(TFClassType:iClass, String:sBuffer[], sBufferLen)
@@ -1722,9 +1797,8 @@ ClientEnableProxy(client, iBossIndex)
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
 	
-	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
 	ClientDisableGhostMode(client);
-	TF2_RespawnPlayer(client);
+	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
 	
 	g_bPlayerProxy[client] = true;
 	g_iPlayerProxyMaster[client] = iBossIndex;
@@ -1775,8 +1849,16 @@ public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
 
 ClientResetJumpScare(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetJumpScare(%d)", client);
+#endif
+
 	g_iPlayerJumpScareMaster[client] = -1;
 	g_flPlayerJumpScareLifeTime[client] = -1.0;
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetJumpScare(%d)", client);
+#endif
 }
 
 bool:ClientSetQueuePoints(client, iAmount)
@@ -1870,6 +1952,10 @@ ClientOnButtonRelease(client, button)
 
 ClientResetDeathCam(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetDeathCam(%d)", client);
+#endif
+
 	new bool:bOld = g_bPlayerDeathCam[client];
 	new iOldBoss = g_iPlayerDeathCamBoss[client];
 	
@@ -1905,6 +1991,10 @@ ClientResetDeathCam(client)
 		Call_PushCell(iOldBoss);
 		Call_Finish();
 	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetDeathCam(%d)", client);
+#endif
 }
 
 ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
@@ -2449,10 +2539,18 @@ ClientPerformScare(client, iBossIndex)
 
 ClientResetScare(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetScare(%d)", client);
+#endif
+
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		g_flPlayerLastScareFromBoss[client][i] = -1.0;
 	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetScare(%d)", client);
+#endif
 }
 
 public Action:Hook_ClientSetTransmit(client, other)
@@ -2498,12 +2596,20 @@ public Action:Hook_DeathCamSetTransmit(slender, other)
 
 stock ClientResetCampingStats(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetCampingStats(%d)", client);
+#endif
+
 	g_iPlayerCampingStrikes[client] = 0;
 	g_hPlayerCampingTimer[client] = INVALID_HANDLE;
 	g_bPlayerCampingFirstTime[client] = true;
 	g_flPlayerCampingLastPosition[client][0] = 0.0;
 	g_flPlayerCampingLastPosition[client][1] = 0.0;
 	g_flPlayerCampingLastPosition[client][2] = 0.0;
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetCampingStats(%d)", client);
+#endif
 }
 
 stock bool:IsClientInPvP(client)
@@ -2576,8 +2682,16 @@ stock ClientDisablePvP(client)
 
 stock ClientResetPvP(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetPvP(%d)", client);
+#endif
+
 	ClientDisablePvP(client);
 	g_bPlayerInPvPTrigger[client] = false;
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetPvP(%d)", client);
+#endif
 }
 
 public Action:Timer_ClientDisablePvP(Handle:timer, any:userid)
@@ -2716,23 +2830,47 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 
 stock ClientResetFlashlight(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetFlashlight(%d)", client);
+#endif
+
 	ClientDeactivateFlashlight(client);
 	g_flPlayerFlashlightMeter[client] = 1.0;
 	g_bPlayerFlashlightBroken[client] = false;
 	g_flPlayerFlashlightLastEnable[client] = GetGameTime();
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetFlashlight(%d)", client);
+#endif
 }
 
 stock ClientResetUltravision(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetUltravision(%d)", client);
+#endif
+
 	ClientDeactivateUltravision(client);
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetUltravision(%d)", client);
+#endif
 }
 
 stock ClientResetBlink(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetBlink(%d)", client);
+#endif
+
 	g_hPlayerBlinkTimer[client] = INVALID_HANDLE;
 	g_bPlayerBlink[client] = false;
 	g_flPlayerBlinkMeter[client] = 1.0;
 	g_iPlayerBlinkCount[client] = 0;
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetBlink(%d)", client);
+#endif
 }
 
 stock ClientBlink(client)
@@ -2791,6 +2929,10 @@ public Action:Timer_BlinkTimer2(Handle:timer, any:userid)
 
 stock ClientResetSlenderStats(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetSlenderStats(%d)", client);
+#endif
+
 	g_iPlayerStaticMaster[client] = -1;
 	g_flPlayerSeesSlenderMeter[client] = 0.0;
 	
@@ -2803,12 +2945,24 @@ stock ClientResetSlenderStats(client)
 		g_flPlayerStaticLastMeter[client][i] = 0.0;
 		g_flPlayerStaticLastTime[client][i] = -1.0;
 	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetSlenderStats(%d)", client);
+#endif
 }
 
 stock ClientResetOverlay(client)
 {
+#if defined DEBUG
+	DebugMessage("START ClientResetOverlay(%d)", client);
+#endif
+
 	g_hPlayerOverlayCheck[client] = INVALID_HANDLE;
 	ClientCommand(client, "r_screenoverlay \"\"");
+	
+#if defined DEBUG
+	DebugMessage("END ClientResetOverlay(%d)", client);
+#endif
 }
 
 public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
@@ -3952,9 +4106,7 @@ stock ChangeClientTeamNoSuicide(client, team, bool:bRespawn=true)
 	
 	if (GetClientTeam(client) != team)
 	{
-		SetEntProp(client, Prop_Send, "m_lifeState", 2);
 		ChangeClientTeam(client, team);
-		SetEntProp(client, Prop_Send, "m_lifeState", 0);
 		if (bRespawn) TF2_RespawnPlayer(client);
 	}
 }
@@ -4050,249 +4202,251 @@ stock ClientSpawnSoundEffect(const Float:flOrigin[3], Float:flScale, iEntity=-1)
 public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
-	if (client <= 0) return;
-	
-	if (!IsPlayerAlive(client)) return;
-	
-	new bool:bRemoveWeapons = true;
-	new bool:bRestrictWeapons = true;
-	
-	if (g_bRoundEnded)
+	if (client > 0)
 	{
-		if (!g_bPlayerEliminated[client]) 
+		if (IsPlayerAlive(client))
 		{
-			bRemoveWeapons = false;
-			bRestrictWeapons = false;
-		}
-	}
-	
-	if (IsClientInPvP(client)) 
-	{
-		bRemoveWeapons = false;
-		bRestrictWeapons = false;
-	}
-	
-	if (g_bRoundWarmup) 
-	{
-		bRemoveWeapons = false;
-		bRestrictWeapons = false;
-	}
-	
-	if (g_bPlayerGhostMode[client]) 
-	{
-		bRemoveWeapons = true;
-	}
-	
-	if (bRemoveWeapons)
-	{
-		ClientSwitchToWeaponSlot(client, TFWeaponSlot_Melee);
-		
-		for (new i = 0; i <= 5; i++)
-		{
-			if (i == TFWeaponSlot_Melee) continue;
-			TF2_RemoveWeaponSlot(client, i);
-		}
-		
-		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, "tf_weapon_builder")) != -1)
-		{
-			if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
-			{
-				AcceptEntityInput(ent, "Kill");
-			}
-		}
-		
-		ent = -1;
-		while ((ent = FindEntityByClassname(ent, "tf_wearable_demoshield")) != -1)
-		{
-			if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
-			{
-				AcceptEntityInput(ent, "Kill");
-			}
-		}
-	}
-	
-	if (bRestrictWeapons)
-	{
-		if (g_hRestrictedWeaponsConfig != INVALID_HANDLE)
-		{
-			new TFClassType:iPlayerClass = TF2_GetPlayerClass(client);
-			new Handle:hItem = INVALID_HANDLE;
+			new bool:bRemoveWeapons = true;
+			new bool:bRestrictWeapons = true;
 			
-			new iWeapon = INVALID_ENT_REFERENCE;
-			for (new iSlot = 0; iSlot <= 5; iSlot++)
+			if (g_bRoundEnded)
 			{
-				iWeapon = GetPlayerWeaponSlot(client, iSlot);
-				
-				if (IsValidEdict(iWeapon))
+				if (!g_bPlayerEliminated[client]) 
 				{
-					if (IsWeaponRestricted(iPlayerClass, GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex")))
+					bRemoveWeapons = false;
+					bRestrictWeapons = false;
+				}
+			}
+			
+			if (IsClientInPvP(client)) 
+			{
+				bRemoveWeapons = false;
+				bRestrictWeapons = false;
+			}
+			
+			if (g_bRoundWarmup) 
+			{
+				bRemoveWeapons = false;
+				bRestrictWeapons = false;
+			}
+			
+			if (g_bPlayerGhostMode[client]) 
+			{
+				bRemoveWeapons = true;
+			}
+			
+			if (bRemoveWeapons)
+			{
+				ClientSwitchToWeaponSlot(client, TFWeaponSlot_Melee);
+				
+				for (new i = 0; i <= 5; i++)
+				{
+					if (i == TFWeaponSlot_Melee) continue;
+					TF2_RemoveWeaponSlot(client, i);
+				}
+				
+				new ent = -1;
+				while ((ent = FindEntityByClassname(ent, "tf_weapon_builder")) != -1)
+				{
+					if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
 					{
-						hItem = INVALID_HANDLE;
-						TF2_RemoveWeaponSlot(client, iSlot);
+						AcceptEntityInput(ent, "Kill");
+					}
+				}
+				
+				ent = -1;
+				while ((ent = FindEntityByClassname(ent, "tf_wearable_demoshield")) != -1)
+				{
+					if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
+					{
+						AcceptEntityInput(ent, "Kill");
+					}
+				}
+			}
+			
+			if (bRestrictWeapons)
+			{
+				if (g_hRestrictedWeaponsConfig != INVALID_HANDLE)
+				{
+					new TFClassType:iPlayerClass = TF2_GetPlayerClass(client);
+					new Handle:hItem = INVALID_HANDLE;
+					
+					new iWeapon = INVALID_ENT_REFERENCE;
+					for (new iSlot = 0; iSlot <= 5; iSlot++)
+					{
+						iWeapon = GetPlayerWeaponSlot(client, iSlot);
 						
-						switch (iSlot)
+						if (IsValidEdict(iWeapon))
 						{
-							case TFWeaponSlot_Primary:
+							if (IsWeaponRestricted(iPlayerClass, GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex")))
 							{
-								switch (iPlayerClass)
+								hItem = INVALID_HANDLE;
+								TF2_RemoveWeaponSlot(client, iSlot);
+								
+								switch (iSlot)
 								{
-									case TFClass_Scout: hItem = g_hSDKWeaponScattergun;
-									case TFClass_Sniper: hItem = g_hSDKWeaponSniperRifle;
-									case TFClass_Soldier: hItem = g_hSDKWeaponRocketLauncher;
-									case TFClass_DemoMan: hItem = g_hSDKWeaponGrenadeLauncher;
-									case TFClass_Heavy: hItem = g_hSDKWeaponMinigun;
-									case TFClass_Medic: hItem = g_hSDKWeaponSyringeGun;
-									case TFClass_Pyro: hItem = g_hSDKWeaponFlamethrower;
-									case TFClass_Spy: hItem = g_hSDKWeaponRevolver;
-									case TFClass_Engineer: hItem = g_hSDKWeaponShotgunPrimary;
+									case TFWeaponSlot_Primary:
+									{
+										switch (iPlayerClass)
+										{
+											case TFClass_Scout: hItem = g_hSDKWeaponScattergun;
+											case TFClass_Sniper: hItem = g_hSDKWeaponSniperRifle;
+											case TFClass_Soldier: hItem = g_hSDKWeaponRocketLauncher;
+											case TFClass_DemoMan: hItem = g_hSDKWeaponGrenadeLauncher;
+											case TFClass_Heavy: hItem = g_hSDKWeaponMinigun;
+											case TFClass_Medic: hItem = g_hSDKWeaponSyringeGun;
+											case TFClass_Pyro: hItem = g_hSDKWeaponFlamethrower;
+											case TFClass_Spy: hItem = g_hSDKWeaponRevolver;
+											case TFClass_Engineer: hItem = g_hSDKWeaponShotgunPrimary;
+										}
+									}
+									case TFWeaponSlot_Secondary:
+									{
+										switch (iPlayerClass)
+										{
+											case TFClass_Scout: hItem = g_hSDKWeaponPistolScout;
+											case TFClass_Sniper: hItem = g_hSDKWeaponSMG;
+											case TFClass_Soldier: hItem = g_hSDKWeaponShotgunSoldier;
+											case TFClass_DemoMan: hItem = g_hSDKWeaponStickyLauncher;
+											case TFClass_Heavy: hItem = g_hSDKWeaponShotgunHeavy;
+											case TFClass_Medic: hItem = g_hSDKWeaponMedigun;
+											case TFClass_Pyro: hItem = g_hSDKWeaponShotgunPyro;
+											case TFClass_Engineer: hItem = g_hSDKWeaponPistol;
+										}
+									}
+									case TFWeaponSlot_Melee:
+									{
+										switch (iPlayerClass)
+										{
+											case TFClass_Scout: hItem = g_hSDKWeaponBat;
+											case TFClass_Sniper: hItem = g_hSDKWeaponKukri;
+											case TFClass_Soldier: hItem = g_hSDKWeaponShovel;
+											case TFClass_DemoMan: hItem = g_hSDKWeaponBottle;
+											case TFClass_Heavy: hItem = g_hSDKWeaponFists;
+											case TFClass_Medic: hItem = g_hSDKWeaponBonesaw;
+											case TFClass_Pyro: hItem = g_hSDKWeaponFireaxe;
+											case TFClass_Spy: hItem = g_hSDKWeaponKnife;
+											case TFClass_Engineer: hItem = g_hSDKWeaponWrench;
+										}
+									}
+									case 4:
+									{
+										switch (iPlayerClass)
+										{
+											case TFClass_Spy: hItem = g_hSDKWeaponInvis;
+										}
+									}
 								}
-							}
-							case TFWeaponSlot_Secondary:
-							{
-								switch (iPlayerClass)
+								
+								if (hItem != INVALID_HANDLE)
 								{
-									case TFClass_Scout: hItem = g_hSDKWeaponPistolScout;
-									case TFClass_Sniper: hItem = g_hSDKWeaponSMG;
-									case TFClass_Soldier: hItem = g_hSDKWeaponShotgunSoldier;
-									case TFClass_DemoMan: hItem = g_hSDKWeaponStickyLauncher;
-									case TFClass_Heavy: hItem = g_hSDKWeaponShotgunHeavy;
-									case TFClass_Medic: hItem = g_hSDKWeaponMedigun;
-									case TFClass_Pyro: hItem = g_hSDKWeaponShotgunPyro;
-									case TFClass_Engineer: hItem = g_hSDKWeaponPistol;
+									new iNewWeapon = TF2Items_GiveNamedItem(client, hItem);
+									if (IsValidEntity(iNewWeapon)) 
+									{
+										EquipPlayerWeapon(client, iNewWeapon);
+									}
 								}
-							}
-							case TFWeaponSlot_Melee:
-							{
-								switch (iPlayerClass)
-								{
-									case TFClass_Scout: hItem = g_hSDKWeaponBat;
-									case TFClass_Sniper: hItem = g_hSDKWeaponKukri;
-									case TFClass_Soldier: hItem = g_hSDKWeaponShovel;
-									case TFClass_DemoMan: hItem = g_hSDKWeaponBottle;
-									case TFClass_Heavy: hItem = g_hSDKWeaponFists;
-									case TFClass_Medic: hItem = g_hSDKWeaponBonesaw;
-									case TFClass_Pyro: hItem = g_hSDKWeaponFireaxe;
-									case TFClass_Spy: hItem = g_hSDKWeaponKnife;
-									case TFClass_Engineer: hItem = g_hSDKWeaponWrench;
-								}
-							}
-							case 4:
-							{
-								switch (iPlayerClass)
-								{
-									case TFClass_Spy: hItem = g_hSDKWeaponInvis;
-								}
-							}
-						}
-						
-						if (hItem != INVALID_HANDLE)
-						{
-							new iNewWeapon = TF2Items_GiveNamedItem(client, hItem);
-							if (IsValidEntity(iNewWeapon)) 
-							{
-								EquipPlayerWeapon(client, iNewWeapon);
 							}
 						}
 					}
 				}
 			}
-		}
-	}
-	
-	// Change stats on some weapons.
-	if (!g_bPlayerEliminated[client] || g_bPlayerProxy[client])
-	{
-		new iWeapon = INVALID_ENT_REFERENCE;
-		decl Handle:hWeapon;
-		for (new iSlot = 0; iSlot <= 5; iSlot++)
-		{
-			iWeapon = GetPlayerWeaponSlot(client, iSlot);
-			if (!iWeapon || iWeapon == INVALID_ENT_REFERENCE) continue;
 			
-			new iItemDef = GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex");
-			switch (iItemDef)
+			// Change stats on some weapons.
+			if (!g_bPlayerEliminated[client] || g_bPlayerProxy[client])
 			{
-				case 214: // Powerjack
+				new iWeapon = INVALID_ENT_REFERENCE;
+				decl Handle:hWeapon;
+				for (new iSlot = 0; iSlot <= 5; iSlot++)
 				{
-					TF2_RemoveWeaponSlot(client, iSlot);
+					iWeapon = GetPlayerWeaponSlot(client, iSlot);
+					if (!iWeapon || iWeapon == INVALID_ENT_REFERENCE) continue;
 					
-					hWeapon = PrepareItemHandle("tf_weapon_fireaxe", 214, 0, 0, "180 ; 20.0 ; 206 ; 1.33");
-					new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
-					CloseHandle(hWeapon);
-					EquipPlayerWeapon(client, iEnt);
+					new iItemDef = GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex");
+					switch (iItemDef)
+					{
+						case 214: // Powerjack
+						{
+							TF2_RemoveWeaponSlot(client, iSlot);
+							
+							hWeapon = PrepareItemHandle("tf_weapon_fireaxe", 214, 0, 0, "180 ; 20.0 ; 206 ; 1.33");
+							new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
+							CloseHandle(hWeapon);
+							EquipPlayerWeapon(client, iEnt);
+						}
+						case 357: // Half-Zatoichi
+						{
+							TF2_RemoveWeaponSlot(client, iSlot);
+							
+							hWeapon = PrepareItemHandle("tf_weapon_sword", 357, 0, 0, "219 ; 1.0 ; 180 ; 20.0 ; 226 ; 1.0");
+							new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
+							CloseHandle(hWeapon);
+							EquipPlayerWeapon(client, iEnt);
+						}
+						/*
+						case 404: // Persian Persuader
+						{
+							TF2_RemoveWeaponSlot(client, iSlot);
+							
+							hWeapon = PrepareItemHandle("tf_weapon_sword", 404, 0, 0, "249 ; 2.0 ; 15 ; 0.0");
+							new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
+							CloseHandle(hWeapon);
+							EquipPlayerWeapon(client, iEnt);
+						}
+						*/
+					}
 				}
-				case 357: // Half-Zatoichi
-				{
-					TF2_RemoveWeaponSlot(client, iSlot);
-					
-					hWeapon = PrepareItemHandle("tf_weapon_sword", 357, 0, 0, "219 ; 1.0 ; 180 ; 20.0 ; 226 ; 1.0");
-					new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
-					CloseHandle(hWeapon);
-					EquipPlayerWeapon(client, iEnt);
-				}
-				/*
-				case 404: // Persian Persuader
-				{
-					TF2_RemoveWeaponSlot(client, iSlot);
-					
-					hWeapon = PrepareItemHandle("tf_weapon_sword", 404, 0, 0, "249 ; 2.0 ; 15 ; 0.0");
-					new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
-					CloseHandle(hWeapon);
-					EquipPlayerWeapon(client, iEnt);
-				}
-				*/
-			}
-		}
-	}
-	
-	// Remove all hats.
-	if (g_bPlayerGhostMode[client])
-	{
-		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, "tf_wearable")) != -1)
-		{
-			if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
-			{
-				AcceptEntityInput(ent, "Kill");
-			}
-		}
-	}
-	
-	if (g_bPlayerProxy[client] && g_iPlayerProxyMaster[client] != -1)
-	{
-		new iMaster = g_iPlayerProxyMaster[client];
-		if (g_strSlenderProfile[iMaster][0]) 
-		{
-			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-			strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
-			
-			// Set custom model, if any.
-			decl String:sBuffer[PLATFORM_MAX_PATH];
-			decl String:sSectionName[64];
-			
-			decl String:sClassName[64];
-			TF2_GetClassName(TF2_GetPlayerClass(client), sClassName, sizeof(sClassName));
-			
-			Format(sSectionName, sizeof(sSectionName), "mod_proxy_%s", sClassName);
-			if ((GetRandomStringFromProfile(sProfile, sSectionName, sBuffer, sizeof(sBuffer)) && sBuffer[0]) ||
-				(GetRandomStringFromProfile(sProfile, "mod_proxy_all", sBuffer, sizeof(sBuffer)) && sBuffer[0]))
-			{
-				SetVariantString(sBuffer);
-				AcceptEntityInput(client, "SetCustomModel");
-				SetEntProp(client, Prop_Send, "m_bUseClassAnimations", true);
 			}
 			
-			// Play any sounds, if any.
-			if (GetRandomStringFromProfile(sProfile, "sound_proxy_spawn", sBuffer, sizeof(sBuffer)) && sBuffer[0])
+			// Remove all hats.
+			if (g_bPlayerGhostMode[client])
 			{
-				new iChannel = GetProfileNum(sProfile, "sound_proxy_spawn_channel", SNDCHAN_AUTO);
-				new iLevel = GetProfileNum(sProfile, "sound_proxy_spawn_level", SNDLEVEL_NORMAL);
-				new iFlags = GetProfileNum(sProfile, "sound_proxy_spawn_flags", SND_NOFLAGS);
-				new Float:flVolume = GetProfileFloat(sProfile, "sound_proxy_spawn_volume", SNDVOL_NORMAL);
-				new iPitch = GetProfileNum(sProfile, "sound_proxy_spawn_pitch", SNDPITCH_NORMAL);
-				
-				EmitSoundToAll(sBuffer, client, iChannel, iLevel, iFlags, flVolume, iPitch);
+				new ent = -1;
+				while ((ent = FindEntityByClassname(ent, "tf_wearable")) != -1)
+				{
+					if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
+					{
+						AcceptEntityInput(ent, "Kill");
+					}
+				}
+			}
+			
+			if (g_bPlayerProxy[client] && g_iPlayerProxyMaster[client] != -1)
+			{
+				new iMaster = g_iPlayerProxyMaster[client];
+				if (g_strSlenderProfile[iMaster][0]) 
+				{
+					decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+					strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
+					
+					// Set custom model, if any.
+					decl String:sBuffer[PLATFORM_MAX_PATH];
+					decl String:sSectionName[64];
+					
+					decl String:sClassName[64];
+					TF2_GetClassName(TF2_GetPlayerClass(client), sClassName, sizeof(sClassName));
+					
+					Format(sSectionName, sizeof(sSectionName), "mod_proxy_%s", sClassName);
+					if ((GetRandomStringFromProfile(sProfile, sSectionName, sBuffer, sizeof(sBuffer)) && sBuffer[0]) ||
+						(GetRandomStringFromProfile(sProfile, "mod_proxy_all", sBuffer, sizeof(sBuffer)) && sBuffer[0]))
+					{
+						SetVariantString(sBuffer);
+						AcceptEntityInput(client, "SetCustomModel");
+						SetEntProp(client, Prop_Send, "m_bUseClassAnimations", true);
+					}
+					
+					// Play any sounds, if any.
+					if (GetRandomStringFromProfile(sProfile, "sound_proxy_spawn", sBuffer, sizeof(sBuffer)) && sBuffer[0])
+					{
+						new iChannel = GetProfileNum(sProfile, "sound_proxy_spawn_channel", SNDCHAN_AUTO);
+						new iLevel = GetProfileNum(sProfile, "sound_proxy_spawn_level", SNDLEVEL_NORMAL);
+						new iFlags = GetProfileNum(sProfile, "sound_proxy_spawn_flags", SND_NOFLAGS);
+						new Float:flVolume = GetProfileFloat(sProfile, "sound_proxy_spawn_volume", SNDVOL_NORMAL);
+						new iPitch = GetProfileNum(sProfile, "sound_proxy_spawn_pitch", SNDPITCH_NORMAL);
+						
+						EmitSoundToAll(sBuffer, client, iChannel, iLevel, iFlags, flVolume, iPitch);
+					}
+				}
 			}
 		}
 	}
