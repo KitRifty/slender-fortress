@@ -101,6 +101,8 @@ forward Action:SF2_OnClientGetDefaultWalkSpeed(client, &Float:flDefault);
 
 forward Action:SF2_OnClientGetDefaultSprintSpeed(client, &Float:flDefault);
 
+forward Action:SF2_OnGroupGiveQueuePoints(iGroupIndex, &iAddAmount);
+
 
 native bool:SF2_IsRunning();
 

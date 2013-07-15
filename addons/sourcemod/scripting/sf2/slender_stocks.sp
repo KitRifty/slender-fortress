@@ -849,13 +849,13 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	}
 	
 #if defined DEBUG
-	PrintToChatAll("SlenderCalculateNewPlace(%d): array size 1 = %d, array size 2 = %d", iBossIndex, iArraySize, iArraySize2);
+	if (GetConVarBool(g_cvDebugBosses)) PrintToChatAll("SlenderCalculateNewPlace(%d): array size 1 = %d, array size 2 = %d", iBossIndex, iArraySize, iArraySize2);
 #endif
 	
 	if (iBestPlayer <= 0) 
 	{
 #if defined DEBUG
-		PrintToChatAll("SlenderCalculateNewPlace(%d) failed: no ibestPlayer!", iBossIndex);
+		if (GetConVarBool(g_cvDebugBosses)) PrintToChatAll("SlenderCalculateNewPlace(%d) failed: no ibestPlayer!", iBossIndex);
 #endif
 		return false;
 	}
@@ -875,6 +875,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	new Float:flMinRangeN = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_range_min");
 	
 	new bool:bVisiblePls = false;
+	new bool:bBeCreepy = false;
 	
 	if (!bProxy)
 	{
@@ -884,6 +885,11 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			if (GetRandomFloat(0.0, 1.0) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_ignorevis_chance") * g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier)
 			{
 				bVisiblePls = true;
+			}
+			
+			if (GetRandomFloat(0.0, 1.0) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_creepy_chance", 0.33))
+			{
+				bBeCreepy = true;
 			}
 		}
 	}
@@ -1028,25 +1034,73 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			
 			new bool:bCheckBlink = bool:GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_use_blink");
 			
-			if (!bVisiblePls)
-			{
-				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
-			}
-			else
+			if (bVisiblePls)
 			{
 				if (!IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
 			}
+			else if (bBeCreepy)
+			{
+				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink) ||
+					!IsPointVisibleToAPlayer(tempPos, false, bCheckBlink) ||
+					!IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink)) continue;
+			}
+			else
+			{
+				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
+			}
+			
+			new bool:bTooVisible = false;
+			
+			for (new i2 = 0; i2 < MAX_BOSSES; i2++)
+			{
+				if (i2 == iBossIndex) continue;
+				new iSlender = EntRefToEntIndex(g_iSlender[i2]);
+				if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
+				
+				if (IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink) &&
+					((SlenderGetAbsOrigin(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink)) ||
+					(SlenderGetEyePosition(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink))))
+				{
+					bTooVisible = true;
+					break;
+				}
+			}
+			
+			if (bTooVisible) continue;
 			
 			AddVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
 			
-			if (!bVisiblePls)
-			{
-				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
-			}
-			else
+			if (bVisiblePls)
 			{
 				if (!IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
 			}
+			else if (bBeCreepy)
+			{
+				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink) ||
+					!IsPointVisibleToAPlayer(tempPos, false, bCheckBlink) ||
+					!IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink)) continue;
+			}
+			else
+			{
+				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
+			}
+			
+			for (new i2 = 0; i2 < MAX_BOSSES; i2++)
+			{
+				if (i2 == iBossIndex) continue;
+				new iSlender = EntRefToEntIndex(g_iSlender[i2]);
+				if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
+				
+				if (IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink) &&
+					((SlenderGetAbsOrigin(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink)) ||
+					(SlenderGetEyePosition(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink))))
+				{
+					bTooVisible = true;
+					break;
+				}
+			}
+			
+			if (bTooVisible) continue;
 			
 			SubtractVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
 			
@@ -1091,7 +1145,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 		CloseHandle(hArrayFar);
 		
 #if defined DEBUG
-		PrintToChatAll("SlenderCalculateNewPlace(%d) failed: no locations available", iBossIndex);
+		if (GetConVarBool(g_cvDebugBosses)) PrintToChatAll("SlenderCalculateNewPlace(%d) failed: no locations available", iBossIndex);
 #endif
 		
 		return false;
