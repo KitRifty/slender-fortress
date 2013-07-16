@@ -1,4 +1,20 @@
-Version 0.1.6 (July 4, 2013):
+Version 0.1.7 (July 15, 2013):
+- Added "Group Menu" option to the Main Menu, accessable via the !slgroup command. Players can now create their own groups and invite players, so they don't have to reset their queue points just to play with someone else
+- Fixed a bug where chosen to be a Proxy while in PvP resulted in keeping your weapons
+- Fixed a bug where players suicide when switching teams
+- Fixed a case where equipping the Pretty Boy's Pocket Pistol and standing next to a resupply cabinet would result in slowly increasing health
+- Fixed a bug where becoming a Proxy while in Ghost Mode would not reset your speed
+- The Engineer's flashlight battery life has been increased by 33%
+- Removed the Scout's increase in stamina recharge rate and replaced it with 15% longer sprint duration
+- The Sniper's blink rate has been increased by 40%
+- The Demoman now has a 66% increase in "scare" sprint duration
+- Minor code optimizations
+- Removed support for the map entity "slender_logic_onpagecount_#", use "sf2_onpagecount_#" instead
+- Plugin now automatically sets the cvar mp_autoteambalance to 0 to avoid conflicts with groups
+- Added sf2_debug_detail cvar
+- Added sf2_debug_bosses cvar
+
+Version 0.1.6 (July 12, 2013):
 - Added "Sprinting and Stamina" to the Help Menu section
 - Added "Class Info" to the Help Menu section, which displays changes made to classes and/or their weapons, if any
 - Melee and hitscan weapons are now semi-lag compensated against teammates in the PvP arena (excluding the Sniper Rifle due to technical difficulties)
@@ -8,7 +24,6 @@ Version 0.1.6 (July 4, 2013):
 - The Powerjack now only gives 20 health per kill instead of 75
 - The Half-Zatoichi now only gives 20 health per kill instead of restoring all health
 - Chasing bosses are now sensitive to sound, including voices and footsteps (crouching will be quieter)
-- Added different viewbob when sprinting
 - HUD will now reset back to normal once you escape
 - Your stamina will recharge faster if you're standing still or crouched
 - The Scout now has a 15% increase in stamina recharge rate

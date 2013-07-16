@@ -202,7 +202,7 @@
 	
 	"SF2 Help Scout Class Info Description"
 	{
-		"en"	"[+] Stamina recharges 15%% faster\n[-] Low health, most affected by screen wobbling"
+		"en"	"[+] 15% increase in sprint duration\n[-] Low health, most affected by screen wobbling"
 	}
 	
 	"SF2 Help Soldier Class Info Menu Title"
@@ -222,7 +222,7 @@
 	
 	"SF2 Help Sniper Class Info Description"
 	{
-		"en"	"[-] Low health, most affected by screen wobbling"
+		"en"	"[+] Blink rate increased by 40%\n[-] Low health, most affected by screen wobbling"
 	}
 	
 	"SF2 Help Demoman Class Info Menu Title"
@@ -232,7 +232,7 @@
 	
 	"SF2 Help Demoman Class Info Description"
 	{
-		"en"	"[-] The Half-Zatoichi only restores 20 HP on kill"
+		"en"	"[+] 66% increase in scare sprint duration\n[-] The Half-Zatoichi only restores 20 HP on kill"
 	}
 	
 	"SF2 Help Heavy Class Info Menu Title"
@@ -242,7 +242,7 @@
 	
 	"SF2 Help Heavy Class Info Description"
 	{
-		"en"	"[+] Least affected by screen wobbling\n[-] The Gloves of Running Urgently only affects sprinting speed"
+		"en"	"[+] Large health, least affected by screen wobbling\n[-] The Gloves of Running Urgently only affects sprinting speed"
 	}
 	
 	"SF2 Help Medic Class Info Menu Title"
@@ -252,7 +252,7 @@
 	
 	"SF2 Help Medic Class Info Description"
 	{
-		"en"	"[-] Prioritized target to bosses"
+		"en"	"[+] Regenerates health over time\n[-] Prioritized target to bosses"
 	}
 	
 	"SF2 Help Pyro Class Info Menu Title"
@@ -282,7 +282,7 @@
 	
 	"SF2 Help Engineer Class Info Description"
 	{
-		"en"	"[-] Low health, most affected by screen wobbling"
+		"en"	"[+]33% increase in Flashlight battery life\n[-] Low health, most affected by screen wobbling"
 	}
 	
 	"SF2 Settings Menu Title"
@@ -375,6 +375,12 @@
 	{
 		"#format"	"{1:d}"
 		"en"	"{olive}You have been given {1} queue points for playing."
+	}
+	
+	"SF2 Give Group Queue Points"
+	{
+		"#format"	"{1:d}"
+		"en"	"{olive}Your group has been given {1} queue points for playing."
 	}
 	
 	"SF2 Force Play"
@@ -568,5 +574,256 @@
 	"SF2 Out"
 	{
 		"en"	"Out"
+	}
+	
+	"SF2 Group Main Menu Title"
+	{
+		"en"	"Group Menu"
+	}
+	
+	"SF2 Group Main Menu Description"
+	{
+		"en"	"Administrate, view info, create, or leave a group."
+	}
+	
+	"SF2 Admin Group Menu Title"
+	{
+		"en"	"Administrate/View info of current group"
+	}
+	
+	"SF2 Admin Group Menu Description"
+	{
+		"#format"	"{1:s},{2:s},{3:d},{4:d},{5:d}"
+		"en"	"Group Name: {1}\nGroup Leader: {2}\nMembers: {3}/{4}\nQueue Points: {5}"
+	}
+	
+	"SF2 View Current Group Info Menu Title"
+	{
+		"en"	"View info of current group"
+	}
+	
+	"SF2 View Group Members Menu Title"
+	{
+		"en"	"View group members"
+	}
+	
+	"SF2 View Group Members Menu Description"
+	{
+		"en"	"List of all members in your group:"
+	}
+	
+	"SF2 Set Group Name Menu Title"
+	{
+		"en"	"Set group name"
+	}
+	
+	"SF2 Set Group Name Menu Description"
+	{
+		"en"	"You can set a custom name for your group to make\nit uniquely identifiable from others. You can set\nyour current group's name by typing the following\nin chat:\n \n /slgroupname <name>\n \nThe maximum name length is 64 characters."
+	}
+	
+	"SF2 Invalid Group Name"
+	{
+		"en"	"Invalid group name!"
+	}
+	
+	"SF2 Group Name Set"
+	{
+		"#format"	"{1:s},{2:s}"
+		"en"	"Your group's name has been changed from {1} to {2}."
+	}
+	
+	"SF2 Set Group Leader Menu Title"
+	{
+		"en"	"Set group leader"
+	}
+	
+	"SF2 Set Group Leader Menu Description"
+	{
+		"en"	"Who should be the new group leader?"
+	}
+	
+	"SF2 Group Has Too Many Members"
+	{
+		"en"	"Your group has too many members! Some of your members will be kicked off the group to make room."
+	}
+	
+	"SF2 Invite To Group Menu Title"
+	{
+		"en"	"Invite players to group"
+	}
+	
+	"SF2 Invite To Group Menu Description"
+	{
+		"en"	"Invite players to join your group!\n \nNOTE: You cannot invite players that are\nalready in a group, or is currently playing as RED."
+	}
+	
+	"SF2 Group Invitation Sent"
+	{
+		"#format"	"{1:s}"
+		"en"	"Sent a group invitation to {1}."
+	}
+	
+	"SF2 Group Invite Menu Description"
+	{
+		"#format"	"{1:s},{2:s}"
+		"en"	"You have been invited by {1} to join the\n{2} group.\n \nDo you accept?"
+	}
+	
+	"SF2 No Group Invite Spam"
+	{
+		"#format"	"{1:d},{2:s}"
+		"en"	"You must wait {1} seconds before sending another invite to {2}."
+	}
+	
+	"SF2 Kick From Group Menu Title"
+	{
+		"en"	"Kick players from group"
+	}
+	
+	"SF2 Kick From Group Menu Description"
+	{
+		"en"	"Kick unwanted players from the group."
+	}
+	
+	"SF2 Kicked From Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"You have been kicked from the {1} group."
+	}
+	
+	"SF2 Player Kicked From Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"Kicked {1} from the group."
+	}
+	
+	"SF2 Reset Group Queue Points Menu Title"
+	{
+		"en"	"Reset group's queue points"
+	}
+	
+	"SF2 Reset Group Queue Points Menu Description"
+	{
+		"en"	"Are you sure you want to reset\nthe group's queue points back to 0?"
+	}
+	
+	"SF2 Group Queue Points Reset"
+	{
+		"en"	"Your group's queue points were reset to 0!"
+	}
+	
+	"SF2 Group Is Full"
+	{
+		"en"	"You cannot perform this command because the group is full!"
+	}
+	
+	"SF2 Not Group Leader"
+	{
+		"en"	"You cannot perform this command because you are not the group leader."
+	}
+	
+	"SF2 No Players Available"
+	{
+		"en"	"You cannot perform this command because there are no players available!"
+	}
+	
+	"SF2 Player Not In Group"
+	{
+		"en"	"You cannot perform this command because the player is not in your group."
+	}
+	
+	"SF2 Player In Another Group"
+	{
+		"en"	"You cannot perform this command because the player is already in another group."
+	}
+	
+	"SF2 Player In Group"
+	{
+		"en"	"You cannot perform this command because the player is already in your group."
+	}
+	
+	"SF2 Create Group Menu Title"
+	{
+		"en"	"Create new group"
+	}
+	
+	"SF2 Create Group Menu Description"
+	{
+		"#format"	"{1:d},{2:d}"
+		"en"	"Creating a group allows you to play together with\nfriends! However, you can only invite {1} player(s)\ninto your group. And for queuing, the entire group\nwill be based on your current queue points amount,\nwhich is {2}.\n \nCreate new group?"
+	}
+	
+	"SF2 Player New Group Leader"
+	{
+		"#format"	"{1:s}"
+		"en"	"{1} is now the new leader of your group."
+	}
+	
+	"SF2 New Group Leader"
+	{
+		"#format"	"{1:s}"
+		"en"	"You are now the group leader of the {1} group."
+	}
+	
+	"SF2 In Group"
+	{
+		"en"	"You cannot perform this command because you are already in the group!"
+	}
+	
+	"SF2 In Another Group"
+	{
+		"en"	"You cannot perform this command because you are already in another group!"
+	}
+	
+	"SF2 Joined Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"You are now in the {1} group. Welcome!"
+	}
+	
+	"SF2 Left Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"You have left the {1} group."
+	}
+	
+	"SF2 Player Joined Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"Player {1} has joined your group."
+	}
+	
+	"SF2 Player Left Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"Player {1} has left your group."
+	}
+	
+	"SF2 Created Group"
+	{
+		"#format"	"{1:s}"
+		"en"	"Group creation successful! Your new group's name is: {1}"
+	}
+	
+	"SF2 Max Groups Reached"
+	{
+		"en"	"Unable to create a new group because the maximum number of groups has been reached!"
+	}
+	
+	"SF2 Group Does Not Exist"
+	{
+		"en"	"You cannot perform this command because your group no longer exists!"
+	}
+	
+	"SF2 Leave Group Menu Title"
+	{
+		"en"	"Leave current group"
+	}
+	
+	"SF2 Leave Group Menu Description"
+	{
+		"#format"	"{1:s}"
+		"en"	"Are you sure you want to leave the {1} group?"
 	}
 }

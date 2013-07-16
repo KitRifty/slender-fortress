@@ -20,7 +20,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.1.6 Beta"
+#define PLUGIN_VERSION "0.1.7 Beta"
 
 public Plugin:myinfo = 
 {
@@ -185,7 +185,7 @@ new Handle:g_hPlayerSprintTimer[MAXPLAYERS + 1];
 new bool:g_bPlayerBreath[MAXPLAYERS + 1];
 new Handle:g_hPlayerBreathTimer[MAXPLAYERS + 1];
 
-// Lag compensation for FF.
+// Fake lag compensation for FF.
 new bool:g_bPlayerLagCompensation[MAXPLAYERS + 1];
 new g_iPlayerLagCompensationTeam[MAXPLAYERS + 1];
 
@@ -360,6 +360,11 @@ new Handle:g_cvPlayerViewBobHurtEnabled;
 new Handle:g_cvPlayerViewBobSprintEnabled;
 new Handle:g_cvPlayerFakeLagCompensation;
 
+#if defined DEBUG
+new Handle:g_cvDebugDetail;
+new Handle:g_cvDebugBosses;
+#endif
+
 new Handle:g_hMenuMain;
 new Handle:g_hMenuVoteDifficulty;
 new Handle:g_hMenuGhostMode;
@@ -399,6 +404,7 @@ new Handle:fOnClientStartDeathCam;
 new Handle:fOnClientEndDeathCam;
 new Handle:fOnClientGetDefaultWalkSpeed;
 new Handle:fOnClientGetDefaultSprintSpeed;
+new Handle:fOnGroupGiveQueuePoints;
 
 new Handle:g_hSDKWeaponScattergun;
 new Handle:g_hSDKWeaponPistolScout;
@@ -441,6 +447,8 @@ new Handle:g_hSDKWantsLagCompensationOnEntity;
 #include "sf2/specialround.sp"
 #include "sf2/attributes.sp"
 #include "sf2/adminmenu.sp"
+#include "sf2/playergroups.sp"
+
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
@@ -462,6 +470,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	fOnClientEndDeathCam = CreateGlobalForward("SF2_OnClientEndDeathCam", ET_Ignore, Param_Cell, Param_Cell);
 	fOnClientGetDefaultWalkSpeed = CreateGlobalForward("SF2_OnClientGetDefaultWalkSpeed", ET_Hook, Param_Cell, Param_CellByRef);
 	fOnClientGetDefaultSprintSpeed = CreateGlobalForward("SF2_OnClientGetDefaultSprintSpeed", ET_Hook, Param_Cell, Param_CellByRef);
+	fOnGroupGiveQueuePoints = CreateGlobalForward("SF2_OnGroupGiveQueuePoints", ET_Hook, Param_Cell, Param_CellByRef);
 	
 	CreateNative("SF2_IsRunning", Native_IsRunning);
 	CreateNative("SF2_GetCurrentDifficulty", Native_GetCurrentDifficulty);
@@ -492,6 +501,10 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 
 public OnPluginStart()
 {
+	LoadTranslations("core.phrases");
+	LoadTranslations("common.phrases");
+	LoadTranslations("sf2.phrases");
+	
 	// Get offsets.
 	g_offsPlayerFOV = FindSendPropInfo("CBasePlayer", "m_iFOV");
 	if (g_offsPlayerFOV == -1) SetFailState("Couldn't find CBasePlayer offset for m_iFOV. Plugin disabled!");
@@ -511,16 +524,13 @@ public OnPluginStart()
 	g_offsFogCtrlEnd = FindSendPropInfo("CFogController", "m_fog.end");
 	if (g_offsFogCtrlEnd == -1) LogError("Couldn't find CFogController offset for m_fog.end!");
 	
-	LoadTranslations("sf2.phrases");
-	LoadTranslations("common.phrases");
-	
 	g_hPageMusicRanges = CreateArray(3);
 	
 	// Register console variables.
 	CreateConVar("sf2_version", PLUGIN_VERSION, "The current version of Slender Fortress. DO NOT TOUCH!", FCVAR_PLUGIN | FCVAR_SPONLY | FCVAR_NOTIFY);
 	
 	g_cvEnabled = CreateConVar("sf2_enabled", "1", "Enable/Disable the Slender Fortress gamemode. This will take effect on map change.");
-	g_cvSlenderMapsOnly = CreateConVar("sf2_slendermapsonly", "1", "Only enable the Slender Fortress gamemode on map names prefixed with \"slender_\" or \"sf_\".");
+	g_cvSlenderMapsOnly = CreateConVar("sf2_slendermapsonly", "1", "Only enable the Slender Fortress gamemode on map names prefixed with \"slender_\" or \"sf2_\".");
 	
 	g_cvGraceTime = CreateConVar("sf2_gracetime", "30.0");
 	
@@ -542,11 +552,12 @@ public OnPluginStart()
 	g_cvPlayerBlinkRate = CreateConVar("sf2_player_blink_rate", "0.33", "How long (in seconds) each bar on the player's Blink meter lasts.");
 	g_cvPlayerBlinkHoldTime = CreateConVar("sf2_player_blink_holdtime", "0.15", "How long (in seconds) a player will stay in Blink mode when he or she blinks.");
 	
-	g_cvUltravisionEnabled = CreateConVar("sf2_ultravision_enabled", "1", "Enable/Disable player Ultravision. This helps players see in the dark when their Flashlight is off or unavailable.");
+	g_cvUltravisionEnabled = CreateConVar("sf2_player_ultravision_enabled", "1", "Enable/Disable player Ultravision. This helps players see in the dark when their Flashlight is off or unavailable.");
 	
 	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.");
 	
 	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players than can be in one round.");
+	HookConVarChange(g_cvMaxPlayers, OnConVarChanged);
 	
 	g_cvCampingEnabled = CreateConVar("sf2_anticamping_enabled", "1", "Enable/Disable anti-camping system for RED.");
 	g_cvCampingMaxStrikes = CreateConVar("sf2_anticamping_maxstrikes", "4", "How many 5-second intervals players are allowed to stay in one spot before he/she is forced to suicide.");
@@ -556,9 +567,14 @@ public OnPluginStart()
 	g_cvCampingNoStrikeBossDistance = CreateConVar("sf2_anticamping_no_strike_boss_distance", "512.0", "The camping system will NOT give any strikes under any circumstances if the player is this close to a boss (ignoring LOS).");
 	g_cvBossAppearChanceOverride = CreateConVar("sf2_boss_appear_chance_override", "-1.0", "Overrides the chance which any boss will appear. Set to -1 to disable the override.");
 	g_cvBossMain = CreateConVar("sf2_boss_main", "slenderman", "The name of the main boss (its section name, not its display name)");
-	g_cvProfileOverride = CreateConVar("sf2_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
+	g_cvProfileOverride = CreateConVar("sf2_boss_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
 	g_cvDifficulty = CreateConVar("sf2_difficulty", "1", "Difficulty of the game. 1 = Normal, 2 = Hard, 3 = Insane.", _, true, 1.0, true, 3.0);
 	HookConVarChange(g_cvDifficulty, OnConVarChanged);
+	
+#if defined DEBUG
+	g_cvDebugDetail = CreateConVar("sf2_debug_detail", "0", "0 = off, 1 = debug only large, expensive functions, 2 = debug more events, 3 = debug client functions");
+	g_cvDebugBosses = CreateConVar("sf2_debug_bosses", "0");
+#endif
 	
 	g_cvSpecialRoundBehavior = CreateConVar("sf2_specialround_mode", "0", "0 = Special Round resets on next round, 1 = Special Round keeps going until all players have played (not counting spectators, recently joined players, and those who reset their queue points during the round)");
 	g_cvSpecialRoundForce = CreateConVar("sf2_specialround_forceenable", "-1", "Sets whether a Special Round will occur on the next round or not.");
@@ -573,33 +589,21 @@ public OnPluginStart()
 	g_cvTimeLimitEscape = CreateConVar("sf2_timelimit_escape_default", "90", "The time limit to escape. Maps can change the time limit.");
 	g_cvTimeGainFromPageGrab = CreateConVar("sf2_time_gain_page_grab", "12", "The time gained from grabbing a page. Maps can change the time gain amount.");
 	
-	g_cvPvPArenaLeaveTime = CreateConVar("sf2_pvparena_leavetime", "3");
+	g_cvPvPArenaLeaveTime = CreateConVar("sf2_player_pvparena_leavetime", "3");
 	
 	g_cvWarmupRound = CreateConVar("sf2_warmupround", "1");
 	
 	// Register console commands.
-	RegConsoleCmd("sf2", Command_MainMenu);
-	RegConsoleCmd("slender", Command_MainMenu);
-	RegConsoleCmd("slnext", Command_Next);
-	RegConsoleCmd("slghost", Command_GhostMode);
-	RegConsoleCmd("slhelp", Command_Help);
-	RegConsoleCmd("slsettings", Command_Settings);
-	RegConsoleCmd("slcredits", Command_Credits);
-	RegConsoleCmd("flashlight", Command_ToggleFlashlight);
-	RegConsoleCmd("build", Command_Build);
-	RegConsoleCmd("taunt", Command_BlockInGhostMode);
-	RegConsoleCmd("+taunt", Command_BlockInGhostMode);
-	RegConsoleCmd("use_action_slot_item_server", Command_BlockInGhostMode);
-	RegConsoleCmd("+use_action_slot_item_server", Command_UseActionSlotItemOn);
-	RegConsoleCmd("-use_action_slot_item_server", Command_UseActionSlotItemOff);
-	RegConsoleCmd("kill", Command_BlockInGhostMode);
-	RegConsoleCmd("explode", Command_BlockInGhostMode);
-	RegConsoleCmd("joinclass", Command_BlockInGhostMode);
-	RegConsoleCmd("join_class", Command_BlockInGhostMode);
-	RegConsoleCmd("jointeam", Command_BlockInGhostMode);
-	RegConsoleCmd("spectate", Command_BlockInGhostMode);
-	RegConsoleCmd("voicemenu", Command_VoiceMenu);
-	RegConsoleCmd("say", Command_Say);
+	RegConsoleCmd("sm_sf2", Command_MainMenu);
+	RegConsoleCmd("sm_slender", Command_MainMenu);
+	RegConsoleCmd("sm_slnext", Command_Next);
+	RegConsoleCmd("sm_slgroup", Command_Group);
+	RegConsoleCmd("sm_slgroupname", Command_GroupName);
+	RegConsoleCmd("sm_slghost", Command_GhostMode);
+	RegConsoleCmd("sm_slhelp", Command_Help);
+	RegConsoleCmd("sm_slsettings", Command_Settings);
+	RegConsoleCmd("sm_slcredits", Command_Credits);
+	RegConsoleCmd("sm_flashlight", Command_ToggleFlashlight);
 	
 	RegAdminCmd("sm_sf2_scare", Command_ClientPerformScare, ADMFLAG_SLAY);
 	RegAdminCmd("sm_sf2_spawn_boss", Command_SpawnSlender, ADMFLAG_SLAY);
@@ -611,6 +615,22 @@ public OnPluginStart()
 	RegAdminCmd("sm_sf2_boss_attack_waiters", Command_SlenderAttackWaiters, ADMFLAG_SLAY);
 	RegAdminCmd("sm_sf2_boss_no_teleport", Command_SlenderNoTeleport, ADMFLAG_SLAY);
 	RegAdminCmd("sm_sf2_force_proxy", Command_ForceProxy, ADMFLAG_SLAY);
+	
+	// Hook onto existing console commands.
+	AddCommandListener(Hook_CommandBuild, "build");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server");
+	AddCommandListener(Hook_CommandActionSlotItemOn, "+use_action_slot_item_server");
+	AddCommandListener(Hook_CommandActionSlotItemOff, "-use_action_slot_item_server");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "kill");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "explode");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "joinclass");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "join_class");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "jointeam");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "spectate");
+	AddCommandListener(Hook_CommandVoiceMenu, "voicemenu");
+	AddCommandListener(Hook_CommandSay, "say");
 	
 	// Hook events.
 	HookEvent("teamplay_round_start", Event_RoundStart);
@@ -645,6 +665,8 @@ public OnPluginStart()
 	Format(buffer, sizeof(buffer), "%t (!slhelp)", "SF2 Help Menu Title");
 	AddMenuItem(g_hMenuMain, "0", buffer);
 	Format(buffer, sizeof(buffer), "%t (!slnext)", "SF2 Queue Menu Title");
+	AddMenuItem(g_hMenuMain, "0", buffer);
+	Format(buffer, sizeof(buffer), "%t (!slgroup)", "SF2 Group Main Menu Title");
 	AddMenuItem(g_hMenuMain, "0", buffer);
 	Format(buffer, sizeof(buffer), "%t (!slghost)", "SF2 Ghost Mode Menu Title");
 	AddMenuItem(g_hMenuMain, "0", buffer);
@@ -799,6 +821,7 @@ public OnPluginStart()
 	
 	SetupWeapons();
 	SetupAdminMenu();
+	SetupPlayerGroups();
 }
 
 public OnAllPluginsLoaded()
@@ -972,7 +995,7 @@ public Action:Hook_BlockUserMessage(UserMsg:msg_id, Handle:bf, const players[], 
 	return Plugin_Handled;
 }
 
-public Action:Command_Say(client, args)
+public Action:Hook_CommandSay(client, const String:command[], argc)
 {
 	if (!g_bEnabled || GetConVarBool(g_cvAllChat)) return Plugin_Continue;
 	
@@ -1146,9 +1169,10 @@ public Menu_Main(Handle:menu, MenuAction:action, param1, param2)
 		{
 			case 0: DisplayMenu(g_hMenuHelp, param1, 30);
 			case 1: DisplayQueuePointsMenu(param1);
-			case 2: DisplayMenu(g_hMenuGhostMode, param1, 30);
-			case 3: DisplayMenu(g_hMenuSettings, param1, 30);
-			case 4: DisplayMenu(g_hMenuCredits, param1, MENU_TIME_FOREVER);
+			case 2:	DisplayGroupMainMenuToClient(param1);
+			case 3: DisplayMenu(g_hMenuGhostMode, param1, 30);
+			case 4: DisplayMenu(g_hMenuSettings, param1, 30);
+			case 5: DisplayMenu(g_hMenuCredits, param1, MENU_TIME_FOREVER);
 		}
 	}
 }
@@ -1572,6 +1596,13 @@ public OnConVarChanged(Handle:cvar, const String:oldValue[], const String:newVal
 			default: g_flRoundDifficultyModifier = DIFFICULTY_NORMAL;
 		}
 	}
+	else if (cvar == g_cvMaxPlayers)
+	{
+		for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+		{
+			CheckPlayerGroup(i);
+		}
+	}
 }
 
 public OnPluginEnd()
@@ -1635,6 +1666,54 @@ public Action:Command_Next(client, args)
 	return Plugin_Handled;
 }
 
+public Action:Command_Group(client, args)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	DisplayGroupMainMenuToClient(client);
+	return Plugin_Handled;
+}
+
+public Action:Command_GroupName(client, args)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if (args < 1)
+	{
+		ReplyToCommand(client, "Usage: sm_slgroupname <name>");
+		return Plugin_Handled;
+	}
+	
+	new iGroupIndex = ClientGetPlayerGroup(client);
+	if (!IsPlayerGroupActive(iGroupIndex))
+	{
+		CPrintToChat(client, "%T", "SF2 Group Does Not Exist", client);
+		return Plugin_Handled;
+	}
+	
+	if (GetPlayerGroupLeader(iGroupIndex) != client)
+	{
+		CPrintToChat(client, "%T", "SF2 Not Group Leader", client);
+		return Plugin_Handled;
+	}
+	
+	decl String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
+	GetCmdArg(1, sGroupName, sizeof(sGroupName));
+	if (!sGroupName[0])
+	{
+		CPrintToChat(client, "%T", "SF2 Invalid Group Name", client);
+		return Plugin_Handled;
+	}
+	
+	decl String:sOldGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
+	GetPlayerGroupName(iGroupIndex, sOldGroupName, sizeof(sOldGroupName));
+	SetPlayerGroupName(iGroupIndex, sGroupName);
+	
+	CPrintToChat(client, "%T", "SF2 Group Name Set", client, sOldGroupName, sGroupName);
+	
+	return Plugin_Handled;
+}
+
 public Action:Command_GhostMode(client, args)
 {
 	if (!g_bEnabled) return Plugin_Continue;
@@ -1643,19 +1722,17 @@ public Action:Command_GhostMode(client, args)
 	return Plugin_Handled;
 }
 
-public Action:Command_BlockInGhostMode(client, args)
+public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-
 	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
 	
 	return Plugin_Continue;
 }
 
-public Action:Command_UseActionSlotItemOn(client, args)
+public Action:Hook_CommandActionSlotItemOn(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-
 	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
 	
 	if (IsPlayerAlive(client))
@@ -1681,7 +1758,7 @@ public Action:Command_UseActionSlotItemOn(client, args)
 	return Plugin_Continue;
 }
 
-public Action:Command_UseActionSlotItemOff(client, args)
+public Action:Hook_CommandActionSlotItemOff(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 	
@@ -1701,10 +1778,9 @@ public Action:Command_UseActionSlotItemOff(client, args)
 	return Plugin_Continue;
 }
 
-public Action:Command_VoiceMenu(client, args)
+public Action:Hook_CommandVoiceMenu(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-
 	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
 	
 	if (g_bPlayerProxy[client])
@@ -2151,23 +2227,14 @@ public Action:Command_ForceState(client, args)
 		
 		if (iState && g_bPlayerEliminated[target])
 		{
-			g_bPlayerEliminated[target] = false;
-			g_hPlayerSwitchBlueTimer[target] = INVALID_HANDLE;
-			ClientDisableGhostMode(target);
-			
-			if (g_bSpecialRound) g_bPlayerDidSpecialRound[target] = true;
-			if (g_bBossRound) g_bPlayerDidBossRound[target] = true;
-			
-			ChangeClientTeamNoSuicide(target, _:TFTeam_Red);
+			ClientForcePlay(target);
 			
 			CPrintToChatAll("%t %N: %t", "SF2 Prefix", client, "SF2 Player Forced In Game", sName);
 			LogAction(client, target, "%N forced %N into the game.", client, target);
 		}
 		else if (!iState && !g_bPlayerEliminated[target])
 		{
-			g_bPlayerPlaying[target] = false;
-			g_bPlayerEliminated[target] = true;
-			ChangeClientTeamNoSuicide(target, _:TFTeam_Blue);
+			ClientForceOutOfPlay(target);
 			
 			CPrintToChatAll("%t %N: %t", "SF2 Prefix", client, "SF2 Player Forced Out Of Game", sName);
 			LogAction(client, target, "%N took %N out of the game.", client, target);
@@ -2177,12 +2244,11 @@ public Action:Command_ForceState(client, args)
 	return Plugin_Handled;
 }
 
-public Action:Command_Build(client, args)
+public Action:Hook_CommandBuild(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-
-	new TFClassType:class = TF2_GetPlayerClass(client);
-	if (class == TFClass_Engineer || class == TFClass_Spy) return Plugin_Handled;
+	if (!IsClientInPvP(client)) return Plugin_Handled;
+	
 	return Plugin_Continue;
 }
 
@@ -2682,6 +2748,10 @@ public OnConfigsExecuted()
 	hCvar = FindConVar("mat_supportflashlight");
 	if (hCvar != INVALID_HANDLE) SetConVarBool(hCvar, true);
 	
+	hCvar = FindConVar("mp_autoteambalance");
+	if (hCvar != INVALID_HANDLE) SetConVarBool(hCvar, false);
+	
+	
 	decl String:sBuffer[64];
 	Format(sBuffer, sizeof(sBuffer), "Slender Fortress (%s)", PLUGIN_VERSION);
 	Steam_SetGameDescription(sBuffer);
@@ -2931,10 +3001,11 @@ public OnClientPutInServer(client)
 	if (!g_bEnabled) return;
 
 #if defined DEBUG
-	DebugMessage("START OnClientPutInServer(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START OnClientPutInServer(%d)", client);
 #endif
 	
 	InitializeClient(client);
+	ClientSetPlayerGroup(client, -1);
 	ClientResetDeathCam(client);
 	
 	g_bPlayerEscaped[client] = false;
@@ -2951,9 +3022,18 @@ public OnClientPutInServer(client)
 #if defined _dhooks_included
 	if (g_bDHooks) DHookEntity(g_hSDKWantsLagCompensationOnEntity, true, client); 
 #endif
-
+	
+	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+	{
+		if (!IsPlayerGroupActive(i)) continue;
+		
+		SetPlayerGroupInvitedPlayer(i, client, false);
+		SetPlayerGroupInvitedPlayerCount(i, client, 0);
+		SetPlayerGroupInvitedPlayerTime(i, client, 0.0);
+	}
+	
 #if defined DEBUG
-	DebugMessage("END OnClientPutInServer(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END OnClientPutInServer(%d)", client);
 #endif
 }
 
@@ -2987,52 +3067,106 @@ stock bool:IsClientParticipating(client)
 // Don't forget to close the handle!
 Handle:GetQueueList()
 {
-	new Handle:hArray = CreateArray(2);
+	new Handle:hArray = CreateArray(3);
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (!IsClientParticipating(i)) continue;
+		if (IsPlayerGroupActive(ClientGetPlayerGroup(i))) continue;
+		
 		new index = PushArrayCell(hArray, i);
 		SetArrayCell(hArray, index, g_iPlayerQueuePoints[i], 1);
+		SetArrayCell(hArray, index, false, 2);
+	}
+	
+	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+	{
+		if (!IsPlayerGroupActive(i)) continue;
+		new index = PushArrayCell(hArray, i);
+		SetArrayCell(hArray, index, GetPlayerGroupQueuePoints(i), 1);
+		SetArrayCell(hArray, index, true, 2);
 	}
 	
 	if (GetArraySize(hArray)) SortADTArrayCustom(hArray, SortQueueList);
 	return hArray;
 }
 
-ForceInNextPlayerInQueue()
+stock ClientForcePlay(client, bool:bEnablePlay=true)
 {
-	// Grab the next person in line.
-	new iNextPlayer = -1;
+	if (!g_bPlayerEliminated[client]) return;
+	
+	if (bEnablePlay) g_bPlayerPlaying[client] = true;
+	g_bPlayerEliminated[client] = false;
+	g_hPlayerSwitchBlueTimer[client] = INVALID_HANDLE;
+	ClientDisableGhostMode(client);
+	ClientDisablePvP(client);
+	
+	if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
+	if (g_bBossRound) g_bPlayerDidBossRound[client] = true;
+	
+	ChangeClientTeamNoSuicide(client, _:TFTeam_Red);
+}
+
+stock ClientForceOutOfPlay(client, bool:bDisablePlay=true)
+{
+	if (g_bPlayerEliminated[client]) return;
+	
+	if (bDisablePlay) g_bPlayerPlaying[client] = false;
+	g_bPlayerEliminated[client] = true;
+	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
+}
+
+ForceInNextPlayersInQueue(iAmount, bool:bShowMessage=false)
+{
+	// Grab the next person in line, or the next group in line if space allows.
+	new iAmountLeft = iAmount;
+	new Handle:hPlayers = CreateArray();
 	new Handle:hArray = GetQueueList();
-	new size = GetArraySize(hArray);
-	if (size > 0)
+	
+	for (new i = 0, iSize = GetArraySize(hArray); i < iSize && iAmountLeft > 0; i++)
 	{
-		for (new i = 0; i < size; i++)
+		if (!GetArrayCell(hArray, i, 2))
 		{
 			new iClient = GetArrayCell(hArray, i);
 			if (g_bPlayerPlaying[iClient] || !g_bPlayerEliminated[iClient]) continue;
 			
-			iNextPlayer = iClient;
-			break;
+			PushArrayCell(hPlayers, iClient);
+			iAmountLeft--;
+		}
+		else
+		{
+			new iGroupIndex = GetArrayCell(hArray, i);
+			if (!IsPlayerGroupActive(iGroupIndex)) continue;
+			
+			new iMemberCount = GetPlayerGroupMemberCount(iGroupIndex);
+			if (iMemberCount <= iAmountLeft)
+			{
+				for (new iClient = 1; iClient <= MaxClients; iClient++)
+				{
+					if (!IsValidClient(iClient)) continue;
+					if (ClientGetPlayerGroup(iClient) == iGroupIndex)
+					{
+						PushArrayCell(hPlayers, iClient);
+					}
+				}
+				
+				SetPlayerGroupPlaying(iGroupIndex, true);
+				
+				iAmountLeft -= iMemberCount;
+			}
 		}
 	}
 	
 	CloseHandle(hArray);
 	
-	if (iNextPlayer > 0 && IsValidClient(iNextPlayer))
+	for (new i = 0, iSize = GetArraySize(hPlayers); i < iSize; i++)
 	{
-		g_bPlayerPlaying[iNextPlayer] = true;
-		g_bPlayerEliminated[iNextPlayer] = false;
-		g_hPlayerSwitchBlueTimer[iNextPlayer] = INVALID_HANDLE;
-		ClientDisableGhostMode(iNextPlayer);
+		new iClient = GetArrayCell(hPlayers, i);
+		ClientForcePlay(iClient);
 		
-		if (g_bSpecialRound) g_bPlayerDidSpecialRound[iNextPlayer] = true;
-		if (g_bBossRound) g_bPlayerDidBossRound[iNextPlayer] = true;
-		
-		TF2_RespawnPlayer(iNextPlayer);
-		
-		CPrintToChat(iNextPlayer, "%T", "SF2 Force Play", iNextPlayer);
+		if (bShowMessage) CPrintToChat(iClient, "%T", "SF2 Force Play", iClient);
 	}
+	
+	CloseHandle(hPlayers);
 }
 
 public OnClientDisconnect(client)
@@ -3040,11 +3174,12 @@ public OnClientDisconnect(client)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("START OnClientDisconnect(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START OnClientDisconnect(%d)", client);
 #endif
 	
 	// Save and reset settings for the next client.
 	ClientSaveCookies(client);
+	ClientSetPlayerGroup(client, -1);
 	g_iPlayerQueuePoints[client] = 0;
 	g_bPlayerShowHints[client] = true;
 	g_bPlayerWantsTheP[client] = true;
@@ -3061,7 +3196,7 @@ public OnClientDisconnect(client)
 		{
 			if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
 			{
-				ForceInNextPlayerInQueue();
+				ForceInNextPlayersInQueue(1, true);
 			}
 		}
 		else
@@ -3073,7 +3208,7 @@ public OnClientDisconnect(client)
 	g_bPlayerEscaped[client] = false;
 	
 #if defined DEBUG
-	DebugMessage("END OnClientDisconnect(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END OnClientDisconnect(%d)", client);
 #endif
 }
 
@@ -4126,7 +4261,7 @@ public Action:SlenderFindSoundPositions(const Float:flOrigin[3], Float:flDestina
 	
 	new bool:bValid = false;
 	
-	if (AngleDiff(flDir[1], flTargetDir[1]) <= 50.0)
+	if (AngleDiff(flDir[1], flTargetDir[1]) <= 90.0)
 	{
 		decl Float:flMins[3], Float:flMaxs[3];
 		GetProfileVector(g_strSlenderProfile[iBossIndex], "mins", flMins);
@@ -4192,12 +4327,15 @@ public Action:SlenderFindSoundPositions(const Float:flOrigin[3], Float:flDestina
 		iColor[2] = 255;
 	}
 	
-	static iModelIndex = -1;
-	if (iModelIndex == -1) iModelIndex = PrecacheModel("materials/sprites/white.vmt");
-	if (iModelIndex != -1)
+	if (GetConVarBool(g_cvDebugBosses))
 	{
-		TE_SetupBeamPoints(flOrigin, flDestination, iModelIndex, iModelIndex, 1, 60, 0.5, 3.0, 3.0, 1, 0.0, iColor, 10);
-		TE_SendToAll();
+		static iModelIndex = -1;
+		if (iModelIndex == -1) iModelIndex = PrecacheModel("materials/sprites/white.vmt");
+		if (iModelIndex != -1)
+		{
+			TE_SetupBeamPoints(flOrigin, flDestination, iModelIndex, iModelIndex, 1, 60, 0.5, 3.0, 3.0, 1, 0.0, iColor, 10);
+			TE_SendToAll();
+		}
 	}
 #endif
 	
@@ -4398,7 +4536,7 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_RoundStart");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_RoundStart");
 #endif
 	
 	InitializeNewGame();
@@ -4417,7 +4555,7 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_RoundStart");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_RoundStart");
 #endif
 }
 
@@ -4426,7 +4564,7 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_RoundEnd");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_RoundEnd");
 #endif
 	
 	g_bRoundEnded = true;
@@ -4453,6 +4591,47 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 			GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
 			GetEntPropVector(ent, Prop_Data, "m_angAbsRotation", flAng);
 			break;
+		}
+	}
+	
+	// Give away queue points.
+	
+	new iDefaultAmount = 5;
+	new iAmount = iDefaultAmount;
+	new iAmount2 = iAmount;
+	new Action:iAction = Plugin_Continue;
+	
+	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+	{
+		if (!IsPlayerGroupActive(i)) continue;
+		
+		if (IsPlayerGroupPlaying(i))
+		{
+			SetPlayerGroupQueuePoints(i, 0);
+		}
+		else
+		{
+			iAmount = iDefaultAmount;
+			iAmount2 = iAmount;
+			iAction = Plugin_Continue;
+			
+			Call_StartForward(fOnGroupGiveQueuePoints);
+			Call_PushCell(i);
+			Call_PushCellRef(iAmount2);
+			Call_Finish(iAction);
+			
+			if (iAction == Plugin_Changed) iAmount = iAmount2;
+			
+			SetPlayerGroupQueuePoints(i, GetPlayerGroupQueuePoints(i) + iAmount);
+		
+			for (new iClient = 1; iClient <= MaxClients; iClient++)
+			{
+				if (!IsValidClient(iClient)) continue;
+				if (ClientGetPlayerGroup(iClient) == i)
+				{
+					CPrintToChat(iClient, "%T", "SF2 Give Group Queue Points", iClient, iAmount);
+				}
+			}
 		}
 	}
 	
@@ -4483,9 +4662,9 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 			}
 			else
 			{
-				new iAmount = 5;
-				new iAmount2 = iAmount;
-				new Action:iAction = Plugin_Continue;
+				iAmount = iDefaultAmount;
+				iAmount2 = iAmount;
+				iAction = Plugin_Continue;
 				
 				Call_StartForward(fOnClientGiveQueuePoints);
 				Call_PushCell(i);
@@ -4518,7 +4697,7 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_RoundEnd");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_RoundEnd");
 #endif
 	
 }
@@ -4528,7 +4707,7 @@ public Action:Event_PlayerTeamPre(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return Plugin_Continue;
 
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PlayerTeamPre");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT START: Event_PlayerTeamPre");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -4538,7 +4717,7 @@ public Action:Event_PlayerTeamPre(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PlayerTeamPre");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT END: Event_PlayerTeamPre");
 #endif
 	
 	return Plugin_Continue;
@@ -4547,56 +4726,68 @@ public Action:Event_PlayerTeamPre(Handle:event, const String:name[], bool:dB)
 public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 {
 	if (!g_bEnabled) return;
-
+	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PlayerTeam");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerTeam");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	if (client <= 0) return;
-	
-	new iNewTeam = GetEventInt(event, "team");
-	if (iNewTeam <= _:TFTeam_Spectator)
+	if (client > 0)
 	{
-		if (g_bRoundGrace)
+		new iNewTeam = GetEventInt(event, "team");
+		if (iNewTeam <= _:TFTeam_Spectator)
 		{
-			if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
+			if (g_bRoundGrace)
 			{
-				ForceInNextPlayerInQueue();
+				if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
+				{
+					ForceInNextPlayersInQueue(1, true);
+				}
+			}
+			
+			// You're not playing anymore.
+			if (g_bPlayerPlaying[client])
+			{
+				ClientSetQueuePoints(client, 0);
+			}
+			
+			g_bPlayerPlaying[client] = false;
+			g_bPlayerEliminated[client] = true;
+			g_bPlayerEscaped[client] = false;
+			ClientDisableGhostMode(client);
+			TF2_RespawnPlayer(client);
+			
+			// Special round.
+			if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
+			
+			// Boss round.
+			if (g_bBossRound) g_bPlayerDidBossRound[client] = true;
+		}
+		else
+		{
+			if (!g_bPlayerChoseTeam[client])
+			{
+				g_bPlayerChoseTeam[client] = true;
+				
+				CreateTimer(5.0, Timer_WelcomeMessage, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 			}
 		}
-		
-		// You're not playing anymore.
-		if (g_bPlayerPlaying[client])
-		{
-			ClientSetQueuePoints(client, 0);
-		}
-		
-		g_bPlayerPlaying[client] = false;
-		g_bPlayerEliminated[client] = true;
-		g_bPlayerEscaped[client] = false;
-		ClientDisableGhostMode(client);
-		TF2_RespawnPlayer(client);
-		
-		// Special round.
-		if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
-		
-		// Boss round.
-		if (g_bBossRound) g_bPlayerDidBossRound[client] = true;
 	}
-	else
+	
+	// Check groups.
+	if (!g_bRoundEnded)
 	{
-		if (!g_bPlayerChoseTeam[client])
+		for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
 		{
-			g_bPlayerChoseTeam[client] = true;
-			
-			CreateTimer(5.0, Timer_WelcomeMessage, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+			if (!IsPlayerGroupActive(i)) continue;
+			CheckPlayerGroup(i);
 		}
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PlayerTeam");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerTeam");
 #endif
+
 }
 
 public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
@@ -4604,7 +4795,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PlayerSpawn");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerSpawn");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -4676,7 +4867,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PlayerSpawn");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerSpawn");
 #endif
 }
 
@@ -4764,7 +4955,7 @@ public Event_PostInventoryApplication(Handle:event, const String:name[], bool:dB
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PostInventoryApplication");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT START: Event_PostInventoryApplication");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -4774,7 +4965,7 @@ public Event_PostInventoryApplication(Handle:event, const String:name[], bool:dB
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PostInventoryApplication");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT END: Event_PostInventoryApplication");
 #endif
 }
 
@@ -4802,7 +4993,7 @@ public Action:Event_PlayerDeathPre(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return Plugin_Continue;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PlayerDeathPre");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT START: Event_PlayerDeathPre");
 #endif
 	
 	if (!g_bRoundWarmup)
@@ -4821,7 +5012,7 @@ public Action:Event_PlayerDeathPre(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PlayerDeathPre");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT END: Event_PlayerDeathPre");
 #endif
 	
 	return Plugin_Continue;
@@ -4832,7 +5023,7 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PlayerHurt");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT START: Event_PlayerHurt");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -4869,7 +5060,7 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PlayerHurt");
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT END: Event_PlayerHurt");
 #endif
 }
 
@@ -5544,24 +5735,48 @@ DisplayQueuePointsMenu(client)
 	
 	if (GetArraySize(hQueueList))
 	{
-		Format(buffer, sizeof(buffer), "%t\n \n", "SF2 Reset Queue Points Option", g_iPlayerQueuePoints[client]);
-		AddMenuItem(menu, "poniponiponi", buffer);
+		Format(buffer, sizeof(buffer), "%T\n \n", "SF2 Reset Queue Points Option", client, g_iPlayerQueuePoints[client]);
+		AddMenuItem(menu, "ponyponypony", buffer);
 		
-		decl iClient, bool:bPlaying;
+		decl iIndex, String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
 		
-		for (new i = 0; i < GetArraySize(hQueueList); i++)
+		for (new i = 0, iSize = GetArraySize(hQueueList); i < iSize; i++)
 		{
-			iClient = GetArrayCell(hQueueList, i);
-			bPlaying = g_bPlayerPlaying[iClient];
-			
-			Format(buffer, sizeof(buffer), "%N - %d", iClient, g_iPlayerQueuePoints[iClient]);
-			AddMenuItem(menu, "player", buffer, bPlaying ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+			if (!GetArrayCell(hQueueList, i, 2))
+			{
+				iIndex = GetArrayCell(hQueueList, i);
+				Format(buffer, sizeof(buffer), "%N - %d", iIndex, g_iPlayerQueuePoints[iIndex]);
+				AddMenuItem(menu, "player", buffer, g_bPlayerPlaying[iIndex] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+			}
+			else
+			{
+				iIndex = GetArrayCell(hQueueList, i);
+				if (GetPlayerGroupMemberCount(iIndex) > 1)
+				{
+					GetPlayerGroupName(iIndex, sGroupName, sizeof(sGroupName));
+					Format(buffer, sizeof(buffer), "%s - %d", sGroupName, GetPlayerGroupQueuePoints(iIndex));
+					AddMenuItem(menu, "group", buffer, IsPlayerGroupPlaying(iIndex) ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+				}
+				else
+				{
+					for (new iClient = 1; iClient <= MaxClients; iClient++)
+					{
+						if (!IsValidClient(iClient)) continue;
+						if (ClientGetPlayerGroup(iClient) == iIndex)
+						{
+							Format(buffer, sizeof(buffer), "%N - %d", iClient, g_iPlayerQueuePoints[iClient]);
+							AddMenuItem(menu, "player", buffer, g_bPlayerPlaying[iClient] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+							break;
+						}
+					}
+				}
+			}
 		}
 	}
 	
 	CloseHandle(hQueueList);
 	
-	SetMenuTitle(menu, "%t%t", "SF2 Prefix", "SF2 Queue Menu Title");
+	SetMenuTitle(menu, "%t%T", "SF2 Prefix", "SF2 Queue Menu Title", client);
 	SetMenuExitBackButton(menu, true);
 	DisplayMenu(menu, client, MENU_TIME_FOREVER);
 }
@@ -5571,11 +5786,11 @@ DisplayResetQueuePointsMenu(client)
 	decl String:buffer[256];
 
 	new Handle:menu = CreateMenu(Menu_ResetQueuePoints);
-	Format(buffer, sizeof(buffer), "%t", "Yes");
+	Format(buffer, sizeof(buffer), "%T", "Yes", client);
 	AddMenuItem(menu, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t", "No");
+	Format(buffer, sizeof(buffer), "%T", "No", client);
 	AddMenuItem(menu, "1", buffer);
-	SetMenuTitle(menu, "%t", "SF2 Should Reset Queue Points");
+	SetMenuTitle(menu, "%T\n \n", "SF2 Should Reset Queue Points", client);
 	DisplayMenu(menu, client, MENU_TIME_FOREVER);
 }
 
@@ -5588,7 +5803,13 @@ public Menu_QueuePoints(Handle:menu, MenuAction:action, param1, param2)
 			new String:item[64];
 			GetMenuItem(menu, param2, item, sizeof(item));
 			
-			if (!StrEqual(item, "player")) DisplayResetQueuePointsMenu(param1);
+			if (StrEqual(item, "ponyponypony")) DisplayResetQueuePointsMenu(param1);
+			else if (StrEqual(item, "player"))
+			{
+			}
+			else if (StrEqual(item, "group"))
+			{
+			}
 		}
 		case MenuAction_Cancel:
 		{
@@ -5662,7 +5883,7 @@ public Action:Timer_VoteDifficulty(Handle:timer, any:data)
 InitializeNewGame()
 {
 #if defined DEBUG
-	DebugMessage("START InitializeNewGame()");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeNewGame()");
 #endif
 
 	SetPageCount(0);
@@ -5694,7 +5915,7 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Determine warmup round state");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Determine warmup round state");
 #endif
 	
 	if (GetConVarBool(g_cvWarmupRound) && g_iRoundCount < 4)
@@ -5718,7 +5939,7 @@ InitializeNewGame()
 	// Determine special round state.
 
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Special round check");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Special round check");
 #endif
 	
 	g_bSpecialRoundNew = false;
@@ -5841,7 +6062,7 @@ InitializeNewGame()
 	new Handle:hPageTrie = CreateTrie();
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Parsing through map entities");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Parsing through map entities");
 #endif
 	
 	decl String:targetName[64];
@@ -5961,7 +6182,7 @@ InitializeNewGame()
 	// Get a reference entity, if any.
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Finding page reference entity");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Finding page reference entity");
 #endif
 	
 	ent = -1;
@@ -5983,7 +6204,7 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Spawning pages");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Spawning pages");
 #endif
 	
 	new iPageCount = GetArraySize(hArray);
@@ -6077,7 +6298,7 @@ InitializeNewGame()
 	// Determine boss round state.
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): New boss round check");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): New boss round check");
 #endif
 	
 	new bool:bBossOld = g_bBossRound;
@@ -6164,7 +6385,7 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Selecting boss profile");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Selecting boss profile");
 #endif
 	
 	// Select which profile to use.
@@ -6197,7 +6418,7 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Getting boss profile companions");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Getting boss profile companions");
 #endif
 	
 	// We don't need this anymore. Close it now.
@@ -6221,10 +6442,17 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Refreshing players");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Refreshing groups and players");
 #endif
 	
-	// Initialize players.
+	// Refresh groups.
+	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+	{
+		SetPlayerGroupPlaying(i, false);
+		CheckPlayerGroup(i);
+	}
+	
+	// Refresh players.
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		ClientDisableGhostMode(i);
@@ -6234,30 +6462,13 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Going through player queue list");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Going through player and group queue list");
 #endif
 	
-	new Handle:hQueueList = GetQueueList();
-	for (new i = 0, iSize = GetArraySize(hQueueList), iMaxPlayers = GetConVarInt(g_cvMaxPlayers); i < iSize && i < iMaxPlayers; i++)
-	{
-		new iClient = GetArrayCell(hQueueList, i);
-		g_bPlayerPlaying[iClient] = true;
-		g_bPlayerEliminated[iClient] = false;
-		g_hPlayerSwitchBlueTimer[iClient] = INVALID_HANDLE;
-		
-		ChangeClientTeamNoSuicide(iClient, _:TFTeam_Red);
-		
-		// Boss round.
-		if (g_bBossRound) g_bPlayerDidBossRound[iClient] = true;
-		
-		// Special round.
-		if (g_bSpecialRound) g_bPlayerDidSpecialRound[iClient] = true;
-	}
-	
-	CloseHandle(hQueueList);
+	ForceInNextPlayersInQueue(GetConVarInt(g_cvMaxPlayers));
 	
 #if defined DEBUG
-	DebugMessage("InitializeNewGame(): Respawning players");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Respawning players");
 #endif
 	
 	for (new i = 1; i <= MaxClients; i++)
@@ -6266,7 +6477,7 @@ InitializeNewGame()
 	}
 	
 #if defined DEBUG
-	DebugMessage("END InitializeNewGame()");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeNewGame()");
 #endif
 }
 
@@ -6518,19 +6729,6 @@ SetPageCount(iNum)
 		Format(sFindTargetName, sizeof(sFindTargetName), "sf2_onpagecount_%d", g_iPageCount);
 		
 		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, "logic_relay")) != -1)
-		{
-			GetEntPropString(ent, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));
-			if (sTargetName[0] && StrEqual(sTargetName, sFindTargetName, false))
-			{
-				AcceptEntityInput(ent, "Trigger");
-				break;
-			}
-		}
-		
-		Format(sFindTargetName, sizeof(sFindTargetName), "slender_logic_onpagecount_%d", g_iPageCount);
-		
-		ent = -1;
 		while ((ent = FindEntityByClassname(ent, "logic_relay")) != -1)
 		{
 			GetEntPropString(ent, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));

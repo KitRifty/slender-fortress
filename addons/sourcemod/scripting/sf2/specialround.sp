@@ -238,13 +238,7 @@ SpecialRoundStart()
 		}
 		case SPECIALROUND_DOUBLEMAXPLAYERS:
 		{
-			new iMaxPlayers = GetConVarInt(g_cvMaxPlayers);
-			
-			for (new i = 0; i < iMaxPlayers; i++)
-			{
-				ForceInNextPlayerInQueue();
-			}
-			
+			ForceInNextPlayersInQueue(GetConVarInt(g_cvMaxPlayers));
 			SetConVarString(g_cvDifficulty, "3"); // Override difficulty to Insane.
 		}
 		case SPECIALROUND_LIGHTSOUT:

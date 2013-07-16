@@ -25,7 +25,6 @@
 
 new String:g_sPlayerProjectileClasses[][] = 
 {
-	"tf_flame",
 	"tf_projectile_rocket", 
 	"tf_projectile_sentryrocket", 
 	"tf_projectile_arrow", 
@@ -70,7 +69,7 @@ public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, 
 ClientResetHints(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetHints(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetHints(%d)", client);
 #endif
 
 	for (new i = 0; i < PlayerHint_MaxNum; i++)
@@ -79,7 +78,7 @@ ClientResetHints(client)
 	}
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetHints(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetHints(%d)", client);
 #endif
 }
 
@@ -286,10 +285,10 @@ public Hook_ClientPreThink(client)
 		// Many thanks to whomever created it in the first place.
 		if (IsPlayerAlive(client))
 		{
-			new Float:flPunchVel[3];
-			
 			if (GetConVarBool(g_cvPlayerViewbobEnabled))
 			{
+				new Float:flPunchVel[3];
+			
 				if (!GetConVarBool(g_cvPlayerViewBobSprintEnabled) || !ClientSprintIsValid(client))
 				{
 					decl Float:flVelocity[3];
@@ -303,23 +302,23 @@ public Hook_ClientPreThink(client)
 					
 					AddVectors(flPunchVel, flPunchIdle, flPunchVel);
 				}
-			}
-			
-			if (GetConVarBool(g_cvPlayerViewBobHurtEnabled))
-			{
-				// Shake screen the more the player is hurt.
-				new Float:flHealth = float(GetEntProp(client, Prop_Send, "m_iHealth"));
-				new Float:flMaxHealth = float(SDKCall(g_hSDKGetMaxHealth, client));
 				
-				decl Float:flPunchVelHurt[3];
-				flPunchVelHurt[0] = Sine(1.22 * GetGameTime()) * 48.5 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
-				flPunchVelHurt[1] = Sine(2.12 * GetGameTime()) * 80.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
-				flPunchVelHurt[2] = Sine(0.5 * GetGameTime()) * 36.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+				if (GetConVarBool(g_cvPlayerViewBobHurtEnabled))
+				{
+					// Shake screen the more the player is hurt.
+					new Float:flHealth = float(GetEntProp(client, Prop_Send, "m_iHealth"));
+					new Float:flMaxHealth = float(SDKCall(g_hSDKGetMaxHealth, client));
+					
+					decl Float:flPunchVelHurt[3];
+					flPunchVelHurt[0] = Sine(1.22 * GetGameTime()) * 48.5 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+					flPunchVelHurt[1] = Sine(2.12 * GetGameTime()) * 80.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+					flPunchVelHurt[2] = Sine(0.5 * GetGameTime()) * 36.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+					
+					AddVectors(flPunchVel, flPunchVelHurt, flPunchVel);
+				}
 				
-				AddVectors(flPunchVel, flPunchVelHurt, flPunchVel);
+				ClientViewPunch(client, flPunchVel);
 			}
-			
-			ClientViewPunch(client, flPunchVel);
 		}
 	}
 	
@@ -343,15 +342,19 @@ public Hook_ClientPreThink(client)
 					
 					if (!bDanger)
 					{
+						decl iState;
+						decl iBossTarget;
+						
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
 							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
 							
 							if (g_iSlenderType[i] == 2)
 							{
-								new iBossTarget = EntRefToEntIndex(g_iSlenderTarget[i]);
+								iBossTarget = EntRefToEntIndex(g_iSlenderTarget[i]);
+								iState = g_iSlenderState[i];
 								
-								if ((g_iSlenderState[i] == STATE_ALERT || g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK) &&
+								if ((iState == STATE_ALERT || iState == STATE_CHASE || iState == STATE_ATTACK) &&
 									((iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0))
 								{
 									bDanger = true;
@@ -364,11 +367,14 @@ public Hook_ClientPreThink(client)
 					if (!bDanger)
 					{
 						new Float:flCurTime = GetGameTime();
+						new Float:flScareSprintDuration = 3.0;
+						if (TF2_GetPlayerClass(client) == TFClass_DemoMan) flScareSprintDuration *= 1.667;
+						
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
 							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
 							
-							if ((flCurTime - g_flPlayerLastScareFromBoss[client][i]) <= 3.5)
+							if ((flCurTime - g_flPlayerLastScareFromBoss[client][i]) <= flScareSprintDuration)
 							{
 								bDanger = true;
 								break;
@@ -485,12 +491,14 @@ public Hook_ClientPreThink(client)
 	{
 		new Handle:hCopy = CloneArray(hFlames);
 		
+		decl entref, ent, iIndex;
 		for (new i = 0, iSize = GetArraySize(hCopy); i < iSize; i++)
 		{
-			new ent = EntRefToEntIndex(GetArrayCell(hCopy, i));
+			entref = GetArrayCell(hCopy, i);
+			ent = EntRefToEntIndex(entref);
 			if (!ent || ent == INVALID_ENT_REFERENCE)
 			{
-				new iIndex = FindValueInArray(hFlames, GetArrayCell(hCopy, i));
+				iIndex = FindValueInArray(hFlames, entref);
 				if (iIndex != -1) RemoveFromArray(hFlames, iIndex);
 			}
 		}
@@ -501,7 +509,13 @@ public Hook_ClientPreThink(client)
 	
 	if (g_bRoundWarmup || IsClientInPvP(client))
 	{
+		// BOOOOX!
+		decl Float:flOrigin[3], Handle:hTrace;
+		new Float:flMins[3] = { -6.0, ... };
+		new Float:flMaxs[3] = { 6.0, ... };
+	
 		new flame = -1;
+		
 		while ((flame = FindEntityByClassname(flame, "tf_flame")) != -1)
 		{
 			new iOwnerEntity = -1;
@@ -513,23 +527,20 @@ public Hook_ClientPreThink(client)
 			
 			if (iOwnerEntity == client)
 			{
-				// BOOOOX!
-				new Float:flMins[3] = { -6.0, ... };
-				new Float:flMaxs[3] = { 6.0, ... };
-				
-				decl Float:flOrigin[3];
 				GetEntPropVector(flame, Prop_Data, "m_vecAbsOrigin", flOrigin);
 				
-				new Handle:hTrace = TR_TraceHullFilterEx(flOrigin, flOrigin, flMins, flMaxs, MASK_PLAYERSOLID, TraceRayDontHitEntity, iOwnerEntity);
+				hTrace = TR_TraceHullFilterEx(flOrigin, flOrigin, flMins, flMaxs, MASK_PLAYERSOLID, TraceRayDontHitEntity, iOwnerEntity);
 				new iHitEntity = TR_GetEntityIndex(hTrace);
 				CloseHandle(hTrace);
 				
 				if (IsValidEntity(iHitEntity))
 				{
-					new iIndex = FindValueInArray(hFlames, EntIndexToEntRef(flame));
+					new entref = EntIndexToEntRef(flame);
+					
+					new iIndex = FindValueInArray(hFlames, entref);
 					if (iIndex == -1)
 					{
-						iIndex = PushArrayCell(hFlames, EntIndexToEntRef(flame));
+						iIndex = PushArrayCell(hFlames, entref);
 						SetArrayCell(hFlames, iIndex, INVALID_ENT_REFERENCE, 1);
 					}
 					
@@ -583,18 +594,6 @@ public Hook_ClientPreThink(client)
 						bMine = true;
 					}
 				}
-				else if (StrEqual(g_sPlayerProjectileClasses[i], "tf_flame", false))
-				{
-					if (IsValidEdict(iOwnerEntity)) // At this point it's the flamethrower.
-					{
-						new iFlamethrower = iOwnerEntity;
-						iOwnerEntity = GetEntPropEnt(iFlamethrower, Prop_Data, "m_hOwnerEntity");
-						if (iOwnerEntity == client)
-						{
-							bMine = true;
-						}
-					}
-				}
 				
 				if (bMine)
 				{
@@ -612,21 +611,13 @@ public Hook_ClientProjectileSpawnPost(ent)
 {
 	decl String:sClass[64];
 	GetEntityClassname(ent, sClass, sizeof(sClass));
-
+	
 	new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
 	new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
 	
 	if (iOwnerEntity == -1 && iThrowerOffset != -1)
 	{
 		iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
-	}
-	else if (StrEqual(sClass, "tf_flame", false))
-	{
-		if (IsValidEdict(iOwnerEntity)) // At this point it's the flamethrower.
-		{
-			new iFlamethrower = iOwnerEntity;
-			iOwnerEntity = GetEntPropEnt(iFlamethrower, Prop_Data, "m_hOwnerEntity");
-		}
 	}
 	
 	if (IsValidClient(iOwnerEntity))
@@ -1014,28 +1005,28 @@ ClientProcessGlow(client)
 ClientResetGlow(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetGlow(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetGlow(%d)", client);
 #endif
 
 	ClientRemoveGlow(client);
 	g_iPlayerGlowLookAtEntity[client] = INVALID_ENT_REFERENCE;
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetGlow(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetGlow(%d)", client);
 #endif
 }
 
 ClientResetBreathing(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetBreathing(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetBreathing(%d)", client);
 #endif
 
 	g_bPlayerBreath[client] = false;
 	g_hPlayerBreathTimer[client] = INVALID_HANDLE;
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetBreathing(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetBreathing(%d)", client);
 #endif
 }
 
@@ -1095,7 +1086,7 @@ public Action:Timer_ClientBreath(Handle:timer, any:userid)
 ClientResetSprint(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetSprint(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetSprint(%d)", client);
 #endif
 
 	g_bPlayerSprint[client] = false;
@@ -1109,7 +1100,7 @@ ClientResetSprint(client)
 	}
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetSprint(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetSprint(%d)", client);
 #endif
 }
 
@@ -1130,8 +1121,6 @@ ClientSprintTimer(client, bool:bRecharge=false)
 	new Float:flRate = 0.28;
 	if (bRecharge) flRate = 0.8;
 	
-	if (bRecharge && TF2_GetPlayerClass(client) == TFClass_Scout) flRate *= 0.85;
-	
 	decl Float:flVelocity[3];
 	GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", flVelocity);
 	
@@ -1143,6 +1132,10 @@ ClientSprintTimer(client, bool:bRecharge=false)
 			if (GetEntProp(client, Prop_Send, "m_bDucked")) flRate *= 0.66;
 			else flRate *= 0.75;
 		}
+	}
+	else
+	{
+		if (TF2_GetPlayerClass(client) == TFClass_Scout) flRate *= 1.15;
 	}
 	
 	if (bRecharge) g_hPlayerSprintTimer[client] = CreateTimer(flRate, Timer_ClientRechargeSprint, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
@@ -1235,11 +1228,6 @@ public Hook_ClientRechargeSprintPreThink(client)
 	}
 	
 	new iFOV = GetEntData(client, g_offsPlayerDefaultFOV);
-	
-#if defined DEBUG
-	PrintCenterText(client, "iFOV: %d", iFOV);
-#endif
-	
 	if (iFOV > g_iPlayerDesiredFOV[client])
 	{
 		new iDiff = RoundFloat(FloatAbs(float(iFOV - g_iPlayerDesiredFOV[client])));
@@ -1353,13 +1341,13 @@ public Action:Hook_GlowSetTransmit(ent, other)
 ClientResetProxyGlow(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetProxyGlow(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetProxyGlow(%d)", client);
 #endif
 
 	ClientRemoveProxyGlow(client);
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetProxyGlow(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetProxyGlow(%d)", client);
 #endif
 }
 
@@ -1656,7 +1644,7 @@ public OnClientGetDesiredFOV(QueryCookie:cookie, client, ConVarQueryResult:resul
 InitializeClient(client)
 {
 #if defined DEBUG
-	DebugMessage("START InitializeClient(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeClient(%d)", client);
 #endif
 
 	g_iPlayerGhostModeTarget[client] = INVALID_ENT_REFERENCE;
@@ -1664,7 +1652,7 @@ InitializeClient(client)
 	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
 	
 #if defined DEBUG
-	DebugMessage("InitializeClient(%d): QueryClientConVar fov_desired", client);
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): QueryClientConVar fov_desired", client);
 #endif
 	
 	if (!IsFakeClient(client))
@@ -1677,7 +1665,7 @@ InitializeClient(client)
 	}
 	
 #if defined DEBUG
-	DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
 #endif
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
@@ -1718,14 +1706,14 @@ InitializeClient(client)
 	ClientDisableFakeLagCompensation(client);
 	
 #if defined DEBUG
-	DebugMessage("END InitializeClient(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeClient(%d)", client);
 #endif
 }
 
 ClientResetProxy(client, bool:bResetFull=true)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetProxy(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetProxy(%d)", client);
 #endif
 
 	new iOldMaster = g_iPlayerProxyMaster[client];
@@ -1767,7 +1755,7 @@ ClientResetProxy(client, bool:bResetFull=true)
 	}
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetProxy(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetProxy(%d)", client);
 #endif
 }
 
@@ -1798,7 +1786,10 @@ ClientEnableProxy(client, iBossIndex)
 	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
 	
 	ClientDisableGhostMode(client);
+	ClientDisablePvP(client);
 	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
+	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
+	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
 	
 	g_bPlayerProxy[client] = true;
 	g_iPlayerProxyMaster[client] = iBossIndex;
@@ -1850,14 +1841,14 @@ public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
 ClientResetJumpScare(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetJumpScare(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetJumpScare(%d)", client);
 #endif
 
 	g_iPlayerJumpScareMaster[client] = -1;
 	g_flPlayerJumpScareLifeTime[client] = -1.0;
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetJumpScare(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetJumpScare(%d)", client);
 #endif
 }
 
@@ -1953,7 +1944,7 @@ ClientOnButtonRelease(client, button)
 ClientResetDeathCam(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetDeathCam(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetDeathCam(%d)", client);
 #endif
 
 	new bool:bOld = g_bPlayerDeathCam[client];
@@ -1993,7 +1984,7 @@ ClientResetDeathCam(client)
 	}
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetDeathCam(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetDeathCam(%d)", client);
 #endif
 }
 
@@ -2225,8 +2216,11 @@ ClientActivateFlashlight(client)
 {
 	ClientDeactivateFlashlight(client);
 	
+	new Float:flDrainRate = SF2_FLASHLIGHT_DRAIN_RATE;
+	if (TF2_GetPlayerClass(client) == TFClass_Engineer) flDrainRate *= 1.33;
+	
 	g_bPlayerFlashlight[client] = true;
-	g_hPlayerFlashlightTimer[client] = CreateTimer(SF2_FLASHLIGHT_DRAIN_RATE, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	g_hPlayerFlashlightTimer[client] = CreateTimer(flDrainRate, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
 	new ent = CreateEntityByName("light_dynamic");
 	if (ent == -1) return;
@@ -2540,7 +2534,7 @@ ClientPerformScare(client, iBossIndex)
 ClientResetScare(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetScare(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetScare(%d)", client);
 #endif
 
 	for (new i = 0; i < MAX_BOSSES; i++)
@@ -2549,7 +2543,7 @@ ClientResetScare(client)
 	}
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetScare(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetScare(%d)", client);
 #endif
 }
 
@@ -2575,7 +2569,7 @@ public Action:Hook_ClientSetTransmit(client, other)
 					!TF2_IsPlayerInCondition(client, TFCond_Jarated) &&
 					!TF2_IsPlayerInCondition(client, TFCond_Milked) &&
 					!TF2_IsPlayerInCondition(client, TFCond_OnFire) &&
-					(GetGameTime() >= GetEntPropFloat(client, Prop_Send, "m_flInvisChangeCompleteTime")))
+					(GetGameTime() > GetEntPropFloat(client, Prop_Send, "m_flInvisChangeCompleteTime")))
 				{
 					return Plugin_Handled;
 				}
@@ -2597,7 +2591,7 @@ public Action:Hook_DeathCamSetTransmit(slender, other)
 stock ClientResetCampingStats(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetCampingStats(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetCampingStats(%d)", client);
 #endif
 
 	g_iPlayerCampingStrikes[client] = 0;
@@ -2608,7 +2602,7 @@ stock ClientResetCampingStats(client)
 	g_flPlayerCampingLastPosition[client][2] = 0.0;
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetCampingStats(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetCampingStats(%d)", client);
 #endif
 }
 
@@ -2683,14 +2677,14 @@ stock ClientDisablePvP(client)
 stock ClientResetPvP(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetPvP(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetPvP(%d)", client);
 #endif
 
 	ClientDisablePvP(client);
 	g_bPlayerInPvPTrigger[client] = false;
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetPvP(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetPvP(%d)", client);
 #endif
 }
 
@@ -2831,7 +2825,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 stock ClientResetFlashlight(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetFlashlight(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetFlashlight(%d)", client);
 #endif
 
 	ClientDeactivateFlashlight(client);
@@ -2840,27 +2834,27 @@ stock ClientResetFlashlight(client)
 	g_flPlayerFlashlightLastEnable[client] = GetGameTime();
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetFlashlight(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetFlashlight(%d)", client);
 #endif
 }
 
 stock ClientResetUltravision(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetUltravision(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetUltravision(%d)", client);
 #endif
 
 	ClientDeactivateUltravision(client);
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetUltravision(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetUltravision(%d)", client);
 #endif
 }
 
 stock ClientResetBlink(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetBlink(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetBlink(%d)", client);
 #endif
 
 	g_hPlayerBlinkTimer[client] = INVALID_HANDLE;
@@ -2869,13 +2863,13 @@ stock ClientResetBlink(client)
 	g_iPlayerBlinkCount[client] = 0;
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetBlink(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetBlink(%d)", client);
 #endif
 }
 
 stock ClientBlink(client)
 {
-	if (g_bRoundWarmup) return;
+	if (g_bRoundWarmup || g_bPlayerEscaped[client]) return;
 
 	g_bPlayerBlink[client] = true;
 	g_iPlayerBlinkCount[client]++;
@@ -2930,7 +2924,7 @@ public Action:Timer_BlinkTimer2(Handle:timer, any:userid)
 stock ClientResetSlenderStats(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetSlenderStats(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetSlenderStats(%d)", client);
 #endif
 
 	g_iPlayerStaticMaster[client] = -1;
@@ -2947,21 +2941,21 @@ stock ClientResetSlenderStats(client)
 	}
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetSlenderStats(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetSlenderStats(%d)", client);
 #endif
 }
 
 stock ClientResetOverlay(client)
 {
 #if defined DEBUG
-	DebugMessage("START ClientResetOverlay(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetOverlay(%d)", client);
 #endif
 
 	g_hPlayerOverlayCheck[client] = INVALID_HANDLE;
 	ClientCommand(client, "r_screenoverlay \"\"");
 	
 #if defined DEBUG
-	DebugMessage("END ClientResetOverlay(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetOverlay(%d)", client);
 #endif
 }
 
@@ -3946,6 +3940,8 @@ stock Float:GetClientBlinkRate(client)
 		else if (g_bPlayerStatic[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_static_rate_multiply", 1.0);
 	}
 	
+	if (TF2_GetPlayerClass(client) == TFClass_Sniper) flValue *= 1.4;
+	
 	if (g_bPlayerFlashlight[client])
 	{
 		decl Float:startPos[3], Float:endPos[3], Float:flDirection[3];
@@ -4106,7 +4102,9 @@ stock ChangeClientTeamNoSuicide(client, team, bool:bRespawn=true)
 	
 	if (GetClientTeam(client) != team)
 	{
+		SetEntProp(client, Prop_Send, "m_lifeState", 2);
 		ChangeClientTeam(client, team);
+		SetEntProp(client, Prop_Send, "m_lifeState", 0);
 		if (bRespawn) TF2_RespawnPlayer(client);
 	}
 }
@@ -4266,6 +4264,8 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			
 			if (bRestrictWeapons)
 			{
+				new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
+				
 				if (g_hRestrictedWeaponsConfig != INVALID_HANDLE)
 				{
 					new TFClassType:iPlayerClass = TF2_GetPlayerClass(client);
@@ -4349,6 +4349,14 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 							}
 						}
 					}
+				}
+				
+				// Fixes the Pretty Boy's Pocket Pistol glitch.
+				new iMaxHealth = SDKCall(g_hSDKGetMaxHealth, client);
+				if (iHealth > iMaxHealth)
+				{
+					SetEntProp(client, Prop_Data, "m_iHealth", iMaxHealth);
+					SetEntProp(client, Prop_Send, "m_iHealth", iMaxHealth);
 				}
 			}
 			
