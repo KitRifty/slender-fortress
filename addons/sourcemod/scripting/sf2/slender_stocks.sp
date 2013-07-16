@@ -974,7 +974,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			tempPos[2] -= g_flSlenderMaxs[iBossIndex][2];
 			
 			if (TR_PointOutsideWorld(tempPos)
-				|| IsSpaceOccupiedNPC(tempPos, g_flSlenderMins[iBossIndex], g_flSlenderMaxs[iBossIndex], EntRefToEntIndex(g_iSlender[iBossIndex]))
+				|| (!bProxy && IsSpaceOccupiedNPC(tempPos, g_flSlenderMins[iBossIndex], g_flSlenderMaxs[iBossIndex], EntRefToEntIndex(g_iSlender[iBossIndex])))
 				|| (flHitNormal[0] >= 0.0 && flHitNormal[0] < 45.0)
 				|| (flHitNormal[0] < 0.0 && flHitNormal[0] > -45.0))
 			{

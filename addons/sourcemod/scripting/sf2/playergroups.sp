@@ -716,7 +716,7 @@ SendPlayerGroupInvitation(client, iGroupID, iInviter=-1)
 		new Float:flNextInviteTime = GetPlayerGroupInvitedPlayerTime(iGroupIndex, client) + (20.0 * GetPlayerGroupInvitedPlayerCount(iGroupIndex, client));
 		if (GetGameTime() < flNextInviteTime)
 		{
-			CPrintToChat(iInviter, "%T", "SF2 No Group Invite Spam", iInviter, RoundFloat(GetGameTime() - flNextInviteTime), sName);
+			CPrintToChat(iInviter, "%T", "SF2 No Group Invite Spam", iInviter, RoundFloat(flNextInviteTime - GetGameTime()), sName);
 			return;
 		}
 	}
