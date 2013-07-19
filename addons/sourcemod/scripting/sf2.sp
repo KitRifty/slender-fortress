@@ -4,10 +4,7 @@
 #include <clientprefs>
 #include <steamtools>
 #include <tf2items>
-
-#undef REQUIRE_EXTENSIONS
 #include <dhooks>
-#define REQUIRE_EXTENSIONS
 
 #include <tf2_stocks>
 #include <morecolors>
@@ -83,7 +80,6 @@ new g_offsFogCtrlEnd = -1;
 new g_iParticleCriticalHit = -1;
 
 new bool:g_bEnabled;
-new bool:g_bDHooks;
 
 new Handle:g_hConfig;
 new Handle:g_hRestrictedWeaponsConfig;
@@ -826,26 +822,8 @@ public OnPluginStart()
 
 public OnAllPluginsLoaded()
 {
-#if defined _dhooks_included
-	g_bDHooks = LibraryExists("dhooks");
-#endif
-	
 	SetupSDK();
 }
-
-#if defined _dhooks_included
-
-public OnLibraryAdded(const String:name[])
-{
-	if (StrEqual(name, "dhooks")) g_bDHooks = true;
-}
-
-public OnLibraryRemoved(const String:name[])
-{
-	if (StrEqual(name, "dhooks")) g_bDHooks = false;
-}
-
-#endif
 
 SetupSDK()
 {
@@ -881,27 +859,16 @@ SetupSDK()
 		SetFailState("Failed to retrieve FlashlightTurnOff offset from SF2 gamedata!");
 	}
 	
-#if defined _dhooks_included
-	if (g_bDHooks)
+	new iOffset = GameConfGetOffset(hConfig, "WantsLagCompensationOnEntity"); 
+	g_hSDKWantsLagCompensationOnEntity = DHookCreate(iOffset, HookType_Entity, ReturnType_Bool, ThisPointer_CBaseEntity, Hook_ClientWantsLagCompensationOnEntity); 
+	if (g_hSDKWantsLagCompensationOnEntity == INVALID_HANDLE)
 	{
-		LogMessage("DHooks extension detected! Setting up additional features!");
-		
-		new iOffset = GameConfGetOffset(hConfig, "WantsLagCompensationOnEntity"); 
-		g_hSDKWantsLagCompensationOnEntity = DHookCreate(iOffset, HookType_Entity, ReturnType_Bool, ThisPointer_CBaseEntity, Hook_ClientWantsLagCompensationOnEntity); 
-		if (g_hSDKWantsLagCompensationOnEntity == INVALID_HANDLE)
-		{
-			SetFailState("Failed to hook onto WantsLagCompensationOnEntity offset from SF2 gamedata!");
-		}
-		
-		DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_CBaseEntity);
-		DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_ObjectPtr);
-		DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_Unknown);
+		SetFailState("Failed to hook onto WantsLagCompensationOnEntity offset from SF2 gamedata!");
 	}
-	else
-	{
-		LogMessage("DHooks extension not detected! Some features may not be available.");
-	}
-#endif
+	
+	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_CBaseEntity);
+	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_ObjectPtr);
+	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_Unknown);
 	
 	CloseHandle(hConfig);
 }
@@ -3019,9 +2986,7 @@ public OnClientPutInServer(client)
 	SDKHook(client, SDKHook_SetTransmit, Hook_ClientSetTransmit);
 	SDKHook(client, SDKHook_OnTakeDamage, Hook_ClientOnTakeDamage);
 	
-#if defined _dhooks_included
-	if (g_bDHooks) DHookEntity(g_hSDKWantsLagCompensationOnEntity, true, client); 
-#endif
+	DHookEntity(g_hSDKWantsLagCompensationOnEntity, true, client); 
 	
 	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
 	{

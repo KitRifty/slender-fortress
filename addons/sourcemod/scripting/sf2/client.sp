@@ -53,18 +53,13 @@ static String:g_strPlayerLagCompensationWeapons[][] =
 	"tf_weapon_sniperrifle_decap"
 };
 
-#if defined _dhooks_included
-
 public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, Handle:hParams)
 {
 	if (!g_bEnabled || IsFakeClient(this)) return MRES_Ignored;
 	
-	// Lag compensation for EVERY PLAYER!
 	DHookSetReturn(hReturn, true);
 	return MRES_Supercede;
 }
-
-#endif
 
 ClientResetHints(client)
 {
