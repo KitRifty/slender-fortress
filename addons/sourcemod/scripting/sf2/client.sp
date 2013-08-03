@@ -2422,7 +2422,7 @@ ClientActivateUltravision(client)
 {
 	ClientDeactivateUltravision(client);
 	
-	if (!IsClientInGame(client)) return;
+	if (!IsClientInGame(client) || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) return;
 	
 	new ent = CreateEntityByName("light_dynamic");
 	if (ent == -1) return;
@@ -2676,7 +2676,6 @@ stock ClientResetPvP(client)
 #endif
 
 	ClientDisablePvP(client);
-	g_bPlayerInPvPTrigger[client] = false;
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetPvP(%d)", client);

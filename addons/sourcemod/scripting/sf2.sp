@@ -503,10 +503,10 @@ public OnPluginStart()
 	
 	// Get offsets.
 	g_offsPlayerFOV = FindSendPropInfo("CBasePlayer", "m_iFOV");
-	if (g_offsPlayerFOV == -1) SetFailState("Couldn't find CBasePlayer offset for m_iFOV. Plugin disabled!");
+	if (g_offsPlayerFOV == -1) SetFailState("Couldn't find CBasePlayer offset for m_iFOV.");
 	
 	g_offsPlayerDefaultFOV = FindSendPropInfo("CBasePlayer", "m_iDefaultFOV");
-	if (g_offsPlayerDefaultFOV == -1) SetFailState("Couldn't find CBasePlayer offset for m_iDefaultFOV. Plugin disabled!");
+	if (g_offsPlayerDefaultFOV == -1) SetFailState("Couldn't find CBasePlayer offset for m_iDefaultFOV.");
 	
 	g_offsPlayerFogCtrl = FindSendPropInfo("CBasePlayer", "m_PlayerFog.m_hCtrl");
 	if (g_offsPlayerFogCtrl == -1) LogError("Couldn't find CBasePlayer offset for m_PlayerFog.m_hCtrl!");
@@ -779,7 +779,7 @@ public OnPluginStart()
 	StrCat(buffer, sizeof(buffer), PLUGIN_VERSION);
 	StrCat(buffer, sizeof(buffer), "\n \n");
 	StrCat(buffer, sizeof(buffer), "Mammoth Mogul - for being a GREAT test subject\n");
-	StrCat(buffer, sizeof(buffer), "Discord - getting the first server to run this mod\n");
+	StrCat(buffer, sizeof(buffer), "Egosins - getting the first server to run this mod\n");
 	StrCat(buffer, sizeof(buffer), "Somberguy - suggestions and support\n");
 	StrCat(buffer, sizeof(buffer), "Voonyl - materials, maps, and other great stuff\n");
 	StrCat(buffer, sizeof(buffer), "Narry Gewman - imported Slender Man model that has tentacles\n");
@@ -793,7 +793,7 @@ public OnPluginStart()
 	g_hMenuCredits2 = CreateMenu(Menu_Credits2);
 	
 	Format(buffer, sizeof(buffer), "%tCredits\n \n", "SF2 Prefix");
-	StrCat(buffer, sizeof(buffer), "And to all the peeps who beta-tested this thing!\n \n");
+	StrCat(buffer, sizeof(buffer), "And to all the peeps who alpha-tested this thing!\n \n");
 	StrCat(buffer, sizeof(buffer), "Tofu\n");
 	StrCat(buffer, sizeof(buffer), "Ace-Dashie\n");
 	StrCat(buffer, sizeof(buffer), "Hobbes\n");
@@ -1676,7 +1676,12 @@ public Action:Command_GroupName(client, args)
 	GetPlayerGroupName(iGroupIndex, sOldGroupName, sizeof(sOldGroupName));
 	SetPlayerGroupName(iGroupIndex, sGroupName);
 	
-	CPrintToChat(client, "%T", "SF2 Group Name Set", client, sOldGroupName, sGroupName);
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsValidClient(i)) continue;
+		if (ClientGetPlayerGroup(i) != iGroupIndex) continue;
+		CPrintToChat(i, "%T", "SF2 Group Name Set", i, sOldGroupName, sGroupName);
+	}
 	
 	return Plugin_Handled;
 }
@@ -3251,8 +3256,7 @@ public Hook_TriggerOnStartTouch(const String:output[], caller, activator, Float:
 			}
 		}
 	}
-	else if (!StrContains(sName, "sf2_pvp_trigger", false) ||
-		!StrContains(sName, "slender_pvp_trigger", false))
+	else if (!StrContains(sName, "sf2_pvp_trigger", false))
 	{
 		if (IsValidClient(activator) && IsPlayerAlive(activator))
 		{
@@ -3268,10 +3272,9 @@ public Hook_TriggerOnEndTouch(const String:sOutput[], caller, activator, Float:f
 
 	decl String:sName[64];
 	GetEntPropString(caller, Prop_Data, "m_iName", sName, sizeof(sName));
-	if (!StrContains(sName, "sf2_pvp_trigger", false) ||
-		!StrContains(sName, "slender_pvp_trigger", false))
+	if (!StrContains(sName, "sf2_pvp_trigger", false))
 	{
-		if (activator > 0 && activator <= MaxClients && IsClientInGame(activator))
+		if (IsValidClient(activator))
 		{
 			g_bPlayerInPvPTrigger[activator] = false;
 			
@@ -3479,11 +3482,34 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	new Float:flPlayerDists[MAXPLAYERS + 1];
 	
 	new bool:bAttackEliminated = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
+	new bool:bInFlashlight = false;
+	
+	decl Float:flTempPos[3], Float:flTempAng[3];
 	
 	// Get a new target that we can change to just in case we need to.
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerDeathCam[i] || (!bAttackEliminated && g_bPlayerEliminated[i]) || g_bPlayerGhostMode[i] || g_bPlayerEscaped[i]) continue;
+		
+		if (g_bPlayerFlashlight[i])
+		{
+			decl Float:flEndPos[3];
+			
+			GetClientEyePosition(i, flTempPos);
+			GetClientEyeAngles(i, flTempAng);
+			new Handle:hTrace = TR_TraceRayFilterEx(flTempPos, flTempAng, MASK_PLAYERSOLID, RayType_Infinite, TraceRayDontHitEntity, i);
+			new iHitIndex = TR_GetEntityIndex(hTrace);
+			TR_GetEndPosition(flEndPos, hTrace);
+			CloseHandle(hTrace);
+			
+			if (iHitIndex == slender)
+			{
+				if (GetVectorDistance(flTempPos, flEndPos) <= SF2_FLASHLIGHT_LENGTH)
+				{
+					bInFlashlight = true;
+				}
+			}
+		}
 		
 		if (!PlayerCanSeeSlender(i, iBossIndex, false, false, !bAttackEliminated)) continue;
 		
@@ -3524,6 +3550,14 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 		g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flBuffer[0];
 		g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flBuffer[1];
 		g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flBuffer[2];
+	}
+	
+	if (bInFlashlight)
+	{
+		if (g_iSlenderHealthUntilStun[iBossIndex] > 0)
+		{
+			g_iSlenderHealthUntilStun[iBossIndex] -= GetProfileNum(g_strSlenderProfile[iBossIndex], "stun_damage_flashlight");
+		}
 	}
 	
 	if (IsValidClient(iNewTarget))
