@@ -4458,32 +4458,48 @@ bool:IsWeaponRestricted(TFClassType:iClass, iItemDef)
 {
 	if (g_hRestrictedWeaponsConfig == INVALID_HANDLE) return false;
 	
+	new bool:bReturn = false;
+	
+	decl String:sItemDef[32];
+	IntToString(iItemDef, sItemDef, sizeof(sItemDef));
+	
+	KvRewind(g_hRestrictedWeaponsConfig);
+	if (KvJumpToKey(g_hRestrictedWeaponsConfig, "all"))
+	{
+		bReturn = bool:KvGetNum(g_hRestrictedWeaponsConfig, sItemDef);
+	}
+	
+	new bool:bFoundSection = false;
 	KvRewind(g_hRestrictedWeaponsConfig);
 	
 	switch (iClass)
 	{
-		case TFClass_Scout: KvJumpToKey(g_hRestrictedWeaponsConfig, "scout");
-		case TFClass_Soldier: KvJumpToKey(g_hRestrictedWeaponsConfig, "soldier");
-		case TFClass_Sniper: KvJumpToKey(g_hRestrictedWeaponsConfig, "sniper");
-		case TFClass_DemoMan: KvJumpToKey(g_hRestrictedWeaponsConfig, "demoman");
+		case TFClass_Scout: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "scout");
+		case TFClass_Soldier: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "soldier");
+		case TFClass_Sniper: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "sniper");
+		case TFClass_DemoMan: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "demoman");
 		case TFClass_Heavy: 
 		{
-			if (!KvJumpToKey(g_hRestrictedWeaponsConfig, "heavy"))
+			bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "heavy");
+		
+			if (!bFoundSection)
 			{
 				KvRewind(g_hRestrictedWeaponsConfig);
-				KvJumpToKey(g_hRestrictedWeaponsConfig, "heavyweapons")
+				bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "heavyweapons");
 			}
 		}
-		case TFClass_Medic: KvJumpToKey(g_hRestrictedWeaponsConfig, "medic");
-		case TFClass_Spy: KvJumpToKey(g_hRestrictedWeaponsConfig, "spy");
-		case TFClass_Pyro: KvJumpToKey(g_hRestrictedWeaponsConfig, "pyro");
-		case TFClass_Engineer: KvJumpToKey(g_hRestrictedWeaponsConfig, "engineer");
-		default: return false;
+		case TFClass_Medic: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "medic");
+		case TFClass_Spy: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "spy");
+		case TFClass_Pyro: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "pyro");
+		case TFClass_Engineer: bFoundSection = KvJumpToKey(g_hRestrictedWeaponsConfig, "engineer");
 	}
 	
-	decl String:sItemDef[32];
-	IntToString(iItemDef, sItemDef, sizeof(sItemDef));
-	return bool:KvGetNum(g_hRestrictedWeaponsConfig, sItemDef);
+	if (bFoundSection)
+	{
+		bReturn = bool:KvGetNum(g_hRestrictedWeaponsConfig, sItemDef);
+	}
+	
+	return bReturn;
 }
 
 public Action:Timer_RespawnPlayer(Handle:timer, any:userid)
