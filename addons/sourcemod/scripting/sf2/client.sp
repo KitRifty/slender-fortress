@@ -1396,6 +1396,11 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 			AcceptEntityInput(ent, "SetParentAttachment");
 		}
 		
+		iFlags = GetEdictFlags(ent);
+		if (!(iFlags & FL_EDICT_ALWAYS)) iFlags |= FL_EDICT_ALWAYS;
+		if (!(iFlags & FL_EDICT_FULLCHECK)) iFlags |= FL_EDICT_FULLCHECK;
+		SetEdictFlags(ent, iFlags);
+		
 		g_iPlayerProxyGlowEntity[client] = EntIndexToEntRef(ent);
 		
 		SDKHook(ent, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
