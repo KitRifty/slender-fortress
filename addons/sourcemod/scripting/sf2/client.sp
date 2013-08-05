@@ -1397,7 +1397,7 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 		}
 		
 		iFlags = GetEdictFlags(ent);
-		if (!(iFlags & FL_EDICT_ALWAYS)) iFlags |= FL_EDICT_ALWAYS;
+		if (iFlags & FL_EDICT_PVSCHECK) iFlags &= ~FL_EDICT_PVSCHECK;
 		if (!(iFlags & FL_EDICT_FULLCHECK)) iFlags |= FL_EDICT_FULLCHECK;
 		SetEdictFlags(ent, iFlags);
 		
@@ -4501,7 +4501,7 @@ bool:IsWeaponRestricted(TFClassType:iClass, iItemDef)
 	
 	if (bFoundSection)
 	{
-		bReturn = bool:KvGetNum(g_hRestrictedWeaponsConfig, sItemDef);
+		bReturn = bool:KvGetNum(g_hRestrictedWeaponsConfig, sItemDef, bReturn);
 	}
 	
 	return bReturn;
