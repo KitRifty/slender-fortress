@@ -1952,6 +1952,7 @@ ClientEnableProxy(client, iBossIndex)
 	ClientDisablePvP(client);
 	ClientStopProxyForce(client);
 	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
+	if (!IsPlayerAlive(client)) TF2_RespawnPlayer(client);
 	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
 	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
 	
