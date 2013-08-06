@@ -2330,6 +2330,7 @@ ClientEnableGhostMode(client)
 	
 	// Set first observer target.
 	ClientGhostModeNextTarget(client);
+	ClientActivateUltravision(client);
 }
 
 ClientDisableGhostMode(client)
