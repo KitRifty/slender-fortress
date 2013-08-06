@@ -826,4 +826,25 @@
 		"#format"	"{1:s}"
 		"en"	"Are you sure you want to leave the {1} group?"
 	}
+	
+	"SF2 Proxy Ask Menu Title"
+	{
+		"en"	"You have been chosen to become a Proxy!"
+	}
+	
+	"SF2 Proxy Ask Menu Description"
+	{
+		"en"	"As a Proxy, your goal is to kill the RED team. You\nwill be teleported near a RED player's position\nonce you accept. In addition, Proxies are able to\nsee the RED team outlines through walls, so you can\nlaunch surprise attacks if need be. However, your\nlife is dependent on your Control meter, therefore\nit will not last forever.\n \nDo you accept?"
+	}
+	
+	"SF2 Too Many Proxies"
+	{
+		"en"	"Sorry, but there are too many Proxies currently in game at the moment."
+	}
+	
+	"SF2 Proxy Force Message"
+	{
+		"#format"	"{1:d}"
+		"en"	"You've been chosen to be a Proxy!\nYou will be teleported to the RED area in {1} second(s)."
+	}
 }

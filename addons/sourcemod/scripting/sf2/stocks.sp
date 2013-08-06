@@ -34,6 +34,8 @@
 #define COLLISION_GROUP_DEBRIS 1
 #define COLLISION_GROUP_PLAYER 5
 
+#define EFL_FORCE_CHECK_TRANSMIT (1 << 7)
+
 stock ForceTeamWin(team)
 {
 	new ent = FindEntityByClassname(-1, "team_control_point_master");

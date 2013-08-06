@@ -17,7 +17,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.1.7 Beta"
+#define PLUGIN_VERSION "0.1.8 Beta"
 
 public Plugin:myinfo = 
 {
@@ -249,12 +249,19 @@ new Float:g_flPlayerLastScareFromBoss[MAXPLAYERS + 1][MAX_BOSSES];
 
 // Proxy data.
 new bool:g_bPlayerProxy[MAXPLAYERS + 1];
+new bool:g_bPlayerProxyAvailable[MAXPLAYERS + 1];
+new Handle:g_hPlayerProxyAvailableTimer[MAXPLAYERS + 1];
+new bool:g_bPlayerProxyAvailableInForce[MAXPLAYERS + 1];
+new g_iPlayerProxyAvailableCount[MAXPLAYERS + 1];
 new g_iPlayerProxyMaster[MAXPLAYERS + 1];
 new g_iPlayerProxyControl[MAXPLAYERS + 1];
 new g_iPlayerProxyGlowEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+new bool:g_bPlayerHasProxyGlow[MAXPLAYERS + 1] = { false, ... };
 new Handle:g_hPlayerProxyControlTimer[MAXPLAYERS + 1];
 new Float:g_flPlayerProxyControlRate[MAXPLAYERS + 1];
 new Handle:g_flPlayerProxyVoiceTimer[MAXPLAYERS + 1];
+new g_iPlayerProxyAskMaster[MAXPLAYERS + 1] = { -1, ... };
+new Float:g_iPlayerProxyAskPosition[MAXPLAYERS + 1][3];
 
 new bool:g_bPlayerWantsTheP[MAXPLAYERS + 1];
 
@@ -355,6 +362,8 @@ new Handle:g_cvWarmupRound;
 new Handle:g_cvPlayerViewBobHurtEnabled;
 new Handle:g_cvPlayerViewBobSprintEnabled;
 new Handle:g_cvPlayerFakeLagCompensation;
+new Handle:g_cvPlayerProxyWaitTime;
+new Handle:g_cvPlayerProxyAsk;
 
 #if defined DEBUG
 new Handle:g_cvDebugDetail;
@@ -400,6 +409,7 @@ new Handle:fOnClientStartDeathCam;
 new Handle:fOnClientEndDeathCam;
 new Handle:fOnClientGetDefaultWalkSpeed;
 new Handle:fOnClientGetDefaultSprintSpeed;
+new Handle:fOnClientSpawnedAsProxy;
 new Handle:fOnGroupGiveQueuePoints;
 
 new Handle:g_hSDKWeaponScattergun;
@@ -466,6 +476,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	fOnClientEndDeathCam = CreateGlobalForward("SF2_OnClientEndDeathCam", ET_Ignore, Param_Cell, Param_Cell);
 	fOnClientGetDefaultWalkSpeed = CreateGlobalForward("SF2_OnClientGetDefaultWalkSpeed", ET_Hook, Param_Cell, Param_CellByRef);
 	fOnClientGetDefaultSprintSpeed = CreateGlobalForward("SF2_OnClientGetDefaultSprintSpeed", ET_Hook, Param_Cell, Param_CellByRef);
+	fOnClientSpawnedAsProxy = CreateGlobalForward("SF2_OnClientSpawnedAsProxy", ET_Ignore, Param_Cell);
 	fOnGroupGiveQueuePoints = CreateGlobalForward("SF2_OnGroupGiveQueuePoints", ET_Hook, Param_Cell, Param_CellByRef);
 	
 	CreateNative("SF2_IsRunning", Native_IsRunning);
@@ -588,6 +599,9 @@ public OnPluginStart()
 	g_cvPvPArenaLeaveTime = CreateConVar("sf2_player_pvparena_leavetime", "3");
 	
 	g_cvWarmupRound = CreateConVar("sf2_warmupround", "1");
+	
+	g_cvPlayerProxyWaitTime = CreateConVar("sf2_player_proxy_waittime", "35", "How long (in seconds) after a player was chosen to be a Proxy must the system wait before choosing him again.");
+	g_cvPlayerProxyAsk = CreateConVar("sf2_player_proxy_ask", "0", "Set to 1 if the player can choose before becoming a Proxy, set to 0 to force.");
 	
 	// Register console commands.
 	RegConsoleCmd("sm_sf2", Command_MainMenu);
@@ -1705,7 +1719,7 @@ public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 public Action:Hook_CommandActionSlotItemOn(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
+	if (g_bPlayerGhostMode[client] || g_bPlayerProxy[client]) return Plugin_Handled;
 	
 	if (IsPlayerAlive(client))
 	{
@@ -2056,14 +2070,14 @@ public Action:Command_ForceProxy(client, args)
 		
 		decl Float:flNewPos[3];
 		
-		if (!SlenderCalculateNewPlace(iBossIndex, flNewPos, true, true)) 
+		if (!SlenderCalculateNewPlace(iBossIndex, flNewPos, true, true, client)) 
 		{
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Player No Place For Proxy", client, sName);
 			continue;
 		}
 		
 		ClientEnableProxy(iTarget, iBossIndex);
-		TeleportEntity(iTarget, flNewPos, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(iTarget, flNewPos, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
 		
 		LogAction(client, iTarget, "%N forced %N to be a Proxy!", client, iTarget);
 	}
@@ -2441,7 +2455,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 				if (g_bPlayerProxy[iClient]) continue;
 				
-				if (!g_bPlayerWantsTheP[iClient]) continue;
+				if (!g_bPlayerWantsTheP[iClient] || !g_bPlayerProxyAvailable[iClient] || g_bPlayerProxyAvailableInForce[iClient]) continue;
 				
 				if (!IsClientParticipating(iClient)) continue;
 				
@@ -2463,15 +2477,20 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			
 			SortADTArray(hAvailableProxies, Sort_Random, Sort_Integer);
 			
+			decl Float:flNewPos[3];
 			for (new iNum = 0; iNum < iSpawnNum && iNum < iAvailableProxies; iNum++)
 			{
-				decl Float:flNewPos[3];
-				if (!SlenderCalculateNewPlace(i, flNewPos, true, true)) break;
-				
 				new iClient = GetArrayCell(hAvailableProxies, iNum);
-				ClientEnableProxy(iClient, i);
+				if (!SlenderCalculateNewPlace(i, flNewPos, true, true, iClient)) break;
 				
-				TeleportEntity(iClient, flNewPos, NULL_VECTOR, NULL_VECTOR);
+				if (!GetConVarBool(g_cvPlayerProxyAsk))
+				{
+					ClientStartProxyForce(iClient, g_iSlenderID[i], flNewPos);
+				}
+				else
+				{
+					DisplayProxyAskMenu(iClient, g_iSlenderID[i], flNewPos);
+				}
 			}
 		}
 		
@@ -3002,6 +3021,8 @@ public OnClientPutInServer(client)
 		SetPlayerGroupInvitedPlayerTime(i, client, 0.0);
 	}
 	
+	ClientStartProxyAvailableTimer(client);
+	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END OnClientPutInServer(%d)", client);
 #endif
@@ -3159,6 +3180,7 @@ public OnClientDisconnect(client)
 	ClientDeactivateUltravision(client);
 	ClientDisableGhostMode(client);
 	ClientResetGlow(client);
+	ClientStopProxyForce(client);
 	
 	if (!g_bRoundWarmup)
 	{
@@ -5574,7 +5596,7 @@ public Action:Timer_SlenderTeleport(Handle:timer, any:iBossIndex)
 			if (!g_bRoundEnded && 
 				flPercent > 0.0 && 
 				(GetRandomFloat(flMin, flMax)) > (GetProfileFloat(g_strSlenderProfile[iBossIndex], "appear_chance_threshold") * (1.0 - flPercent)) && 
-				SlenderCalculateNewPlace(iBossIndex, flNewPos, _, _, iBestPlayer))
+				SlenderCalculateNewPlace(iBossIndex, flNewPos, _, _, _, iBestPlayer))
 			{
 				g_iSlenderSpawnedForPlayer[iBossIndex] = iBestPlayer;
 				SpawnSlender(iBossIndex, flNewPos);
@@ -5730,22 +5752,25 @@ DisplayQueuePointsMenu(client)
 	new Handle:menu = CreateMenu(Menu_QueuePoints);
 	new Handle:hQueueList = GetQueueList();
 	
-	decl String:buffer[256];
+	decl String:sBuffer[256];
 	
 	if (GetArraySize(hQueueList))
 	{
-		Format(buffer, sizeof(buffer), "%T\n \n", "SF2 Reset Queue Points Option", client, g_iPlayerQueuePoints[client]);
-		AddMenuItem(menu, "ponyponypony", buffer);
+		Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Reset Queue Points Option", client, g_iPlayerQueuePoints[client]);
+		AddMenuItem(menu, "ponyponypony", sBuffer);
 		
 		decl iIndex, String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
+		decl String:sInfo[256];
 		
 		for (new i = 0, iSize = GetArraySize(hQueueList); i < iSize; i++)
 		{
 			if (!GetArrayCell(hQueueList, i, 2))
 			{
 				iIndex = GetArrayCell(hQueueList, i);
-				Format(buffer, sizeof(buffer), "%N - %d", iIndex, g_iPlayerQueuePoints[iIndex]);
-				AddMenuItem(menu, "player", buffer, g_bPlayerPlaying[iIndex] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+				
+				Format(sBuffer, sizeof(sBuffer), "%N - %d", iIndex, g_iPlayerQueuePoints[iIndex]);
+				Format(sInfo, sizeof(sInfo), "player_%d", GetClientUserId(iIndex));
+				AddMenuItem(menu, sInfo, sBuffer, g_bPlayerPlaying[iIndex] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
 			}
 			else
 			{
@@ -5753,8 +5778,10 @@ DisplayQueuePointsMenu(client)
 				if (GetPlayerGroupMemberCount(iIndex) > 1)
 				{
 					GetPlayerGroupName(iIndex, sGroupName, sizeof(sGroupName));
-					Format(buffer, sizeof(buffer), "%s - %d", sGroupName, GetPlayerGroupQueuePoints(iIndex));
-					AddMenuItem(menu, "group", buffer, IsPlayerGroupPlaying(iIndex) ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+					
+					Format(sBuffer, sizeof(sBuffer), "[GROUP] %s - %d", sGroupName, GetPlayerGroupQueuePoints(iIndex));
+					Format(sInfo, sizeof(sInfo), "group_%d", iIndex);
+					AddMenuItem(menu, sInfo, sBuffer, IsPlayerGroupPlaying(iIndex) ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
 				}
 				else
 				{
@@ -5763,8 +5790,9 @@ DisplayQueuePointsMenu(client)
 						if (!IsValidClient(iClient)) continue;
 						if (ClientGetPlayerGroup(iClient) == iIndex)
 						{
-							Format(buffer, sizeof(buffer), "%N - %d", iClient, g_iPlayerQueuePoints[iClient]);
-							AddMenuItem(menu, "player", buffer, g_bPlayerPlaying[iClient] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
+							Format(sBuffer, sizeof(sBuffer), "%N - %d", iClient, g_iPlayerQueuePoints[iClient]);
+							Format(sInfo, sizeof(sInfo), "player_%d", GetClientUserId(iClient));
+							AddMenuItem(menu, "player", sBuffer, g_bPlayerPlaying[iClient] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
 							break;
 						}
 					}
@@ -5775,9 +5803,77 @@ DisplayQueuePointsMenu(client)
 	
 	CloseHandle(hQueueList);
 	
-	SetMenuTitle(menu, "%t%T", "SF2 Prefix", "SF2 Queue Menu Title", client);
+	SetMenuTitle(menu, "%t%T\n \n", "SF2 Prefix", "SF2 Queue Menu Title", client);
 	SetMenuExitBackButton(menu, true);
 	DisplayMenu(menu, client, MENU_TIME_FOREVER);
+}
+
+DisplayViewGroupMembersQueueMenu(client, iGroupIndex)
+{
+	if (!IsPlayerGroupActive(iGroupIndex))
+	{
+		// The group isn't valid anymore. Take him back to the main menu.
+		DisplayQueuePointsMenu(client);
+		CPrintToChat(client, "%T", "SF2 Group Does Not Exist", client);
+		return;
+	}
+	
+	new Handle:hPlayers = CreateArray();
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsValidClient(i)) continue;
+		
+		new iTempGroup = ClientGetPlayerGroup(i);
+		if (!IsPlayerGroupActive(iTempGroup) || iTempGroup != iGroupIndex) continue;
+		
+		PushArrayCell(hPlayers, i);
+	}
+	
+	new iPlayerCount = GetArraySize(hPlayers);
+	if (iPlayerCount)
+	{
+		decl String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
+		GetPlayerGroupName(iGroupIndex, sGroupName, sizeof(sGroupName));
+		
+		new Handle:hMenu = CreateMenu(Menu_ViewGroupMembersQueue);
+		SetMenuTitle(hMenu, "%t%T (%s)\n \n", "SF2 Prefix", "SF2 View Group Members Menu Title", client, sGroupName);
+		
+		decl String:sUserId[32];
+		decl String:sName[MAX_NAME_LENGTH * 2];
+		
+		for (new i = 0; i < iPlayerCount; i++)
+		{
+			new iClient = GetArrayCell(hPlayers, i);
+			IntToString(GetClientUserId(iClient), sUserId, sizeof(sUserId));
+			GetClientName(iClient, sName, sizeof(sName));
+			if (GetPlayerGroupLeader(iGroupIndex) == iClient) StrCat(sName, sizeof(sName), " (LEADER)");
+			
+			AddMenuItem(hMenu, sUserId, sName);
+		}
+		
+		SetMenuExitBackButton(hMenu, true);
+		DisplayMenu(hMenu, client, MENU_TIME_FOREVER);
+	}
+	else
+	{
+		// No players!
+		DisplayQueuePointsMenu(client);
+	}
+	
+	CloseHandle(hPlayers);
+}
+
+public Menu_ViewGroupMembersQueue(Handle:menu, MenuAction:action, param1, param2)
+{
+	switch (action)
+	{
+		case MenuAction_End: CloseHandle(menu);
+		case MenuAction_Select: DisplayQueuePointsMenu(param1);
+		case MenuAction_Cancel:
+		{
+			if (param2 == MenuCancel_ExitBack) DisplayQueuePointsMenu(param1);
+		}
+	}
 }
 
 DisplayResetQueuePointsMenu(client)
@@ -5799,15 +5895,19 @@ public Menu_QueuePoints(Handle:menu, MenuAction:action, param1, param2)
 	{
 		case MenuAction_Select:
 		{
-			new String:item[64];
-			GetMenuItem(menu, param2, item, sizeof(item));
+			new String:sInfo[64];
+			GetMenuItem(menu, param2, sInfo, sizeof(sInfo));
 			
-			if (StrEqual(item, "ponyponypony")) DisplayResetQueuePointsMenu(param1);
-			else if (StrEqual(item, "player"))
+			if (StrEqual(sInfo, "ponyponypony")) DisplayResetQueuePointsMenu(param1);
+			else if (!StrContains(sInfo, "player_"))
 			{
 			}
-			else if (StrEqual(item, "group"))
+			else if (!StrContains(sInfo, "group_"))
 			{
+				decl String:sIndex[64];
+				strcopy(sIndex, sizeof(sIndex), sInfo);
+				ReplaceString(sIndex, sizeof(sIndex), "group_", "");
+				DisplayViewGroupMembersQueueMenu(param1, StringToInt(sIndex));
 			}
 		}
 		case MenuAction_Cancel:

@@ -1335,75 +1335,82 @@ public Action:Hook_GlowSetTransmit(ent, other)
 
 ClientResetProxyGlow(client)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetProxyGlow(%d)", client);
-#endif
-
 	ClientRemoveProxyGlow(client);
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetProxyGlow(%d)", client);
-#endif
 }
 
 ClientRemoveProxyGlow(client)
 {
-	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
-	g_iPlayerProxyGlowEntity[client] = INVALID_ENT_REFERENCE;
-	if (iGlow && iGlow != INVALID_ENT_REFERENCE)
+	if (!g_bPlayerHasProxyGlow[client]) return;
+	
+	g_bPlayerHasProxyGlow[client] = false;
+	
+	if (IsClientInGame(client))
 	{
-		AcceptEntityInput(iGlow, "Kill");
+		new iFlags = GetEdictFlags(client);
+		if (iFlags & FL_EDICT_ALWAYS) iFlags &= ~FL_EDICT_ALWAYS;
+		SetEdictFlags(client, iFlags);
 	}
+
+	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
+	if (iGlow && iGlow != INVALID_ENT_REFERENCE) AcceptEntityInput(iGlow, "Kill");
+	
+	g_iPlayerProxyGlowEntity[client] = INVALID_ENT_REFERENCE;
 }
 
 bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 {
 	ClientRemoveProxyGlow(client);
 	
+	g_bPlayerHasProxyGlow[client] = true;
+	
+	// Set edict flags so that the glow will appear for Proxies anywhere.
+	new iFlags = GetEdictFlags(client);
+	if (!(iFlags & FL_EDICT_ALWAYS)) iFlags |= FL_EDICT_ALWAYS;
+	SetEdictFlags(client, iFlags);
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
 	GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
 	
 	if (!sBuffer[0]) return false;
 	
-	new ent = CreateEntityByName("simple_bot");
-	if (ent != -1)
+	new iGlow = CreateEntityByName("simple_bot");
+	if (iGlow != -1)
 	{
-		DispatchSpawn(ent);
-		ActivateEntity(ent);
-		SetEntityModel(ent, sBuffer);
-		SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
-		SetEntityRenderColor(ent, 0, 0, 0, 1);
-		SetEntProp(ent, Prop_Data, "m_takedamage", 0);
-		SetEntProp(ent, Prop_Send, "m_bGlowEnabled", 1);
-		SetEntPropFloat(ent, Prop_Send, "m_flModelScale", GetEntPropFloat(client, Prop_Send, "m_flModelScale"));
+		new Float:flModelScale = GetEntPropFloat(client, Prop_Send, "m_flModelScale");
+		
+		DispatchSpawn(iGlow);
+		ActivateEntity(iGlow);
+		SetEntityMoveType(iGlow, MOVETYPE_NONE);
+		SetEntityModel(iGlow, sBuffer);
+		SetEntityRenderMode(iGlow, RENDER_TRANSCOLOR);
+		SetEntityRenderColor(iGlow, 0, 0, 0, 1);
+		SetEntProp(iGlow, Prop_Data, "m_takedamage", 0);
+		SetEntProp(iGlow, Prop_Send, "m_bGlowEnabled", 1);
+		SetEntPropFloat(iGlow, Prop_Send, "m_flModelScale", flModelScale);
+		
 		// Set solid flags.
-		new iFlags = GetEntProp(ent, Prop_Send, "m_usSolidFlags");
-		if (!(iFlags & 0x0004)) iFlags |= 0x0004; // 	FSOLID_NOT_SOLID
-		if (!(iFlags & 0x0008)) iFlags |= 0x0008; // 	FSOLID_TRIGGER
-		SetEntProp(ent, Prop_Send, "m_usSolidFlags", iFlags);
+		iFlags = GetEntProp(iGlow, Prop_Send, "m_usSolidFlags");
+		if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
+		if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
+		SetEntProp(iGlow, Prop_Send, "m_usSolidFlags", iFlags);
 		
-		iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
-		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // 	EF_BONEMERGE
-		SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
+		// Set effect flags.
+		iFlags = GetEntProp(iGlow, Prop_Send, "m_fEffects");
+		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // EF_BONEMERGE
+		SetEntProp(iGlow, Prop_Send, "m_fEffects", iFlags);
 		
-		SetEntityMoveType(ent, MOVETYPE_NONE);
 		SetVariantString("!activator");
-		AcceptEntityInput(ent, "SetParent", client);
+		AcceptEntityInput(iGlow, "SetParent", client);
 		
 		if (sAttachment[0])
 		{
 			SetVariantString(sAttachment);
-			AcceptEntityInput(ent, "SetParentAttachment");
+			AcceptEntityInput(iGlow, "SetParentAttachment");
 		}
 		
-		iFlags = GetEdictFlags(ent);
-		if (iFlags & FL_EDICT_PVSCHECK) iFlags &= ~FL_EDICT_PVSCHECK;
-		if (!(iFlags & FL_EDICT_FULLCHECK)) iFlags |= FL_EDICT_FULLCHECK;
-		SetEdictFlags(ent, iFlags);
+		g_iPlayerProxyGlowEntity[client] = EntIndexToEntRef(iGlow);
 		
-		g_iPlayerProxyGlowEntity[client] = EntIndexToEntRef(ent);
-		
-		SDKHook(ent, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
+		SDKHook(iGlow, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
 		
 		return true;
 	}
@@ -1739,6 +1746,8 @@ ClientResetProxy(client, bool:bResetFull=true)
 	{
 		if (bOldProxy)
 		{
+			ClientStartProxyAvailableTimer(client);
+		
 			if (bResetFull)
 			{
 				SetVariantString("");
@@ -1749,7 +1758,6 @@ ClientResetProxy(client, bool:bResetFull=true)
 			{
 				ClientStopAllSlenderSounds(client, sOldProfileName, "sound_proxy_spawn", GetProfileNum(sOldProfileName, "sound_proxy_spawn_channel", SNDCHAN_AUTO));
 				ClientStopAllSlenderSounds(client, sOldProfileName, "sound_proxy_hurt", GetProfileNum(sOldProfileName, "sound_proxy_hurt_channel", SNDCHAN_AUTO));
-				//ClientStopAllSlenderSounds(client, sOldProfileName, "sound_proxy_death", GetProfileNum(sOldProfileName, "sound_proxy_death_channel", SNDCHAN_AUTO));
 			}
 		}
 	}
@@ -1776,6 +1784,161 @@ stock TF2_GetClassName(TFClassType:iClass, String:sBuffer[], sBufferLen)
 	}
 }
 
+ClientStartProxyAvailableTimer(client)
+{
+	g_bPlayerProxyAvailable[client] = false;
+	g_hPlayerProxyAvailableTimer[client] = CreateTimer(GetConVarFloat(g_cvPlayerProxyWaitTime), Timer_ClientProxyAvailable, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+}
+
+ClientStartProxyForce(client, iSlenderID, const Float:flPos[3])
+{
+	g_iPlayerProxyAskMaster[client] = iSlenderID;
+	for (new i = 0; i < 3; i++) g_iPlayerProxyAskPosition[client][i] = flPos[i];
+
+	g_iPlayerProxyAvailableCount[client] = 6;
+	g_bPlayerProxyAvailableInForce[client] = true;
+	g_hPlayerProxyAvailableTimer[client] = CreateTimer(1.0, Timer_ClientForceProxy, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hPlayerProxyAvailableTimer[client], true);
+}
+
+ClientStopProxyForce(client)
+{
+	g_iPlayerProxyAvailableCount[client] = 0;
+	g_bPlayerProxyAvailableInForce[client] = false;
+	g_hPlayerProxyAvailableTimer[client] = INVALID_HANDLE;
+}
+
+public Action:Timer_ClientForceProxy(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerProxyAvailableTimer[client]) return Plugin_Stop;
+	
+	if (!g_bRoundEnded)
+	{
+		new iBossIndex = SlenderGetFromID(g_iPlayerProxyAskMaster[client]);
+		if (iBossIndex != -1)
+		{
+			new iMaxProxies = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_max");
+			new iNumProxies;
+			
+			for (new iClient = 1; iClient <= MaxClients; iClient++)
+			{
+				if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
+				if (!g_bPlayerProxy[iClient]) continue;
+				if (g_iPlayerProxyMaster[iClient] != iBossIndex) continue;
+				
+				iNumProxies++;
+			}
+			
+			if (iNumProxies < iMaxProxies)
+			{
+				if (g_iPlayerProxyAvailableCount[client] > 0)
+				{
+					g_iPlayerProxyAvailableCount[client]--;
+					
+					SetHudTextParams(-1.0, 0.25, 
+						1.0,
+						255, 255, 255, 255,
+						_,
+						_,
+						0.25, 1.25);
+					
+					ShowSyncHudText(client, g_hHudSync, "%T", "SF2 Proxy Force Message", client, g_iPlayerProxyAvailableCount[client]);
+					
+					return Plugin_Continue;
+				}
+				else
+				{
+					ClientEnableProxy(client, iBossIndex);
+					TeleportEntity(client, g_iPlayerProxyAskPosition[client], NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
+				}
+			}
+			else
+			{
+				PrintToChat(client, "%T", "SF2 Too Many Proxies", client);
+			}
+		}
+	}
+	
+	ClientStopProxyForce(client);
+	return Plugin_Stop;
+}
+
+DisplayProxyAskMenu(client, iAskMaster, const Float:flPos[3])
+{
+	decl String:sBuffer[512];
+	new Handle:hMenu = CreateMenu(Menu_ProxyAsk);
+	SetMenuTitle(hMenu, "%T\n \n%T\n \n", "SF2 Proxy Ask Menu Title", client, "SF2 Proxy Ask Menu Description", client);
+	
+	Format(sBuffer, sizeof(sBuffer), "%T", "Yes", client);
+	AddMenuItem(hMenu, "1", sBuffer);
+	Format(sBuffer, sizeof(sBuffer), "%T", "No", client);
+	AddMenuItem(hMenu, "0", sBuffer);
+	
+	g_iPlayerProxyAskMaster[client] = iAskMaster;
+	for (new i = 0; i < 3; i++) g_iPlayerProxyAskPosition[client][i] = flPos[i];
+	DisplayMenu(hMenu, client, 15);
+}
+
+public Menu_ProxyAsk(Handle:menu, MenuAction:action, param1, param2)
+{
+	switch (action)
+	{
+		case MenuAction_End: CloseHandle(menu);
+		case MenuAction_Select:
+		{
+			if (!g_bRoundEnded)
+			{
+				new iBossIndex = SlenderGetFromID(g_iPlayerProxyAskMaster[param1]);
+				if (iBossIndex != -1)
+				{
+					new iMaxProxies = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_max");
+					new iNumProxies;
+				
+					for (new iClient = 1; iClient <= MaxClients; iClient++)
+					{
+						if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
+						if (!g_bPlayerProxy[iClient]) continue;
+						if (g_iPlayerProxyMaster[iClient] != iBossIndex) continue;
+						
+						iNumProxies++;
+					}
+					
+					if (iNumProxies < iMaxProxies)
+					{
+						if (param2 == 0)
+						{
+							ClientEnableProxy(param1, iBossIndex);
+							TeleportEntity(param1, g_iPlayerProxyAskPosition[param1], NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
+						}
+						else
+						{
+							ClientStartProxyAvailableTimer(param1);
+						}
+					}
+					else
+					{
+						PrintToChat(param1, "%T", "SF2 Too Many Proxies", param1);
+					}
+				}
+			}
+		}
+	}
+}
+
+public Action:Timer_ClientProxyAvailable(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return;
+	
+	if (timer != g_hPlayerProxyAvailableTimer[client]) return;
+	
+	g_bPlayerProxyAvailable[client] = true;
+	g_hPlayerProxyAvailableTimer[client] = INVALID_HANDLE;
+}
+
 ClientEnableProxy(client, iBossIndex)
 {
 	if (!g_strSlenderProfile[iBossIndex][0]) return;
@@ -1787,6 +1950,7 @@ ClientEnableProxy(client, iBossIndex)
 	
 	ClientDisableGhostMode(client);
 	ClientDisablePvP(client);
+	ClientStopProxyForce(client);
 	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
 	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
 	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
@@ -1796,6 +1960,8 @@ ClientEnableProxy(client, iBossIndex)
 	g_iPlayerProxyControl[client] = 100;
 	g_flPlayerProxyControlRate[client] = GetProfileFloat(sProfile, "proxies_controldrainrate");
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+	g_bPlayerProxyAvailable[client] = false;
+	g_hPlayerProxyAvailableTimer[client] = INVALID_HANDLE;
 	
 	decl String:sAllowedClasses[512];
 	GetProfileString(sProfile, "proxies_classes", sAllowedClasses, sizeof(sAllowedClasses));
@@ -1818,6 +1984,16 @@ ClientEnableProxy(client, iBossIndex)
 			SetEntProp(client, Prop_Send, "m_iHealth", iMaxHealth);
 		}
 	}
+	
+	UTIL_ScreenFade(client, 200, 1, FFADE_IN, 255, 255, 255, 100);
+	PrecacheSound("weapons/teleporter_send.wav");
+	EmitSoundToClient(client, "weapons/teleporter_send.wav", _, SNDCHAN_STATIC);
+	
+	ClientActivateUltravision(client);
+	
+	Call_StartForward(fOnClientSpawnedAsProxy);
+	Call_PushCell(client);
+	Call_Finish();
 }
 
 public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
@@ -2332,7 +2508,7 @@ ClientToggleFlashlight(client)
 	if (g_bPlayerFlashlight[client]) 
 	{
 		ClientDeactivateFlashlight(client);
-		EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_SCREAMING);
+		EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
 		g_flPlayerFlashlightLastEnable[client] = GetGameTime();
 	}
 	else if (!g_bPlayerEliminated[client])
@@ -2345,7 +2521,7 @@ ClientToggleFlashlight(client)
 			bCanUseFlashlight)
 		{
 			ClientActivateFlashlight(client);
-			EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_SCREAMING);
+			EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
 			g_flPlayerFlashlightLastEnable[client] = GetGameTime();
 		}
 		else
@@ -2388,7 +2564,7 @@ public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
 	{
 		g_flPlayerFlashlightMeter[client] = 0.0;
 		g_bPlayerFlashlightBroken[client] = true;
-		EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_SCREAMING);
+		EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
 		ClientDeactivateFlashlight(client);
 		
 		Call_StartForward(fOnClientBreakFlashlight);
@@ -2704,14 +2880,17 @@ public Action:Timer_ClientDisablePvP(Handle:timer, any:userid)
 	
 	g_iPlayerPvPTimerCount[client]--;
 	
-	SetHudTextParams(-1.0, 0.75, 
-		1.0,
-		255, 255, 255, 255,
-		_,
-		_,
-		0.25, 1.25);
-	
-	ShowSyncHudText(client, g_hHudSync, "%T", "SF2 Exiting PvP Arena", client, g_iPlayerPvPTimerCount[client]);
+	if (!g_bPlayerProxyAvailableInForce[client])
+	{
+		SetHudTextParams(-1.0, 0.75, 
+			1.0,
+			255, 255, 255, 255,
+			_,
+			_,
+			0.25, 1.25);
+		
+		ShowSyncHudText(client, g_hHudSync, "%T", "SF2 Exiting PvP Arena", client, g_iPlayerPvPTimerCount[client]);
+	}
 	
 	return Plugin_Continue;
 }
@@ -3022,7 +3201,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 	new iChasingBoss = -1;
 	new iChasingSeeBoss = -1;
 	
-	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client])) 
+	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) 
 	{
 		g_iPlayerMusicFlags[client] = 0;
 		g_iPlayerPageMusicMaster[client] = INVALID_ENT_REFERENCE;

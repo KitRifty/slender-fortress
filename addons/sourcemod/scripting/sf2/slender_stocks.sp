@@ -724,7 +724,7 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 	return true;
 }
 
-bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=false, bool:bProxy=false, &iBestPlayer=-1)
+bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=false, bool:bProxy=false, iProxyPlayer=-1, &iBestPlayer=-1)
 {
 	new Float:flPercent = 0.0;
 	if (g_iPageMax > 0)
@@ -935,6 +935,21 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	decl Handle:hTrace, index, Float:flHitNormal[3];
 	decl Handle:hArray;
 	
+	decl Float:flTargetMins[3], Float:flTargetMaxs[3];
+	if (!bProxy)
+	{
+		for (new i = 0; i < 3; i++)
+		{
+			flTargetMins[i] = g_flSlenderMins[iBossIndex][i];
+			flTargetMaxs[i] = g_flSlenderMaxs[iBossIndex][i];
+		}
+	}
+	else
+	{
+		GetEntPropVector(iProxyPlayer, Prop_Send, "m_vecMins", flTargetMins);
+		GetEntPropVector(iProxyPlayer, Prop_Send, "m_vecMaxs", flTargetMaxs);
+	}
+	
 	for (new i = 0; i < iRange; i++)
 	{
 		for (new Float:addAng = 0.0; addAng < 360.0; addAng += 7.5)
@@ -953,12 +968,12 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			TR_GetEndPosition(flBuffer, hTrace);
 			CloseHandle(hTrace);
 			
-			flBuffer2[0] = g_flSlenderMins[iBossIndex][0];
-			flBuffer2[1] = g_flSlenderMins[iBossIndex][1];
-			flBuffer2[2] = -g_flSlenderMaxs[iBossIndex][2];
-			flBuffer3[0] = g_flSlenderMaxs[iBossIndex][0];
-			flBuffer3[1] = g_flSlenderMaxs[iBossIndex][1];
-			flBuffer3[2] = -g_flSlenderMins[iBossIndex][0];
+			flBuffer2[0] = flTargetMins[0];
+			flBuffer2[1] = flTargetMins[1];
+			flBuffer2[2] = -flTargetMaxs[2];
+			flBuffer3[0] = flTargetMaxs[0];
+			flBuffer3[1] = flTargetMaxs[1];
+			flBuffer3[2] = -flTargetMins[0];
 			
 			if (GetVectorDistance(tempPos, flBuffer) >= 312.0) continue;
 			
@@ -974,7 +989,8 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			tempPos[2] -= g_flSlenderMaxs[iBossIndex][2];
 			
 			if (TR_PointOutsideWorld(tempPos)
-				|| (!bProxy && IsSpaceOccupiedNPC(tempPos, g_flSlenderMins[iBossIndex], g_flSlenderMaxs[iBossIndex], EntRefToEntIndex(g_iSlender[iBossIndex])))
+				|| (!bProxy && IsSpaceOccupiedNPC(tempPos, flTargetMins, flTargetMaxs, EntRefToEntIndex(g_iSlender[iBossIndex])))
+				|| (bProxy && IsSpaceOccupiedPlayer(tempPos, flTargetMins, flTargetMaxs, iProxyPlayer))
 				|| (flHitNormal[0] >= 0.0 && flHitNormal[0] < 45.0)
 				|| (flHitNormal[0] < 0.0 && flHitNormal[0] > -45.0))
 			{

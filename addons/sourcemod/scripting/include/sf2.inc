@@ -103,29 +103,102 @@ forward Action:SF2_OnClientGetDefaultSprintSpeed(client, &Float:flDefault);
 
 forward Action:SF2_OnGroupGiveQueuePoints(iGroupIndex, &iAddAmount);
 
+forward SF2_OnClientSpawnedAsProxy(client);
 
+
+/**
+ * Returns a bool about the gamemode's state.
+ *
+ * @return				True if the gamemode is running, false if it is not.
+ */
 native bool:SF2_IsRunning();
 
+/**
+ * Returns the current difficulty of the round.
+ *
+ * @return				Integer of the difficulty.
+ */
 native SF2_GetCurrentDifficulty();
 
+/**
+ * Returns the current difficulty of the round.
+ *
+ * @param iDifficulty	Difficulty number.
+ * @return				Modifier float value of the indicated difficulty number.
+ */
 native Float:SF2_GetDifficultyModifier(iDifficulty);
 
+/**
+ * Returns a bool about the client's elimination state.
+ *
+ * @param client		Client index.
+ * @return				True if the player is eliminated, false if they're not.
+ */
 native bool:SF2_IsClientEliminated(client);
 
+/**
+ * Returns a bool about the client's ghost mode state.
+ *
+ * @param client		Client index.
+ * @return				True if the player is in Ghost Mode, false if they're not.
+ */
 native bool:SF2_IsClientInGhostMode(client);
 
+/**
+ * Returns a bool if the client is in a Player vs. Player zone or not.
+ *
+ * @param client		Client index.
+ * @return				True if the player is in a PvP zone, false if not.
+ */
 native bool:SF2_IsClientInPvP(client);
 
+/**
+ * Tells whether if the client is a Proxy or not.
+ *
+ * @param client		Client index.
+ * @return				True if the player is a Proxy, false if not.
+ */
 native bool:SF2_IsClientProxy(client);
 
+/**
+ * Tells whether or not the client is looking at the boss.
+ *
+ * @param client		Client index.
+ * @param iBossIndex	Boss index.
+ * @return				True if the player is a Proxy, false if not.
+ */
 native bool:SF2_IsClientLookingAtBoss(client, iBossIndex);
 
+/**
+ * Gives the amount of times the client has blinked in one life. This count will reset upon spawn.
+ *
+ * @param client		Client index.
+ * @return				Number of times the client has blinked in one life.
+ */
 native SF2_GetClientBlinkCount(client);
 
+/**
+ * If the client is a Proxy, then this returns the boss index that the client is associated with.
+ *
+ * @param client		Client index.
+ * @return				If the client is a proxy, then this will return a boss index, -1 if not.
+ */
 native SF2_GetClientProxyMaster(client);
 
+/**
+ * If the client is a Proxy, then this returns the amount of Control points the client has left.
+ *
+ * @param client		Client index.
+ * @return				If the client is a proxy, then this will return the amount of Control Points out of 100, else 0.
+ */
 native SF2_GetClientProxyControlAmount(client);
 
+/**
+ * If the client is a Proxy, then this returns the rate which each Control point will drain for the client.
+ *
+ * @param client		Client index.
+ * @return				If the client is a proxy, then this will return a boss index, -1 if not.
+ */
 native Float:SF2_GetClientProxyControlRate(client);
 
 native SF2_SetClientProxyMaster(client, iBossIndex);
