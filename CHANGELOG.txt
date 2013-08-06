@@ -1,3 +1,19 @@
+Version 0.1.8 (August 6, 2013):
+- Fixed a bug where Proxies could not see RED player outlines in different sections of the map
+- Fixed a bug where page music would not play if the player is a Proxy
+- Fixed a bug where sometimes Proxies would spawn inside walls
+- Removed the ability to use action slot item as a Proxy
+- Added Proxy cooldown time for players so that they would not be chosen again shortly after their death
+- Added a 5-second delay before spawning as a Proxy for players instead of being immediately forced into the game
+- Added small white fade/teleport sound effect when spawned as a Proxy
+- Fixed up the appearance of the Queue List a bit
+- Added the ability to view a group's members in the Queue List
+- Reduced the Flashlight's "clicking" sound level
+- Updated include file
+- Added "SF2_OnClientSpawnedAsProxy" forward
+- Added sf2_player_proxy_waittime cvar, which determines the Proxy cooldown time for players
+- Added sf2_player_proxy_ask cvar, where if set to 1, will ask the player if they want to be a Proxy, otherwise it will force them into the game in 5 seconds
+
 Version 0.1.7 (July 15, 2013):
 - Added "Group Menu" option to the Main Menu, accessable via the !slgroup command. Players can now create their own groups and invite players, so they don't have to reset their queue points just to play with someone else
 - Fixed a bug where chosen to be a Proxy while in PvP resulted in keeping your weapons
