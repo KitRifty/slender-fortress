@@ -15,8 +15,8 @@
 #define SF2_FLASHLIGHT_ENABLEAT 0.3 // The percentage of the Flashlight battery where the Flashlight will be able to be used again (if the player shortens out the Flashlight from excessive use).
 #define SF2_FLASHLIGHT_COOLDOWN 0.4 // How much time players have to wait before being able to switch their flashlight on again after turning it off.
 
-#define SF2_ULTRAVISION_WIDTH 180.0
-#define SF2_ULTRAVISION_LENGTH 180.0
+#define SF2_ULTRAVISION_WIDTH 512.0
+#define SF2_ULTRAVISION_LENGTH 512.0
 #define SF2_ULTRAVISION_BRIGHTNESS 0 // Intensity of Ultravision.
 #define SF2_ULTRAVISION_CONE 180.0
 
@@ -2610,14 +2610,14 @@ ClientActivateUltravision(client)
 	new ent = CreateEntityByName("light_dynamic");
 	if (ent == -1) return;
 	
-	decl Float:pos[3];
-	GetClientEyePosition(client, pos);
+	decl Float:flPos[3];
+	GetClientEyePosition(client, flPos);
 	
-	TeleportEntity(ent, pos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
+	TeleportEntity(ent, flPos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
 	DispatchKeyValue(ent, "rendercolor", "0 200 255");
 	
-	if (g_bPlayerGhostMode[client]) SetVariantFloat(SF2_ULTRAVISION_WIDTH);
-	else SetVariantFloat(SF2_ULTRAVISION_WIDTH * 7.0);
+	if (g_bPlayerGhostMode[client] || g_bPlayerProxy[client]) SetVariantFloat(SF2_ULTRAVISION_WIDTH * 2.0);
+	else SetVariantFloat(SF2_ULTRAVISION_WIDTH);
 	AcceptEntityInput(ent, "spotlight_radius");
 	
 	SetVariantFloat(SF2_ULTRAVISION_LENGTH);
