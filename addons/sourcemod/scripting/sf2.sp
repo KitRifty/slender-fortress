@@ -410,6 +410,7 @@ new Handle:fOnClientEndDeathCam;
 new Handle:fOnClientGetDefaultWalkSpeed;
 new Handle:fOnClientGetDefaultSprintSpeed;
 new Handle:fOnClientSpawnedAsProxy;
+new Handle:fOnClientDamagedByBoss;
 new Handle:fOnGroupGiveQueuePoints;
 
 new Handle:g_hSDKWeaponScattergun;
@@ -477,6 +478,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	fOnClientGetDefaultWalkSpeed = CreateGlobalForward("SF2_OnClientGetDefaultWalkSpeed", ET_Hook, Param_Cell, Param_CellByRef);
 	fOnClientGetDefaultSprintSpeed = CreateGlobalForward("SF2_OnClientGetDefaultSprintSpeed", ET_Hook, Param_Cell, Param_CellByRef);
 	fOnClientSpawnedAsProxy = CreateGlobalForward("SF2_OnClientSpawnedAsProxy", ET_Ignore, Param_Cell);
+	fOnClientDamagedByBoss = CreateGlobalForward("SF2_OnClientDamagedByBoss", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Cell);
 	fOnGroupGiveQueuePoints = CreateGlobalForward("SF2_OnGroupGiveQueuePoints", ET_Hook, Param_Cell, Param_CellByRef);
 	
 	CreateNative("SF2_IsRunning", Native_IsRunning);
@@ -4457,6 +4459,15 @@ public Action:Timer_SlenderAttack(Handle:timer, any:entref)
 			if (FloatAbs(AngleDiff(flBuffer[1], flMyEyeAng[1])) <= (g_flSlenderFOV[iBossIndex] * 0.5))
 			{
 				bHit = true;
+				
+				Call_StartForward(fOnClientDamagedByBoss);
+				Call_PushCell(i);
+				Call_PushCell(iBossIndex);
+				Call_PushCell(slender);
+				Call_PushFloat(flDamage);
+				Call_PushCell(iDamageType);
+				Call_Finish();
+				
 				SDKHooks_TakeDamage(i, slender, slender, flDamage, iDamageType);
 				ClientViewPunch(i, flViewPunch);
 			}

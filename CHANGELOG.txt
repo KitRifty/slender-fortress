@@ -11,6 +11,7 @@ Version 0.1.8 (August 6, 2013):
 - Reduced the Flashlight's "clicking" sound level
 - Updated include file
 - Added "SF2_OnClientSpawnedAsProxy" forward
+- Added "SF2_OnClientDamagedByBoss" forward
 - Added sf2_player_proxy_waittime cvar, which determines the Proxy cooldown time for players
 - Added sf2_player_proxy_ask cvar, where if set to 1, will ask the player if they want to be a Proxy, otherwise it will force them into the game in 5 seconds
 

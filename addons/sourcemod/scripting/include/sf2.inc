@@ -103,6 +103,8 @@ forward Action:SF2_OnClientGetDefaultSprintSpeed(client, &Float:flDefault);
 
 forward Action:SF2_OnGroupGiveQueuePoints(iGroupIndex, &iAddAmount);
 
+forward SF2_OnClientDamagedByBoss(client, iBossIndex, inflictor, Float:flDamage, iDamageType);
+
 forward SF2_OnClientSpawnedAsProxy(client);
 
 
