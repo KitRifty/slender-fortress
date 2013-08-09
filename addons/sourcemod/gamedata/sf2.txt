@@ -4,23 +4,17 @@
 	{
 		"Offsets"
 		{
-			"FlashlightTurnOn"
-			{
-				"windows"	"353"
-				"linux"		"354"
-				"mac"		"354"
-			}
-			"FlashlightTurnOff"
-			{
-				"windows"	"354"
-				"linux"		"355"
-				"mac"		"355"
-			}
 			"WantsLagCompensationOnEntity"
 			{
 				"windows"	"322"
 				"linux"		"323"
 				"mac"		"323"
+			}
+			"ShouldTransmit"
+			{
+				"windows"	"18"
+				"linux"	"19"
+				"mac"	"19"
 			}
 		}
 	}

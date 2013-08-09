@@ -442,9 +442,8 @@ new Handle:g_hSDKWeaponPistol;
 new Handle:g_hSDKWeaponWrench;
 
 new Handle:g_hSDKGetMaxHealth;
-new Handle:g_hSDKFlashlightTurnOn;
-new Handle:g_hSDKFlashlightTurnOff;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
+new Handle:g_hSDKShouldTransmit;
 
 
 #include "sf2/stocks.sp"
@@ -861,20 +860,6 @@ SetupSDK()
 	hConfig = LoadGameConfigFile("sf2");
 	if (hConfig == INVALID_HANDLE) SetFailState("Could not find SF2 gamedata!");
 	
-	StartPrepSDKCall(SDKCall_Player);
-	PrepSDKCall_SetFromConf(hConfig, SDKConf_Virtual, "FlashlightTurnOn");
-	if ((g_hSDKFlashlightTurnOn = EndPrepSDKCall()) == INVALID_HANDLE)
-	{
-		SetFailState("Failed to retrieve FlashlightTurnOn offset from SF2 gamedata!");
-	}
-	
-	StartPrepSDKCall(SDKCall_Player);
-	PrepSDKCall_SetFromConf(hConfig, SDKConf_Virtual, "FlashlightTurnOff");
-	if ((g_hSDKFlashlightTurnOff = EndPrepSDKCall()) == INVALID_HANDLE)
-	{
-		SetFailState("Failed to retrieve FlashlightTurnOff offset from SF2 gamedata!");
-	}
-	
 	new iOffset = GameConfGetOffset(hConfig, "WantsLagCompensationOnEntity"); 
 	g_hSDKWantsLagCompensationOnEntity = DHookCreate(iOffset, HookType_Entity, ReturnType_Bool, ThisPointer_CBaseEntity, Hook_ClientWantsLagCompensationOnEntity); 
 	if (g_hSDKWantsLagCompensationOnEntity == INVALID_HANDLE)
@@ -885,6 +870,15 @@ SetupSDK()
 	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_CBaseEntity);
 	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_ObjectPtr);
 	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_Unknown);
+	
+	iOffset = GameConfGetOffset(hConfig, "ShouldTransmit");
+	g_hSDKShouldTransmit = DHookCreate(iOffset, HookType_Entity, ReturnType_Int, ThisPointer_CBaseEntity, Hook_EntityShouldTransmit);
+	if (g_hSDKShouldTransmit == INVALID_HANDLE)
+	{
+		SetFailState("Failed to hook onto ShouldTransmit offset from SF2 gamedata!");
+	}
+	
+	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
 	
 	CloseHandle(hConfig);
 }
@@ -2943,6 +2937,43 @@ public Action:Hook_FlashlightEndSetTransmit(ent, other)
 	return Plugin_Continue;
 }
 
+public MRESReturn:Hook_EntityShouldTransmit(this, Handle:hReturn, Handle:hParams)
+{
+	if (!g_bEnabled) return MRES_Ignored;
+	
+	if (IsValidClient(this))
+	{
+		if (!g_bPlayerEliminated[this])
+		{
+			/*
+			new iClientEnt = DHookGetParamObjectPtrVar(hParams, 1, 0, ObjectValueType_CBaseEntityPtr);
+			PrintToChat(this, "iClientEnt: %d", iClientEnt);
+			
+			if (IsValidClient(iClientEnt))
+			{
+				if (!g_bPlayerEliminated[iClientEnt])
+				{
+					if (g_bSpecialRound &&
+						g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+					{
+						if (IsPlayerAlive(iClientEnt))
+						{
+							DHookSetReturn(hReturn, FL_EDICT_DONTSEND);
+							return MRES_Supercede;
+						}
+					}
+				}
+			}
+			*/
+			
+			DHookSetReturn(hReturn, FL_EDICT_ALWAYS);
+			return MRES_Supercede;
+		}
+	}
+	
+	return MRES_Ignored;
+}
+
 public OnEntityDestroyed(ent)
 {
 	if (!g_bEnabled) return;
@@ -3013,6 +3044,7 @@ public OnClientPutInServer(client)
 	SDKHook(client, SDKHook_OnTakeDamage, Hook_ClientOnTakeDamage);
 	
 	DHookEntity(g_hSDKWantsLagCompensationOnEntity, true, client); 
+	DHookEntity(g_hSDKShouldTransmit, true, client);
 	
 	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
 	{
@@ -3792,22 +3824,12 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 					if (iState == STATE_WANDER && GetProfileNum(g_strSlenderProfile[iBossIndex], "wander_move", 1))
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_walk", sAnimation, sizeof(sAnimation));
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetDefaultAnimation");
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetAnimation");
-						SetVariantFloat(flVelocityRatioWalk * flPlaybackRateWalk);
-						AcceptEntityInput(iModel, "SetPlaybackRate");
+						SetAnimation(iModel, sAnimation, true, flVelocityRatio * flPlaybackRateWalk);
 					}
 					else
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_idle", sAnimation, sizeof(sAnimation));
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetDefaultAnimation");
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetAnimation");
-						SetVariantFloat(flPlaybackRateIdle);
-						AcceptEntityInput(iModel, "SetPlaybackRate");
+						SetAnimation(iModel, sAnimation, true, flPlaybackRateIdle);
 					}
 				}
 			}
@@ -3833,12 +3855,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				if (iModel && iModel != INVALID_ENT_REFERENCE)
 				{
 					GetProfileString(g_strSlenderProfile[iBossIndex], "animation_walk", sAnimation, sizeof(sAnimation));
-					SetVariantString(sAnimation);
-					AcceptEntityInput(iModel, "SetDefaultAnimation");
-					SetVariantString(sAnimation);
-					AcceptEntityInput(iModel, "SetAnimation");
-					SetVariantFloat(flVelocityRatioWalk * flPlaybackRateWalk);
-					AcceptEntityInput(iModel, "SetPlaybackRate");
+					SetAnimation(iModel, sAnimation, true, flVelocityRatio * flPlaybackRateWalk);
 				}
 			}
 			case STATE_CHASE, STATE_ATTACK, STATE_STUN:
@@ -3889,32 +3906,17 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 					if (iState == STATE_CHASE)
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_run", sAnimation, sizeof(sAnimation));
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetDefaultAnimation");
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetAnimation");
-						SetVariantFloat(flVelocityRatio * flPlaybackRateRun);
-						AcceptEntityInput(iModel, "SetPlaybackRate");
+						SetAnimation(iModel, sAnimation, true, flVelocityRatio * flPlaybackRateRun);
 					}
 					else if (iState == STATE_ATTACK)
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_attack", sAnimation, sizeof(sAnimation));
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetDefaultAnimation");
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetAnimation");
-						SetVariantFloat(GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_attack_playbackrate", 1.0));
-						AcceptEntityInput(iModel, "SetPlaybackRate");
+						SetAnimation(iModel, sAnimation, true, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_attack_playbackrate", 1.0));
 					}
 					else if (iState == STATE_STUN)
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_stun", sAnimation, sizeof(sAnimation));
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetDefaultAnimation");
-						SetVariantString(sAnimation);
-						AcceptEntityInput(iModel, "SetAnimation");
-						SetVariantFloat(GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_stun_playbackrate", 1.0));
-						AcceptEntityInput(iModel, "SetPlaybackRate");
+						SetAnimation(iModel, sAnimation, true, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_stun_playbackrate", 1.0));
 					}
 				}
 			}
@@ -4261,6 +4263,22 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	}
 	
 	return Plugin_Continue;
+}
+
+stock SetAnimation(iEntity, const String:sAnimation[], bool:bDefaultAnimation=true, Float:flPlaybackRate=1.0)
+{
+	SetEntProp(iEntity, Prop_Send, "m_nSequence", 0);
+
+	if (bDefaultAnimation)
+	{
+		SetVariantString(sAnimation);
+		AcceptEntityInput(iEntity, "SetDefaultAnimation");
+	}
+	
+	SetVariantString(sAnimation);
+	AcceptEntityInput(iEntity, "SetAnimation");
+	SetVariantFloat(flPlaybackRate);
+	AcceptEntityInput(iEntity, "SetPlaybackRate");
 }
 
 public Action:SlenderFindSoundPositions(const Float:flOrigin[3], Float:flDestination[3], any:iBossIndex)

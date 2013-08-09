@@ -9,7 +9,12 @@ Version 0.1.8 (August 6, 2013):
 - Fixed up the appearance of the Queue List a bit
 - Added the ability to view a group's members in the Queue List
 - Reduced the Flashlight's "clicking" sound level
+- Fixed animation sequences not properly running on some models, especially ones imported from GMod
+- Fixed Single Player special round not hiding players properly
+- Fixed a small bug where the death cam sequence would only play for one specific boss, despite having multiple bosses that support the death cam sequence
+- Added the ability to see RED through walls in Ghost Mode
 - Updated include file
+- Updated gamedata and removed unused offsets
 - Added "SF2_OnClientSpawnedAsProxy" forward
 - Added "SF2_OnClientDamagedByBoss" forward
 - Added sf2_player_proxy_waittime cvar, which determines the Proxy cooldown time for players

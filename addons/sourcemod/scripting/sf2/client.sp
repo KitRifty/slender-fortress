@@ -852,7 +852,15 @@ ClientProcessVisibility(client)
 				{
 					g_flSlenderLastKill[i] = GetGameTime();
 					SubtractVectors(endPos, g_flSlenderVisiblePos[i], endPos);
-					ClientStartDeathCam(client, i, endPos);
+					
+					if (g_flPlayerSeesSlenderMeter[client] >= 1.0)
+					{
+						ClientStartDeathCam(client, g_iPlayerStaticMaster[client], endPos);
+					}
+					else
+					{
+						ClientStartDeathCam(client, i, endPos);
+					}
 				}
 			}
 		}
@@ -1344,6 +1352,7 @@ ClientRemoveProxyGlow(client)
 	
 	g_bPlayerHasProxyGlow[client] = false;
 	
+	/*
 	if (IsClientInGame(client))
 	{
 		new iFlags = GetEdictFlags(client);
@@ -1351,6 +1360,7 @@ ClientRemoveProxyGlow(client)
 		if (iFlags & FL_EDICT_FULLCHECK) iFlags &= ~FL_EDICT_FULLCHECK;
 		SetEdictFlags(client, iFlags);
 	}
+	*/
 	
 	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
 	if (iGlow && iGlow != INVALID_ENT_REFERENCE) AcceptEntityInput(iGlow, "Kill");
@@ -1364,11 +1374,15 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 	
 	g_bPlayerHasProxyGlow[client] = true;
 	
+	new iFlags = 0;
+	
+	/*
 	// Set edict flags so that the glow will appear for Proxies anywhere.
 	new iFlags = GetEdictFlags(client);
 	if (!(iFlags & FL_EDICT_ALWAYS)) iFlags |= FL_EDICT_ALWAYS;
 	if (!(iFlags & FL_EDICT_FULLCHECK)) iFlags |= FL_EDICT_FULLCHECK;
 	SetEdictFlags(client, iFlags);
+	*/
 	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
 	GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
@@ -1438,7 +1452,7 @@ public Action:Hook_ProxyGlowSetTransmit(ent, other)
 	if (iOwner != -1)
 	{
 		if (!IsPlayerAlive(iOwner) || g_bPlayerEliminated[iOwner]) return Plugin_Handled;
-		if (!IsPlayerAlive(other) || !g_bPlayerProxy[other]) return Plugin_Handled;
+		if (!IsPlayerAlive(other) || (!g_bPlayerProxy[other] && !g_bPlayerGhostMode[other])) return Plugin_Handled;
 	}
 	
 	return Plugin_Continue;
