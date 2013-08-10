@@ -975,7 +975,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			flBuffer3[1] = flTargetMaxs[1];
 			flBuffer3[2] = -flTargetMins[0];
 			
-			if (GetVectorDistance(tempPos, flBuffer) >= 312.0) continue;
+			if (GetVectorDistance(tempPos, flBuffer) >= 300.0) continue;
 			
 			// Drop dowwwwwn.
 			hTrace = TR_TraceHullFilterEx(tempPos, flBuffer, flBuffer2, flBuffer3, MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, iBestPlayer);
@@ -989,7 +989,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			tempPos[2] -= g_flSlenderMaxs[iBossIndex][2];
 			
 			if (TR_PointOutsideWorld(tempPos)
-				|| (!bProxy && IsSpaceOccupiedNPC(tempPos, flTargetMins, flTargetMaxs, EntRefToEntIndex(g_iSlender[iBossIndex])))
+				|| (IsSpaceOccupiedNPC(tempPos, flTargetMins, flTargetMaxs, EntRefToEntIndex(g_iSlender[iBossIndex])))
 				|| (bProxy && IsSpaceOccupiedPlayer(tempPos, flTargetMins, flTargetMaxs, iProxyPlayer))
 				|| (flHitNormal[0] >= 0.0 && flHitNormal[0] < 45.0)
 				|| (flHitNormal[0] < 0.0 && flHitNormal[0] > -45.0))
