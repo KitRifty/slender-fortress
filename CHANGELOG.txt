@@ -1,3 +1,7 @@
+Version 0.1.8a (August 13, 2013):
+- Added "SF2_OnPagesSpawned" forward
+- Reorganized all sections of code in the main scripting file (sf2.sp)
+
 Version 0.1.8 (August 6, 2013):
 - Fixed a bug where Proxies could not see RED player outlines in different sections of the map
 - Fixed a bug where page music would not play if the player is a Proxy
@@ -9,7 +13,7 @@ Version 0.1.8 (August 6, 2013):
 - Fixed up the appearance of the Queue List a bit
 - Added the ability to view a group's members in the Queue List
 - Reduced the Flashlight's "clicking" sound level
-- Fixed animation sequences not properly running on some models, especially ones imported from GMod
+- Fixed animation sequences not properly playing on some models imported from GMod/HL2
 - Fixed Single Player special round not hiding players properly
 - Fixed a small bug where the death cam sequence would only play for one specific boss, despite having multiple bosses that support the death cam sequence
 - Added the ability to see RED through walls in Ghost Mode
@@ -17,6 +21,18 @@ Version 0.1.8 (August 6, 2013):
 - Updated gamedata and removed unused offsets
 - Added "SF2_OnClientSpawnedAsProxy" forward
 - Added "SF2_OnClientDamagedByBoss" forward
+- Added "SF2_OnBossRemoved" forward
+- Removed "SF2_GetBossEntity" native (deprecated)
+- Added "SF2_BossIDToBossIndex" native
+- Added "SF2_BossIndexToBossID" native
+- Added "SF2_GetBossModelEntity" native
+- Added "SF2_GetBossProfileNum" native
+- Added "SF2_GetBossProfileFloat" native
+- Added "SF2_GetBossProfileString" native
+- Added "SF2_GetBossProfileVector" native
+- Added "SF2_GetRandomStringFromBossProfile" native
+- Fixed "SF2_EntIndexToBossIndex" native comparing incorrect values
+- Added "bleed player on hit" attribute. Value is the duration of the bleed effect on the player
 - Added sf2_player_proxy_waittime cvar, which determines the Proxy cooldown time for players
 - Added sf2_player_proxy_ask cvar, where if set to 1, will ask the player if they want to be a Proxy, otherwise it will force them into the game in 5 seconds
 

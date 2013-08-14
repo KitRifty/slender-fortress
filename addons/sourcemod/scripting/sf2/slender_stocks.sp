@@ -147,6 +147,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			SetVariantString("!activator");
 			AcceptEntityInput(iSlenderModel, "SetParent", iBoss);
 			AcceptEntityInput(iSlenderModel, "EnableShadow");
+			SetEntProp(iSlenderModel, Prop_Send, "m_usSolidFlags", FSOLID_NOT_SOLID | FSOLID_TRIGGER);
 			AcceptEntityInput(iBoss, "DisableShadow");
 			
 			// Reset stats.

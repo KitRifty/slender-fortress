@@ -5,8 +5,6 @@
 
 #define FILE_PROFILES "configs/sf2/profiles.cfg"
 
-//new Handle:g_hProfileNames;
-//new Handle:g_hProfileNamesArray;
 
 ReloadProfiles()
 {
@@ -253,8 +251,12 @@ RemoveProfile(iBossIndex)
 {
 	RemoveSlender(iBossIndex);
 
-	// Remove all possible sounds, for emergencies.
+	// Call our forward.
+	Call_StartForward(fOnBossRemoved);
+	Call_PushCell(iBossIndex);
+	Call_Finish();
 	
+	// Remove all possible sounds, for emergencies.
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (!IsClientInGame(i)) continue;

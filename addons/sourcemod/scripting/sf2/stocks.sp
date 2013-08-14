@@ -380,6 +380,22 @@ stock InsertNodesAroundPoint(Handle:hArray, const Float:flOrigin[3], Float:flDis
 	}
 }
 
+stock SetAnimation(iEntity, const String:sAnimation[], bool:bDefaultAnimation=true, Float:flPlaybackRate=1.0)
+{
+	SetEntProp(iEntity, Prop_Send, "m_nSequence", 0);
+
+	if (bDefaultAnimation)
+	{
+		SetVariantString(sAnimation);
+		AcceptEntityInput(iEntity, "SetDefaultAnimation");
+	}
+	
+	SetVariantString(sAnimation);
+	AcceptEntityInput(iEntity, "SetAnimation");
+	SetVariantFloat(flPlaybackRate);
+	AcceptEntityInput(iEntity, "SetPlaybackRate");
+}
+
 public bool:TraceRayDontHitEntity(entity, mask, any:data)
 {
 	if (entity == data) return false;

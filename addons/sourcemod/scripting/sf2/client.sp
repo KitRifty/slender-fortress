@@ -1352,16 +1352,6 @@ ClientRemoveProxyGlow(client)
 	
 	g_bPlayerHasProxyGlow[client] = false;
 	
-	/*
-	if (IsClientInGame(client))
-	{
-		new iFlags = GetEdictFlags(client);
-		if (iFlags & FL_EDICT_ALWAYS) iFlags &= ~FL_EDICT_ALWAYS;
-		if (iFlags & FL_EDICT_FULLCHECK) iFlags &= ~FL_EDICT_FULLCHECK;
-		SetEdictFlags(client, iFlags);
-	}
-	*/
-	
 	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
 	if (iGlow && iGlow != INVALID_ENT_REFERENCE) AcceptEntityInput(iGlow, "Kill");
 	
@@ -1373,16 +1363,6 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 	ClientRemoveProxyGlow(client);
 	
 	g_bPlayerHasProxyGlow[client] = true;
-	
-	new iFlags = 0;
-	
-	/*
-	// Set edict flags so that the glow will appear for Proxies anywhere.
-	new iFlags = GetEdictFlags(client);
-	if (!(iFlags & FL_EDICT_ALWAYS)) iFlags |= FL_EDICT_ALWAYS;
-	if (!(iFlags & FL_EDICT_FULLCHECK)) iFlags |= FL_EDICT_FULLCHECK;
-	SetEdictFlags(client, iFlags);
-	*/
 	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
 	GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
@@ -1405,7 +1385,7 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 		SetEntPropFloat(iGlow, Prop_Send, "m_flModelScale", flModelScale);
 		
 		// Set solid flags.
-		iFlags = GetEntProp(iGlow, Prop_Send, "m_usSolidFlags");
+		new iFlags = GetEntProp(iGlow, Prop_Send, "m_usSolidFlags");
 		if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
 		if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
 		SetEntProp(iGlow, Prop_Send, "m_usSolidFlags", iFlags);

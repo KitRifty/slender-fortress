@@ -7,6 +7,9 @@
 #define SF2_MAX_PROFILE_NAME_LENGTH 64
 #define SF2_MAX_NAME_LENGTH 32
 
+#define MAX_BOSSES 32
+#define MAX_NODES 64
+
 // Difficulty modifiers.
 #define DIFFICULTY_EASY 0.75
 #define DIFFICULTY_NORMAL 1.0
@@ -75,6 +78,10 @@ forward SF2_OnBossSpawn(iBossIndex);
 
 forward SF2_OnBossChangeState(iBossIndex, iOldState, iNewState);
 
+forward SF2_OnBossRemoved(iBossIndex);
+
+forward SF2_OnPagesSpawned();
+
 forward SF2_OnClientBlinked(client);
 
 forward SF2_OnClientCaughtByBoss(client, iBossIndex);
@@ -111,7 +118,7 @@ forward SF2_OnClientSpawnedAsProxy(client);
 /**
  * Returns a bool about the gamemode's state.
  *
- * @return				True if the gamemode is running, false if it is not.
+ * @return				True if the gamemode is running, false if not.
  */
 native bool:SF2_IsRunning();
 
@@ -134,7 +141,7 @@ native Float:SF2_GetDifficultyModifier(iDifficulty);
  * Returns a bool about the client's elimination state.
  *
  * @param client		Client index.
- * @return				True if the player is eliminated, false if they're not.
+ * @return				True if the player is eliminated, false if not.
  */
 native bool:SF2_IsClientEliminated(client);
 
@@ -142,7 +149,7 @@ native bool:SF2_IsClientEliminated(client);
  * Returns a bool about the client's ghost mode state.
  *
  * @param client		Client index.
- * @return				True if the player is in Ghost Mode, false if they're not.
+ * @return				True if the player is in Ghost Mode, false if not.
  */
 native bool:SF2_IsClientInGhostMode(client);
 
@@ -215,7 +222,13 @@ native SF2_EntIndexToBossIndex(iEntIndex);
 
 native SF2_BossIndexToEntIndex(iBossIndex);
 
+native SF2_BossIDToBossIndex(iBossID);
+
+native SF2_BossIndexToBossID(iBossID);
+
 native SF2_GetBossName(iBossIndex, String:sBuffer[], iBufferLen);
+
+native SF2_GetBossModelEntity(iBossIndex);
 
 native SF2_GetBossTarget(iBossIndex);
 
@@ -223,6 +236,17 @@ native SF2_GetBossMaster(iBossIndex);
 
 native SF2_GetBossState(iBossIndex);
 
+native bool:SF2_IsBossProfileValid(const String:sProfile[]);
+
+native SF2_GetBossProfileNum(const String:sProfile[], const String:sKey[], iDefaultValue=0);
+
+native Float:SF2_GetBossProfileFloat(const String:sProfile[], const String:sKey[], Float:flDefaultValue=0.0);
+
+native bool:SF2_GetBossProfileString(const String:sProfile[], const String:sKey[], String:sBuffer[], iBufferLen, const String:sDefaultValue[]="");
+
+native bool:SF2_GetBossProfileVector(const String:sProfile[], const String:sKey[], Float:flBuffer[3], const Float:flDefaultValue[3]=NULL_VECTOR);
+
+native bool:SF2_GetRandomStringFromBossProfile(const String:sProfile, const String:sKey[], String:sBuffer[], iBufferLen, iIndex=-1);
 
 public SharedPlugin:__pl_sf2 = 
 {
