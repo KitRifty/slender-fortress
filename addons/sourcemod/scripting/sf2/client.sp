@@ -53,186 +53,21 @@ static String:g_strPlayerLagCompensationWeapons[][] =
 	"tf_weapon_sniperrifle_decap"
 };
 
-public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, Handle:hParams)
-{
-	if (!g_bEnabled || IsFakeClient(this)) return MRES_Ignored;
-	
-	DHookSetReturn(hReturn, true);
-	return MRES_Supercede;
-}
-
-ClientResetHints(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetHints(%d)", client);
-#endif
-
-	for (new i = 0; i < PlayerHint_MaxNum; i++)
-	{
-		g_bPlayerHints[client][i] = false;
-	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetHints(%d)", client);
-#endif
-}
-
-ClientShowHint(client, iHint)
-{
-	g_bPlayerHints[client][iHint] = true;
-	
-	switch (iHint)
-	{
-		case PlayerHint_Sprint: PrintHintText(client, "%T", "SF2 Hint Sprint", client);
-		case PlayerHint_Flashlight: PrintHintText(client, "%T", "SF2 Hint Flashlight", client);
-		case PlayerHint_Blink: PrintHintText(client, "%T", "SF2 Hint Blink", client);
-		case PlayerHint_MainMenu: PrintHintText(client, "%T", "SF2 Hint Main Menu", client);
-	}
-}
-
-stock ClientViewPunch(client, const Float:angleOffset[3])
-{
-	if (g_offsPlayerPunchAngleVel == -1) return;
-	
-	decl Float:flOffset[3];
-	for (new i = 0; i < 3; i++) flOffset[i] = angleOffset[i];
-	ScaleVector(flOffset, 20.0);
-	
-	if (!IsFakeClient(client))
-	{
-		new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
-		new Float:flCalcDiff = (((1.0 / 2500.0) * Pow(flLatency, 2.0)) + ((3.0 / 50.0) * flLatency) + 2.0);
-		ScaleVector(flOffset, flCalcDiff);
-	}
-	
-	decl Float:flAngleVel[3];
-	GetEntDataVector(client, g_offsPlayerPunchAngleVel, flAngleVel);
-	AddVectors(flAngleVel, flOffset, flOffset);
-	SetEntDataVector(client, g_offsPlayerPunchAngleVel, flOffset, true);
-}
-
-stock ClientSDKFlashlightTurnOn(client)
-{
-	if (g_hSDKFlashlightTurnOn == INVALID_HANDLE) return;
-	if (!IsValidClient(client)) return;
-	
-	SDKCall(g_hSDKFlashlightTurnOn, client);
-}
-
-stock ClientSDKFlashlightTurnOff(client)
-{
-	if (g_hSDKFlashlightTurnOff == INVALID_HANDLE) return;
-	if (!IsValidClient(client)) return;
-	
-	SDKCall(g_hSDKFlashlightTurnOff, client);
-}
-
-ClientEscape(client)
-{
-#if defined DEBUG
-	DebugMessage("START ClientEscape(%d)", client);
-#endif
-
-	if (!g_bPlayerEscaped[client])
-	{
-		ClientResetBreathing(client);
-		
-		decl String:sName[MAX_NAME_LENGTH];
-		g_bPlayerEscaped[client] = true;
-		GetClientName(client, sName, sizeof(sName));
-		
-		CPrintToChatAll("%t", "SF2 Player Escaped", sName);
-		
-		// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
-		TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
-		
-		// Reset HUD.
-		SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
-		
-		CheckRoundState();
-		
-		Call_StartForward(fOnClientEscape);
-		Call_PushCell(client);
-		Call_Finish();
-	}
-	
-#if defined DEBUG
-	DebugMessage("END ClientEscape(%d)", client);
-#endif
-}
+//	==========================================================
+//	GENERAL CLIENT HOOK FUNCTIONS
+//	==========================================================
 
 #define SF2_PLAYER_VIEWBOB_TIMER 10.0
 #define SF2_PLAYER_VIEWBOB_SCALE_X 0.05
 #define SF2_PLAYER_VIEWBOB_SCALE_Y 0.0
 #define SF2_PLAYER_VIEWBOB_SCALE_Z 0.0
 
-stock Float:ClientGetDistanceFromEntity(client, entity)
+public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, Handle:hParams)
 {
-	decl Float:flStartPos[3], Float:flEndPos[3];
-	GetClientAbsOrigin(client, flStartPos);
-	GetEntPropVector(entity, Prop_Data, "m_vecAbsOrigin", flEndPos);
-	return GetVectorDistance(flStartPos, flEndPos);
-}
-
-ClientEnableFakeLagCompensation(client)
-{
-	if (!GetConVarBool(g_cvPlayerFakeLagCompensation)) return;
+	if (!g_bEnabled || IsFakeClient(this)) return MRES_Ignored;
 	
-	if (!IsValidClient(client) || !IsPlayerAlive(client) || g_bPlayerLagCompensation[client]) return;
-	
-	// Can only enable lag compensation if we're in either of these two teams only.
-	new iMyTeam = GetClientTeam(client);
-	if (iMyTeam != _:TFTeam_Red && iMyTeam != _:TFTeam_Blue) return;
-	
-	// Can only enable lag compensation if there are other active teammates around. This is to prevent spontaneous round restarting.
-	new iCount;
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (i == client) continue;
-		
-		if (IsValidClient(i) && IsPlayerAlive(i))
-		{
-			new iTeam = GetClientTeam(i);
-			if ((iTeam == _:TFTeam_Red || iTeam == _:TFTeam_Blue) && iTeam == iMyTeam)
-			{
-				iCount++;
-			}
-		}
-	}
-	
-	if (!iCount) return;
-	
-	// Can only enable lag compensation only for specific weapons.
-	new iActiveWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
-	if (!IsValidEdict(iActiveWeapon)) return;
-	
-	decl String:sClassName[64];
-	GetEdictClassname(iActiveWeapon, sClassName, sizeof(sClassName));
-	
-	new bool:bCompensate = false;
-	for (new i = 0; i < sizeof(g_strPlayerLagCompensationWeapons); i++)
-	{
-		if (StrEqual(sClassName, g_strPlayerLagCompensationWeapons[i], false))
-		{
-			bCompensate = true;
-			break;
-		}
-	}
-	
-	if (!bCompensate) return;
-	
-	g_bPlayerLagCompensation[client] = true;
-	g_iPlayerLagCompensationTeam[client] = iMyTeam;
-	SetEntProp(client, Prop_Send, "m_iTeamNum", 0);
-}
-
-ClientDisableFakeLagCompensation(client)
-{
-	if (!g_bPlayerLagCompensation[client]) return;
-	
-	SetEntProp(client, Prop_Send, "m_iTeamNum", g_iPlayerLagCompensationTeam[client]);
-	g_bPlayerLagCompensation[client] = false;
-	g_iPlayerLagCompensationTeam[client] = -1;
+	DHookSetReturn(hReturn, true);
+	return MRES_Supercede;
 }
 
 public Hook_ClientPreThink(client)
@@ -584,6 +419,39 @@ public Hook_ClientPreThink(client)
 	ClientUpdateMusicSystem(client);
 }
 
+public Action:Hook_ClientSetTransmit(client, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if (other != client)
+	{
+		if (g_bPlayerGhostMode[client] && !g_bPlayerGhostMode[other]) return Plugin_Handled;
+		
+		if (!g_bRoundEnded)
+		{
+			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+			{
+				if (!g_bPlayerEliminated[client] && !g_bPlayerEliminated[other] && !g_bPlayerEscaped[other]) return Plugin_Handled; 
+			}
+			
+			if (g_bPlayerInPvP[client] && g_bPlayerInPvP[other]) 
+			{
+				if (TF2_IsPlayerInCondition(client, TFCond_Cloaked) &&
+					!TF2_IsPlayerInCondition(client, TFCond_CloakFlicker) &&
+					!TF2_IsPlayerInCondition(client, TFCond_Jarated) &&
+					!TF2_IsPlayerInCondition(client, TFCond_Milked) &&
+					!TF2_IsPlayerInCondition(client, TFCond_OnFire) &&
+					(GetGameTime() > GetEntPropFloat(client, Prop_Send, "m_flInvisChangeCompleteTime")))
+				{
+					return Plugin_Handled;
+				}
+			}
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
 public Hook_ClientProjectileSpawnPost(ent)
 {
 	decl String:sClass[64];
@@ -606,6 +474,400 @@ public Hook_ClientProjectileSpawnPost(ent)
 		}
 	}
 }
+
+public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bool:result)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
+	{
+		if (StrEqual(sWeaponName, "tf_weapon_sniperrifle"))
+		{
+			// TRACE!
+			decl Float:flStartPos[3], Float:flEyeAng[3];
+			GetClientEyePosition(client, flStartPos);
+			GetClientEyeAngles(client, flEyeAng);
+			
+			new Handle:hTrace = TR_TraceRayFilterEx(flStartPos, flEyeAng, MASK_SHOT, RayType_Infinite, TraceRayDontHitEntity, client);
+			new iHitEntity = TR_GetEntityIndex(hTrace);
+			new iHitGroup = TR_GetHitGroup(hTrace);
+			CloseHandle(hTrace);
+			
+			if (IsValidClient(iHitEntity))
+			{
+				if (GetClientTeam(iHitEntity) == GetClientTeam(client))
+				{
+					if (g_bRoundWarmup || IsClientInPvP(iHitEntity))
+					{
+						new Float:flDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
+						if (flDamage < 50.0) flDamage = 50.0;
+						new iDamageType = DMG_BULLET;
+						
+						if (ClientHasCrits(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
+						{
+							result = true;
+							iDamageType |= DMG_ACID;
+						}
+						
+						SDKHooks_TakeDamage(iHitEntity, client, client, flDamage, iDamageType);
+						return Plugin_Changed;
+					}
+				}
+			}
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if (g_bRoundWarmup) return Plugin_Continue;
+	
+	if (attacker != victim && IsValidClient(attacker))
+	{
+		if (!g_bRoundEnded)
+		{
+			if (IsClientInPvP(victim) && IsClientInPvP(attacker))
+			{
+				if (attacker == inflictor)
+				{
+					if (IsValidEdict(weapon))
+					{
+						decl String:sWeaponClass[64];
+						GetEdictClassname(weapon, sWeaponClass, sizeof(sWeaponClass));
+						
+						// Backstab check!
+						if (StrEqual(sWeaponClass, "tf_weapon_knife", false) ||
+						(TF2_GetPlayerClass(attacker) == TFClass_Spy && StrEqual(sWeaponClass, "saxxy", false)))
+						{
+							decl Float:flMyPos[3], Float:flHisPos[3], Float:flMyDirection[3];
+							GetClientAbsOrigin(victim, flMyPos);
+							GetClientAbsOrigin(attacker, flHisPos);
+							GetClientEyeAngles(victim, flMyDirection);
+							GetAngleVectors(flMyDirection, flMyDirection, NULL_VECTOR, NULL_VECTOR);
+							NormalizeVector(flMyDirection, flMyDirection);
+							ScaleVector(flMyDirection, 32.0);
+							AddVectors(flMyDirection, flMyPos, flMyDirection);
+							
+							decl Float:p[3], Float:s[3];
+							MakeVectorFromPoints(flMyPos, flHisPos, p);
+							MakeVectorFromPoints(flMyPos, flMyDirection, s);
+							if (GetVectorDotProduct(p, s) <= 0.0)
+							{
+								damage = float(GetEntProp(victim, Prop_Send, "m_iHealth")) * 2.0;
+								
+								new Handle:hCvar = FindConVar("tf_weapon_criticals");
+								if (hCvar != INVALID_HANDLE && GetConVarBool(hCvar)) damagetype |= DMG_ACID;
+								return Plugin_Changed;
+							}
+						}
+					}
+				}
+			}
+			else if (g_bPlayerProxy[victim] || g_bPlayerProxy[attacker])
+			{
+				if (g_bPlayerEliminated[attacker] == g_bPlayerEliminated[victim])
+				{
+					damage = 0.0;
+					return Plugin_Changed;
+				}
+				
+				if (g_bPlayerProxy[attacker])
+				{
+					new iMaxHealth = SDKCall(g_hSDKGetMaxHealth, victim);
+					new iMaster = g_iPlayerProxyMaster[attacker];
+					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
+					{
+						if (damagecustom == TF_CUSTOM_TAUNT_GRAND_SLAM ||
+						damagecustom == TF_CUSTOM_TAUNT_FENCING ||
+						damagecustom == TF_CUSTOM_TAUNT_ARROW_STAB ||
+						damagecustom == TF_CUSTOM_TAUNT_GRENADE ||
+						damagecustom == TF_CUSTOM_TAUNT_BARBARIAN_SWING ||
+						damagecustom == TF_CUSTOM_TAUNT_ENGINEER_ARM ||
+						damagecustom == TF_CUSTOM_TAUNT_ARMAGEDDON)
+						{
+							if (damage >= float(iMaxHealth)) damage = float(iMaxHealth) * 0.5;
+							else damage = 0.0;
+						}
+						else if (damagecustom == TF_CUSTOM_BACKSTAB) // Modify backstab damage.
+						{
+							damage = float(iMaxHealth) * GetProfileFloat(g_strSlenderProfile[iMaster], "proxies_damage_scale_vs_enemy_backstab", 0.25);
+							if (damagetype & DMG_ACID) damage /= 3.0;
+						}
+					
+						g_iPlayerProxyControl[attacker] += GetProfileNum(g_strSlenderProfile[iMaster], "proxies_controlgain_hitenemy");
+						if (g_iPlayerProxyControl[attacker] > 100)
+						{
+							g_iPlayerProxyControl[attacker] = 100;
+						}
+						
+						damage *= GetProfileFloat(g_strSlenderProfile[iMaster], "proxies_damage_scale_vs_enemy", 1.0);
+					}
+					
+					return Plugin_Changed;
+				}
+				else if (g_bPlayerProxy[victim])
+				{
+					new iMaster = g_iPlayerProxyMaster[victim];
+					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
+					{
+						g_iPlayerProxyControl[attacker] += GetProfileNum(g_strSlenderProfile[iMaster], "proxies_controlgain_hitbyenemy");
+						if (g_iPlayerProxyControl[attacker] > 100)
+						{
+							g_iPlayerProxyControl[attacker] = 100;
+						}
+						
+						damage *= GetProfileFloat(g_strSlenderProfile[iMaster], "proxies_damage_scale_vs_self", 1.0);
+					}
+					
+					return Plugin_Changed;
+				}
+			}
+			else
+			{
+				damage = 0.0;
+				return Plugin_Changed;
+			}
+		}
+		else
+		{
+			if (g_bPlayerEliminated[attacker] == g_bPlayerEliminated[victim])
+			{
+				damage = 0.0;
+				return Plugin_Changed;
+			}
+		}
+		
+		if (g_bPlayerGhostMode[victim])
+		{
+			damage = 0.0;
+			return Plugin_Changed;
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Hook_TEFireBullets(const String:te_name[], const Players[], numClients, Float:delay)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	new client = TE_ReadNum("m_iPlayer") + 1;
+	if (IsValidClient(client))
+	{
+		if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
+		{
+			ClientEnableFakeLagCompensation(client);
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
+InitializeClient(client)
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeClient(%d)", client);
+#endif
+
+	g_iPlayerGhostModeTarget[client] = INVALID_ENT_REFERENCE;
+	g_iPlayerStaticMaster[client] = -1;
+	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): QueryClientConVar fov_desired", client);
+#endif
+	
+	if (!IsFakeClient(client))
+	{
+		QueryClientConVar(client, "fov_desired", OnClientGetDesiredFOV, GetClientUserId(client));
+	}
+	else
+	{
+		g_iPlayerDesiredFOV[client] = 90;
+	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
+#endif
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		g_bPlayerStatic[client][i] = false;
+		g_flPlayerStaticLastTime[client][i] = 0.0;
+		
+		if (g_strSlenderProfile[i][0])
+		{
+			ClientStopAllSlenderSounds(client, g_strSlenderProfile[i], "sound_static", SNDCHAN_STATIC);
+			ClientStopAllSlenderSounds(client, g_strSlenderProfile[i], "sound_20dollars", SNDCHAN_STATIC);
+		}
+	}
+	
+	g_iPlayerFoundPages[client] = 0;
+	
+	StopSound(client, SNDCHAN_STATIC, TWENTYDOLLARS_SOUND);
+	
+	ClientResetSlenderStats(client);
+	ClientResetFlashlight(client);
+	ClientResetCampingStats(client);
+	ClientResetBlink(client);
+	ClientResetOverlay(client);
+	ClientResetJumpScare(client);
+	ClientUpdateListeningFlags(client);
+	ClientUpdateMusicSystem(client);
+	ClientMusicReset(client);
+	ClientChaseMusicReset(client);
+	ClientChaseMusicSeeReset(client);
+	ClientResetGlow(client);
+	ClientResetPvP(client);
+	ClientResetProxy(client);
+	ClientResetProxyGlow(client);
+	ClientResetSprint(client);
+	ClientResetBreathing(client);
+	ClientResetHints(client);
+	ClientResetScare(client);
+	ClientDisableFakeLagCompensation(client);
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeClient(%d)", client);
+#endif
+}
+
+ClientResetHints(client)
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetHints(%d)", client);
+#endif
+
+	for (new i = 0; i < PlayerHint_MaxNum; i++)
+	{
+		g_bPlayerHints[client][i] = false;
+	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetHints(%d)", client);
+#endif
+}
+
+ClientShowHint(client, iHint)
+{
+	g_bPlayerHints[client][iHint] = true;
+	
+	switch (iHint)
+	{
+		case PlayerHint_Sprint: PrintHintText(client, "%T", "SF2 Hint Sprint", client);
+		case PlayerHint_Flashlight: PrintHintText(client, "%T", "SF2 Hint Flashlight", client);
+		case PlayerHint_Blink: PrintHintText(client, "%T", "SF2 Hint Blink", client);
+		case PlayerHint_MainMenu: PrintHintText(client, "%T", "SF2 Hint Main Menu", client);
+	}
+}
+
+ClientEscape(client)
+{
+#if defined DEBUG
+	DebugMessage("START ClientEscape(%d)", client);
+#endif
+
+	if (!g_bPlayerEscaped[client])
+	{
+		ClientResetBreathing(client);
+		
+		decl String:sName[MAX_NAME_LENGTH];
+		g_bPlayerEscaped[client] = true;
+		GetClientName(client, sName, sizeof(sName));
+		
+		CPrintToChatAll("%t", "SF2 Player Escaped", sName);
+		
+		// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
+		TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
+		
+		// Reset HUD.
+		SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
+		
+		CheckRoundState();
+		
+		Call_StartForward(fOnClientEscape);
+		Call_PushCell(client);
+		Call_Finish();
+	}
+	
+#if defined DEBUG
+	DebugMessage("END ClientEscape(%d)", client);
+#endif
+}
+
+stock Float:ClientGetDistanceFromEntity(client, entity)
+{
+	decl Float:flStartPos[3], Float:flEndPos[3];
+	GetClientAbsOrigin(client, flStartPos);
+	GetEntPropVector(entity, Prop_Data, "m_vecAbsOrigin", flEndPos);
+	return GetVectorDistance(flStartPos, flEndPos);
+}
+
+ClientEnableFakeLagCompensation(client)
+{
+	if (!GetConVarBool(g_cvPlayerFakeLagCompensation)) return;
+	
+	if (!IsValidClient(client) || !IsPlayerAlive(client) || g_bPlayerLagCompensation[client]) return;
+	
+	// Can only enable lag compensation if we're in either of these two teams only.
+	new iMyTeam = GetClientTeam(client);
+	if (iMyTeam != _:TFTeam_Red && iMyTeam != _:TFTeam_Blue) return;
+	
+	// Can only enable lag compensation if there are other active teammates around. This is to prevent spontaneous round restarting.
+	new iCount;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (i == client) continue;
+		
+		if (IsValidClient(i) && IsPlayerAlive(i))
+		{
+			new iTeam = GetClientTeam(i);
+			if ((iTeam == _:TFTeam_Red || iTeam == _:TFTeam_Blue) && iTeam == iMyTeam)
+			{
+				iCount++;
+			}
+		}
+	}
+	
+	if (!iCount) return;
+	
+	// Can only enable lag compensation only for specific weapons.
+	new iActiveWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+	if (!IsValidEdict(iActiveWeapon)) return;
+	
+	decl String:sClassName[64];
+	GetEdictClassname(iActiveWeapon, sClassName, sizeof(sClassName));
+	
+	new bool:bCompensate = false;
+	for (new i = 0; i < sizeof(g_strPlayerLagCompensationWeapons); i++)
+	{
+		if (StrEqual(sClassName, g_strPlayerLagCompensationWeapons[i], false))
+		{
+			bCompensate = true;
+			break;
+		}
+	}
+	
+	if (!bCompensate) return;
+	
+	g_bPlayerLagCompensation[client] = true;
+	g_iPlayerLagCompensationTeam[client] = iMyTeam;
+	SetEntProp(client, Prop_Send, "m_iTeamNum", 0);
+}
+
+ClientDisableFakeLagCompensation(client)
+{
+	if (!g_bPlayerLagCompensation[client]) return;
+	
+	SetEntProp(client, Prop_Send, "m_iTeamNum", g_iPlayerLagCompensationTeam[client]);
+	g_bPlayerLagCompensation[client] = false;
+	g_iPlayerLagCompensationTeam[client] = -1;
+}
+
 
 stock bool:ClientHasCrits(client)
 {
@@ -675,6 +937,10 @@ public bool:Hook_ClientPvPShouldCollide(ent, collisiongroup, contentsmask, bool:
 	return true;
 }
 
+//	==========================================================
+//	FLASHLIGHT / ULTRAVISION FUNCTIONS
+//	==========================================================
+
 ClientProcessFlashlight(i)
 {
 	if (!IsClientInGame(i) || !IsPlayerAlive(i)) return;
@@ -707,6 +973,306 @@ ClientProcessFlashlight(i)
 			else SetEntityRenderFx(flAng, RenderFx:0);
 		}
 	}
+}
+
+public Action:Hook_FlashlightSetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if (EntRefToEntIndex(g_iPlayerFlashlightEnt[other]) != ent) return Plugin_Handled;
+	
+	// We've already checked for flashlight ownership in the last statement. So we can do just this.
+	if (g_bPlayerFlashlightProjected[other]) return Plugin_Handled;
+	
+	return Plugin_Continue;
+}
+
+public Action:Hook_Flashlight2SetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+
+	if (EntRefToEntIndex(g_iPlayerFlashlightEntAng[other]) == ent) return Plugin_Handled;
+	return Plugin_Continue;
+}
+
+public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerFlashlightTimer[client]) return Plugin_Stop;
+	
+	if (!g_bRoundInfiniteFlashlight) g_flPlayerFlashlightMeter[client] -= 0.01;
+	
+	if (g_flPlayerFlashlightMeter[client] <= 0.0)
+	{
+		g_flPlayerFlashlightMeter[client] = 0.0;
+		g_bPlayerFlashlightBroken[client] = true;
+		EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
+		ClientDeactivateFlashlight(client);
+		
+		Call_StartForward(fOnClientBreakFlashlight);
+		Call_PushCell(client);
+		Call_Finish();
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Timer_RechargeFlashlight(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerFlashlightTimer[client]) return Plugin_Stop;
+	
+	g_flPlayerFlashlightMeter[client] += 0.01;
+	
+	if (g_bPlayerFlashlightBroken[client] && g_flPlayerFlashlightMeter[client] >= SF2_FLASHLIGHT_ENABLEAT)
+	{
+		g_bPlayerFlashlightBroken[client] = false;
+	}
+	
+	if (g_flPlayerFlashlightMeter[client] >= 1.0)
+	{
+		g_flPlayerFlashlightMeter[client] = 1.0;
+		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
+ClientActivateFlashlight(client)
+{
+	ClientDeactivateFlashlight(client);
+	
+	new Float:flDrainRate = SF2_FLASHLIGHT_DRAIN_RATE;
+	if (TF2_GetPlayerClass(client) == TFClass_Engineer) flDrainRate *= 1.33;
+	
+	g_bPlayerFlashlight[client] = true;
+	g_hPlayerFlashlightTimer[client] = CreateTimer(flDrainRate, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	
+	decl Float:flPos[3];
+	GetClientEyePosition(client, flPos);
+	
+	new ent = CreateEntityByName("light_dynamic");
+	if (ent != -1)
+	{
+		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
+		DispatchKeyValue(ent, "targetname", "WUBADUBDUBMOTHERBUCKERS");
+		DispatchKeyValue(ent, "rendercolor", "255 255 255");
+		SetVariantFloat(SF2_FLASHLIGHT_WIDTH);
+		AcceptEntityInput(ent, "spotlight_radius");
+		SetVariantFloat(SF2_FLASHLIGHT_LENGTH);
+		AcceptEntityInput(ent, "distance");
+		SetVariantInt(SF2_FLASHLIGHT_BRIGHTNESS);
+		AcceptEntityInput(ent, "brightness");
+		
+		// Convert WU to inches.
+		new Float:cone = 55.0;
+		cone *= 0.75;
+		
+		SetVariantInt(RoundToFloor(cone));
+		AcceptEntityInput(ent, "_inner_cone");
+		SetVariantInt(RoundToFloor(cone));
+		AcceptEntityInput(ent, "_cone");
+		DispatchSpawn(ent);
+		ActivateEntity(ent);
+		SetVariantString("!activator");
+		AcceptEntityInput(ent, "SetParent", client);
+		AcceptEntityInput(ent, "TurnOn");
+		
+		g_iPlayerFlashlightEnt[client] = EntIndexToEntRef(ent);
+		
+		SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightSetTransmit);
+	}
+	
+	// Create.
+	ent = CreateEntityByName("point_spotlight");
+	if (ent != -1)
+	{
+		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
+		
+		decl String:sBuffer[256];
+		FloatToString(SF2_FLASHLIGHT_LENGTH, sBuffer, sizeof(sBuffer));
+		DispatchKeyValue(ent, "spotlightlength", sBuffer);
+		FloatToString(SF2_FLASHLIGHT_WIDTH, sBuffer, sizeof(sBuffer));
+		DispatchKeyValue(ent, "spotlightwidth", sBuffer);
+		DispatchKeyValue(ent, "rendercolor", "255 255 255");
+		DispatchSpawn(ent);
+		ActivateEntity(ent);
+		SetVariantString("!activator");
+		AcceptEntityInput(ent, "SetParent", client);
+		AcceptEntityInput(ent, "LightOn");
+		
+		g_iPlayerFlashlightEntAng[client] = EntIndexToEntRef(ent);
+	}
+	
+	ClientDeactivateUltravision(client);
+	
+	Call_StartForward(fOnClientActivateFlashlight);
+	Call_PushCell(client);
+	Call_Finish();
+}
+
+ClientDeactivateFlashlight(client)
+{
+	new bool:bOld = g_bPlayerFlashlight[client];
+	g_bPlayerFlashlight[client] = false;
+	
+	new ent = EntRefToEntIndex(g_iPlayerFlashlightEnt[client]);
+	g_iPlayerFlashlightEnt[client] = INVALID_ENT_REFERENCE;
+	if (ent && ent != INVALID_ENT_REFERENCE) 
+	{
+		AcceptEntityInput(ent, "TurnOff");
+		AcceptEntityInput(ent, "Kill");
+	}
+	
+	ent = EntRefToEntIndex(g_iPlayerFlashlightEntAng[client]);
+	g_iPlayerFlashlightEntAng[client] = INVALID_ENT_REFERENCE;
+	if (ent && ent != INVALID_ENT_REFERENCE) 
+	{
+		AcceptEntityInput(ent, "LightOff");
+		CreateTimer(0.1, Timer_KillEntity, g_iPlayerFlashlightEntAng[client], TIMER_FLAG_NO_MAPCHANGE);
+	}
+	
+	if (IsClientInGame(client))
+	{
+		g_hPlayerFlashlightTimer[client] = CreateTimer(SF2_FLASHLIGHT_RECHARGE_RATE, Timer_RechargeFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	}
+	else
+	{
+		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
+	}
+	
+	//ClientFlashlightTurnOff(client);
+	ClientActivateUltravision(client);
+	
+	if (bOld && !g_bPlayerFlashlight[client])
+	{
+		Call_StartForward(fOnClientDeactivateFlashlight);
+		Call_PushCell(client);
+		Call_Finish();
+	}
+}
+
+ClientToggleFlashlight(client)
+{
+	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
+	
+	if (g_bPlayerFlashlight[client]) 
+	{
+		ClientDeactivateFlashlight(client);
+		EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
+		g_flPlayerFlashlightLastEnable[client] = GetGameTime();
+	}
+	else if (!g_bPlayerEliminated[client])
+	{
+		new bool:bCanUseFlashlight = true;
+		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_LIGHTSOUT) bCanUseFlashlight = false;
+	
+		if ((!g_bPlayerFlashlightBroken[client] || 
+			g_flPlayerFlashlightMeter[client] >= SF2_FLASHLIGHT_ENABLEAT) &&
+			bCanUseFlashlight)
+		{
+			ClientActivateFlashlight(client);
+			EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
+			g_flPlayerFlashlightLastEnable[client] = GetGameTime();
+		}
+		else
+		{
+			EmitSoundToClient(client, FLASHLIGHT_NOSOUND, _, SNDCHAN_ITEM, SNDLEVEL_NONE);
+		}
+	}
+}
+
+ClientActivateUltravision(client)
+{
+	ClientDeactivateUltravision(client);
+	
+	if (!IsClientInGame(client) || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) return;
+	
+	new ent = CreateEntityByName("light_dynamic");
+	if (ent == -1) return;
+	
+	decl Float:flPos[3];
+	GetClientEyePosition(client, flPos);
+	
+	TeleportEntity(ent, flPos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
+	DispatchKeyValue(ent, "rendercolor", "0 200 255");
+	
+	/*
+	if (g_bPlayerGhostMode[client] || g_bPlayerProxy[client]) SetVariantFloat(SF2_ULTRAVISION_WIDTH * 2.0);
+	else SetVariantFloat(SF2_ULTRAVISION_WIDTH);
+	*/
+	SetVariantFloat(SF2_ULTRAVISION_WIDTH);
+	AcceptEntityInput(ent, "spotlight_radius");
+	
+	SetVariantFloat(SF2_ULTRAVISION_LENGTH);
+	AcceptEntityInput(ent, "distance");
+	SetVariantInt(-10); // Start dark, then fade in via timer.
+	AcceptEntityInput(ent, "brightness");
+	
+	// Convert WU to inches.
+	new Float:cone = SF2_ULTRAVISION_CONE;
+	cone *= 0.75;
+	
+	SetVariantInt(RoundToFloor(cone));
+	AcceptEntityInput(ent, "_inner_cone");
+	SetVariantInt(0);
+	AcceptEntityInput(ent, "_cone");
+	DispatchSpawn(ent);
+	ActivateEntity(ent);
+	SetVariantString("!activator");
+	AcceptEntityInput(ent, "SetParent", client);
+	AcceptEntityInput(ent, "TurnOn");
+	SetEntityRenderFx(ent, RENDERFX_SOLID_SLOW);
+	SetEntityRenderColor(ent, 100, 200, 255, 255);
+	g_iPlayerUltravisionEnt[client] = EntIndexToEntRef(ent);
+	
+	SDKHook(ent, SDKHook_SetTransmit, Hook_UltravisionSetTransmit);
+	
+	g_bPlayerUltravision[client] = true;
+	
+	// Fade in effect.
+	CreateTimer(0.05, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
+{
+	new ent = EntRefToEntIndex(entref);
+	if (!ent || ent == INVALID_ENT_REFERENCE) return Plugin_Stop;
+	
+	new iBrightness = GetEntProp(ent, Prop_Send, "m_Exponent");
+	if (iBrightness >= SF2_ULTRAVISION_BRIGHTNESS) return Plugin_Stop;
+	
+	iBrightness++;
+	SetVariantInt(iBrightness);
+	AcceptEntityInput(ent, "brightness");
+	
+	return Plugin_Continue;
+}
+
+ClientDeactivateUltravision(client)
+{
+	g_bPlayerUltravision[client] = false;
+	
+	new ent = EntRefToEntIndex(g_iPlayerUltravisionEnt[client]);
+	g_iPlayerUltravisionEnt[client] = INVALID_ENT_REFERENCE;
+	if (ent != INVALID_ENT_REFERENCE)
+	{
+		AcceptEntityInput(ent, "TurnOff");
+		AcceptEntityInput(ent, "Kill");
+	}
+}
+
+public Action:Hook_UltravisionSetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+
+	if (!GetConVarBool(g_cvUltravisionEnabled) || EntRefToEntIndex(g_iPlayerUltravisionEnt[other]) != ent || !IsPlayerAlive(other)) return Plugin_Handled;
+	return Plugin_Continue;
 }
 
 stock Float:ClientGetDefaultWalkSpeed(client)
@@ -947,6 +1513,39 @@ ClientProcessVisibility(client)
 	}
 }
 
+stock ClientResetFlashlight(client)
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetFlashlight(%d)", client);
+#endif
+
+	ClientDeactivateFlashlight(client);
+	g_flPlayerFlashlightMeter[client] = 1.0;
+	g_bPlayerFlashlightBroken[client] = false;
+	g_flPlayerFlashlightLastEnable[client] = GetGameTime();
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetFlashlight(%d)", client);
+#endif
+}
+
+stock ClientResetUltravision(client)
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetUltravision(%d)", client);
+#endif
+
+	ClientDeactivateUltravision(client);
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetUltravision(%d)", client);
+#endif
+}
+
+//	==========================================================
+//	INTERACTIVE GLOW FUNCTIONS
+//	==========================================================
+
 ClientProcessGlow(client)
 {
 	if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_bPlayerEliminated[client] && !g_bPlayerProxy[client]) || g_bPlayerGhostMode[client]) return;
@@ -1000,6 +1599,82 @@ ClientResetGlow(client)
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetGlow(%d)", client);
 #endif
 }
+
+ClientRemoveGlow(client)
+{
+	new iGlow = EntRefToEntIndex(g_iPlayerGlowEntity[client]);
+	g_iPlayerGlowEntity[client] = INVALID_ENT_REFERENCE;
+	if (iGlow && iGlow != INVALID_ENT_REFERENCE)
+	{
+		AcceptEntityInput(iGlow, "Kill");
+	}
+}
+
+bool:ClientCreateGlowOnEntity(client, iEnt, const String:sAttachment[]="")
+{
+	ClientRemoveGlow(client);
+
+	if (!iEnt || !IsValidEntity(iEnt)) return false;
+
+	decl String:sBuffer[PLATFORM_MAX_PATH];
+	GetEntPropString(iEnt, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
+	
+	if (!sBuffer[0]) return false;
+	
+	new ent = CreateEntityByName("simple_bot");
+	if (ent != -1)
+	{
+		DispatchSpawn(ent);
+		ActivateEntity(ent);
+		SetEntityModel(ent, sBuffer);
+		SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
+		SetEntityRenderColor(ent, 0, 0, 0, 1);
+		SetEntProp(ent, Prop_Data, "m_takedamage", 0);
+		SetEntProp(ent, Prop_Send, "m_bGlowEnabled", 1);
+		SetEntPropFloat(ent, Prop_Send, "m_flModelScale", GetEntPropFloat(iEnt, Prop_Send, "m_flModelScale"));
+		// Set solid flags.
+		new iFlags = GetEntProp(ent, Prop_Send, "m_usSolidFlags");
+		
+		if (!(iFlags & 0x0004)) iFlags |= 0x0004; // 	FSOLID_NOT_SOLID
+		if (!(iFlags & 0x0008)) iFlags |= 0x0008; // 	FSOLID_TRIGGER
+		SetEntProp(ent, Prop_Send, "m_usSolidFlags", iFlags);
+		
+		iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
+		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // 	EF_BONEMERGE
+		SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
+		
+		SetEntityMoveType(ent, MOVETYPE_NONE);
+		SetVariantString("!activator");
+		AcceptEntityInput(ent, "SetParent", iEnt);
+		
+		if (sAttachment[0])
+		{
+			SetVariantString(sAttachment);
+			AcceptEntityInput(ent, "SetParentAttachment");
+		}
+		
+		g_iPlayerGlowEntity[client] = EntIndexToEntRef(ent);
+		
+		SDKHook(ent, SDKHook_SetTransmit, Hook_GlowSetTransmit);
+		
+		return true;
+	}
+	
+	return false;
+}
+
+public Action:Hook_GlowSetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+
+	if (EntRefToEntIndex(g_iPlayerGlowEntity[other]) != ent) return Plugin_Handled;
+	
+	return Plugin_Continue;
+}
+
+//	==========================================================
+//	BREATHING FUNCTIONS
+//	==========================================================
 
 ClientResetBreathing(client)
 {
@@ -1067,6 +1742,10 @@ public Action:Timer_ClientBreath(Handle:timer, any:userid)
 	
 	ClientStopBreathing(client);
 }
+
+//	==========================================================
+//	SPRINTING FUNCTIONS
+//	==========================================================
 
 ClientResetSprint(client)
 {
@@ -1251,449 +1930,9 @@ public Action:Timer_ClientRechargeSprint(Handle:timer, any:userid)
 	ClientSprintTimer(client, true);
 }
 
-ClientRemoveGlow(client)
-{
-	new iGlow = EntRefToEntIndex(g_iPlayerGlowEntity[client]);
-	g_iPlayerGlowEntity[client] = INVALID_ENT_REFERENCE;
-	if (iGlow && iGlow != INVALID_ENT_REFERENCE)
-	{
-		AcceptEntityInput(iGlow, "Kill");
-	}
-}
-
-bool:ClientCreateGlowOnEntity(client, iEnt, const String:sAttachment[]="")
-{
-	ClientRemoveGlow(client);
-
-	if (!iEnt || !IsValidEntity(iEnt)) return false;
-
-	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetEntPropString(iEnt, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
-	
-	if (!sBuffer[0]) return false;
-	
-	new ent = CreateEntityByName("simple_bot");
-	if (ent != -1)
-	{
-		DispatchSpawn(ent);
-		ActivateEntity(ent);
-		SetEntityModel(ent, sBuffer);
-		SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
-		SetEntityRenderColor(ent, 0, 0, 0, 1);
-		SetEntProp(ent, Prop_Data, "m_takedamage", 0);
-		SetEntProp(ent, Prop_Send, "m_bGlowEnabled", 1);
-		SetEntPropFloat(ent, Prop_Send, "m_flModelScale", GetEntPropFloat(iEnt, Prop_Send, "m_flModelScale"));
-		// Set solid flags.
-		new iFlags = GetEntProp(ent, Prop_Send, "m_usSolidFlags");
-		
-		if (!(iFlags & 0x0004)) iFlags |= 0x0004; // 	FSOLID_NOT_SOLID
-		if (!(iFlags & 0x0008)) iFlags |= 0x0008; // 	FSOLID_TRIGGER
-		SetEntProp(ent, Prop_Send, "m_usSolidFlags", iFlags);
-		
-		iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
-		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // 	EF_BONEMERGE
-		SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
-		
-		SetEntityMoveType(ent, MOVETYPE_NONE);
-		SetVariantString("!activator");
-		AcceptEntityInput(ent, "SetParent", iEnt);
-		
-		if (sAttachment[0])
-		{
-			SetVariantString(sAttachment);
-			AcceptEntityInput(ent, "SetParentAttachment");
-		}
-		
-		g_iPlayerGlowEntity[client] = EntIndexToEntRef(ent);
-		
-		SDKHook(ent, SDKHook_SetTransmit, Hook_GlowSetTransmit);
-		
-		return true;
-	}
-	
-	return false;
-}
-
-public Action:Hook_GlowSetTransmit(ent, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	if (EntRefToEntIndex(g_iPlayerGlowEntity[other]) != ent) return Plugin_Handled;
-	
-	return Plugin_Continue;
-}
-
-ClientResetProxyGlow(client)
-{
-	ClientRemoveProxyGlow(client);
-}
-
-ClientRemoveProxyGlow(client)
-{
-	if (!g_bPlayerHasProxyGlow[client]) return;
-	
-	g_bPlayerHasProxyGlow[client] = false;
-	
-	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
-	if (iGlow && iGlow != INVALID_ENT_REFERENCE) AcceptEntityInput(iGlow, "Kill");
-	
-	g_iPlayerProxyGlowEntity[client] = INVALID_ENT_REFERENCE;
-}
-
-bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
-{
-	ClientRemoveProxyGlow(client);
-	
-	g_bPlayerHasProxyGlow[client] = true;
-	
-	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
-	
-	if (!sBuffer[0]) return false;
-	
-	new iGlow = CreateEntityByName("simple_bot");
-	if (iGlow != -1)
-	{
-		new Float:flModelScale = GetEntPropFloat(client, Prop_Send, "m_flModelScale");
-		
-		DispatchSpawn(iGlow);
-		ActivateEntity(iGlow);
-		SetEntityMoveType(iGlow, MOVETYPE_NONE);
-		SetEntityModel(iGlow, sBuffer);
-		SetEntityRenderMode(iGlow, RENDER_TRANSCOLOR);
-		SetEntityRenderColor(iGlow, 0, 0, 0, 1);
-		SetEntProp(iGlow, Prop_Data, "m_takedamage", 0);
-		SetEntProp(iGlow, Prop_Send, "m_bGlowEnabled", 1);
-		SetEntPropFloat(iGlow, Prop_Send, "m_flModelScale", flModelScale);
-		
-		// Set solid flags.
-		new iFlags = GetEntProp(iGlow, Prop_Send, "m_usSolidFlags");
-		if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
-		if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
-		SetEntProp(iGlow, Prop_Send, "m_usSolidFlags", iFlags);
-		
-		// Set effect flags.
-		iFlags = GetEntProp(iGlow, Prop_Send, "m_fEffects");
-		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // EF_BONEMERGE
-		SetEntProp(iGlow, Prop_Send, "m_fEffects", iFlags);
-		
-		SetVariantString("!activator");
-		AcceptEntityInput(iGlow, "SetParent", client);
-		
-		if (sAttachment[0])
-		{
-			SetVariantString(sAttachment);
-			AcceptEntityInput(iGlow, "SetParentAttachment");
-		}
-		
-		g_iPlayerProxyGlowEntity[client] = EntIndexToEntRef(iGlow);
-		
-		SDKHook(iGlow, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
-		
-		return true;
-	}
-	
-	return false;
-}
-
-public Action:Hook_ProxyGlowSetTransmit(ent, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	new iOwner = -1;
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i)) continue;
-		if (EntRefToEntIndex(g_iPlayerProxyGlowEntity[i]) == ent)
-		{
-			iOwner = i;
-			break;
-		}
-	}
-	
-	if (iOwner != -1)
-	{
-		if (!IsPlayerAlive(iOwner) || g_bPlayerEliminated[iOwner]) return Plugin_Handled;
-		if (!IsPlayerAlive(other) || (!g_bPlayerProxy[other] && !g_bPlayerGhostMode[other])) return Plugin_Handled;
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Hook_TEFireBullets(const String:te_name[], const Players[], numClients, Float:delay)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	new client = TE_ReadNum("m_iPlayer") + 1;
-	if (IsValidClient(client))
-	{
-		if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
-		{
-			ClientEnableFakeLagCompensation(client);
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bool:result)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
-	{
-		if (StrEqual(sWeaponName, "tf_weapon_sniperrifle"))
-		{
-			// TRACE!
-			decl Float:flStartPos[3], Float:flEyeAng[3];
-			GetClientEyePosition(client, flStartPos);
-			GetClientEyeAngles(client, flEyeAng);
-			
-			new Handle:hTrace = TR_TraceRayFilterEx(flStartPos, flEyeAng, MASK_SHOT, RayType_Infinite, TraceRayDontHitEntity, client);
-			new iHitEntity = TR_GetEntityIndex(hTrace);
-			new iHitGroup = TR_GetHitGroup(hTrace);
-			CloseHandle(hTrace);
-			
-			if (IsValidClient(iHitEntity))
-			{
-				if (GetClientTeam(iHitEntity) == GetClientTeam(client))
-				{
-					if (g_bRoundWarmup || IsClientInPvP(iHitEntity))
-					{
-						new Float:flDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
-						if (flDamage < 50.0) flDamage = 50.0;
-						new iDamageType = DMG_BULLET;
-						
-						if (ClientHasCrits(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
-						{
-							result = true;
-							iDamageType |= DMG_ACID;
-						}
-						
-						SDKHooks_TakeDamage(iHitEntity, client, client, flDamage, iDamageType);
-						return Plugin_Changed;
-					}
-				}
-			}
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (g_bRoundWarmup) return Plugin_Continue;
-	
-	if (attacker != victim && IsValidClient(attacker))
-	{
-		if (!g_bRoundEnded)
-		{
-			if (IsClientInPvP(victim) && IsClientInPvP(attacker))
-			{
-				if (attacker == inflictor)
-				{
-					if (IsValidEdict(weapon))
-					{
-						decl String:sWeaponClass[64];
-						GetEdictClassname(weapon, sWeaponClass, sizeof(sWeaponClass));
-						
-						// Backstab check!
-						if (StrEqual(sWeaponClass, "tf_weapon_knife", false) ||
-						(TF2_GetPlayerClass(attacker) == TFClass_Spy && StrEqual(sWeaponClass, "saxxy", false)))
-						{
-							decl Float:flMyPos[3], Float:flHisPos[3], Float:flMyDirection[3];
-							GetClientAbsOrigin(victim, flMyPos);
-							GetClientAbsOrigin(attacker, flHisPos);
-							GetClientEyeAngles(victim, flMyDirection);
-							GetAngleVectors(flMyDirection, flMyDirection, NULL_VECTOR, NULL_VECTOR);
-							NormalizeVector(flMyDirection, flMyDirection);
-							ScaleVector(flMyDirection, 32.0);
-							AddVectors(flMyDirection, flMyPos, flMyDirection);
-							
-							decl Float:p[3], Float:s[3];
-							MakeVectorFromPoints(flMyPos, flHisPos, p);
-							MakeVectorFromPoints(flMyPos, flMyDirection, s);
-							if (GetVectorDotProduct(p, s) <= 0.0)
-							{
-								damage = float(GetEntProp(victim, Prop_Send, "m_iHealth")) * 2.0;
-								
-								new Handle:hCvar = FindConVar("tf_weapon_criticals");
-								if (hCvar != INVALID_HANDLE && GetConVarBool(hCvar)) damagetype |= DMG_ACID;
-								return Plugin_Changed;
-							}
-						}
-					}
-				}
-			}
-			else if (g_bPlayerProxy[victim] || g_bPlayerProxy[attacker])
-			{
-				if (g_bPlayerEliminated[attacker] == g_bPlayerEliminated[victim])
-				{
-					damage = 0.0;
-					return Plugin_Changed;
-				}
-				
-				if (g_bPlayerProxy[attacker])
-				{
-					new iMaxHealth = SDKCall(g_hSDKGetMaxHealth, victim);
-					new iMaster = g_iPlayerProxyMaster[attacker];
-					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
-					{
-						if (damagecustom == TF_CUSTOM_TAUNT_GRAND_SLAM ||
-						damagecustom == TF_CUSTOM_TAUNT_FENCING ||
-						damagecustom == TF_CUSTOM_TAUNT_ARROW_STAB ||
-						damagecustom == TF_CUSTOM_TAUNT_GRENADE ||
-						damagecustom == TF_CUSTOM_TAUNT_BARBARIAN_SWING ||
-						damagecustom == TF_CUSTOM_TAUNT_ENGINEER_ARM ||
-						damagecustom == TF_CUSTOM_TAUNT_ARMAGEDDON)
-						{
-							if (damage >= float(iMaxHealth)) damage = float(iMaxHealth) * 0.5;
-							else damage = 0.0;
-						}
-						else if (damagecustom == TF_CUSTOM_BACKSTAB) // Modify backstab damage.
-						{
-							damage = float(iMaxHealth) * GetProfileFloat(g_strSlenderProfile[iMaster], "proxies_damage_scale_vs_enemy_backstab", 0.25);
-							if (damagetype & DMG_ACID) damage /= 3.0;
-						}
-					
-						g_iPlayerProxyControl[attacker] += GetProfileNum(g_strSlenderProfile[iMaster], "proxies_controlgain_hitenemy");
-						if (g_iPlayerProxyControl[attacker] > 100)
-						{
-							g_iPlayerProxyControl[attacker] = 100;
-						}
-						
-						damage *= GetProfileFloat(g_strSlenderProfile[iMaster], "proxies_damage_scale_vs_enemy", 1.0);
-					}
-					
-					return Plugin_Changed;
-				}
-				else if (g_bPlayerProxy[victim])
-				{
-					new iMaster = g_iPlayerProxyMaster[victim];
-					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
-					{
-						g_iPlayerProxyControl[attacker] += GetProfileNum(g_strSlenderProfile[iMaster], "proxies_controlgain_hitbyenemy");
-						if (g_iPlayerProxyControl[attacker] > 100)
-						{
-							g_iPlayerProxyControl[attacker] = 100;
-						}
-						
-						damage *= GetProfileFloat(g_strSlenderProfile[iMaster], "proxies_damage_scale_vs_self", 1.0);
-					}
-					
-					return Plugin_Changed;
-				}
-			}
-			else
-			{
-				damage = 0.0;
-				return Plugin_Changed;
-			}
-		}
-		else
-		{
-			if (g_bPlayerEliminated[attacker] == g_bPlayerEliminated[victim])
-			{
-				damage = 0.0;
-				return Plugin_Changed;
-			}
-		}
-		
-		if (g_bPlayerGhostMode[victim])
-		{
-			damage = 0.0;
-			return Plugin_Changed;
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-stock ClientSetFOV(client, iFOV)
-{
-	SetEntData(client, g_offsPlayerFOV, iFOV);
-	SetEntData(client, g_offsPlayerDefaultFOV, iFOV);
-}
-
-public OnClientGetDesiredFOV(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
-{
-	if (!IsValidClient(client)) return;
-	
-	g_iPlayerDesiredFOV[client] = StringToInt(cvarValue);
-	ClientSetFOV(client, g_iPlayerDesiredFOV[client]);
-}
-
-InitializeClient(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeClient(%d)", client);
-#endif
-
-	g_iPlayerGhostModeTarget[client] = INVALID_ENT_REFERENCE;
-	g_iPlayerStaticMaster[client] = -1;
-	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): QueryClientConVar fov_desired", client);
-#endif
-	
-	if (!IsFakeClient(client))
-	{
-		QueryClientConVar(client, "fov_desired", OnClientGetDesiredFOV, GetClientUserId(client));
-	}
-	else
-	{
-		g_iPlayerDesiredFOV[client] = 90;
-	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
-#endif
-	
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		g_bPlayerStatic[client][i] = false;
-		g_flPlayerStaticLastTime[client][i] = 0.0;
-		
-		if (g_strSlenderProfile[i][0])
-		{
-			ClientStopAllSlenderSounds(client, g_strSlenderProfile[i], "sound_static", SNDCHAN_STATIC);
-			ClientStopAllSlenderSounds(client, g_strSlenderProfile[i], "sound_20dollars", SNDCHAN_STATIC);
-		}
-	}
-	
-	g_iPlayerFoundPages[client] = 0;
-	
-	StopSound(client, SNDCHAN_STATIC, TWENTYDOLLARS_SOUND);
-	
-	ClientResetSlenderStats(client);
-	ClientResetFlashlight(client);
-	ClientResetCampingStats(client);
-	ClientResetBlink(client);
-	ClientResetOverlay(client);
-	ClientResetJumpScare(client);
-	ClientUpdateListeningFlags(client);
-	ClientUpdateMusicSystem(client);
-	ClientMusicReset(client);
-	ClientChaseMusicReset(client);
-	ClientChaseMusicSeeReset(client);
-	ClientResetGlow(client);
-	ClientResetPvP(client);
-	ClientResetProxy(client);
-	ClientResetProxyGlow(client);
-	ClientResetSprint(client);
-	ClientResetBreathing(client);
-	ClientResetHints(client);
-	ClientResetScare(client);
-	ClientDisableFakeLagCompensation(client);
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeClient(%d)", client);
-#endif
-}
+//	==========================================================
+//	PROXY / GHOST AND GLOW FUNCTIONS
+//	==========================================================
 
 ClientResetProxy(client, bool:bResetFull=true)
 {
@@ -1743,23 +1982,6 @@ ClientResetProxy(client, bool:bResetFull=true)
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetProxy(%d)", client);
 #endif
-}
-
-stock TF2_GetClassName(TFClassType:iClass, String:sBuffer[], sBufferLen)
-{
-	switch (iClass)
-	{
-		case TFClass_Scout: strcopy(sBuffer, sBufferLen, "scout");
-		case TFClass_Sniper: strcopy(sBuffer, sBufferLen, "sniper");
-		case TFClass_Soldier: strcopy(sBuffer, sBufferLen, "soldier");
-		case TFClass_DemoMan: strcopy(sBuffer, sBufferLen, "demoman");
-		case TFClass_Heavy: strcopy(sBuffer, sBufferLen, "heavyweapons");
-		case TFClass_Medic: strcopy(sBuffer, sBufferLen, "medic");
-		case TFClass_Pyro: strcopy(sBuffer, sBufferLen, "pyro");
-		case TFClass_Spy: strcopy(sBuffer, sBufferLen, "spy");
-		case TFClass_Engineer: strcopy(sBuffer, sBufferLen, "engineer");
-		default: strcopy(sBuffer, sBufferLen, "");
-	}
 }
 
 ClientStartProxyAvailableTimer(client)
@@ -1993,6 +2215,79 @@ public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, userid, TIMER_FLAG_NO_MAPCHANGE);
 }
 
+ClientResetProxyGlow(client)
+{
+	ClientRemoveProxyGlow(client);
+}
+
+ClientRemoveProxyGlow(client)
+{
+	if (!g_bPlayerHasProxyGlow[client]) return;
+	
+	g_bPlayerHasProxyGlow[client] = false;
+	
+	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
+	if (iGlow && iGlow != INVALID_ENT_REFERENCE) AcceptEntityInput(iGlow, "Kill");
+	
+	g_iPlayerProxyGlowEntity[client] = INVALID_ENT_REFERENCE;
+}
+
+bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
+{
+	ClientRemoveProxyGlow(client);
+	
+	g_bPlayerHasProxyGlow[client] = true;
+	
+	decl String:sBuffer[PLATFORM_MAX_PATH];
+	GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
+	
+	if (!sBuffer[0]) return false;
+	
+	new iGlow = CreateEntityByName("simple_bot");
+	if (iGlow != -1)
+	{
+		new Float:flModelScale = GetEntPropFloat(client, Prop_Send, "m_flModelScale");
+		
+		DispatchSpawn(iGlow);
+		ActivateEntity(iGlow);
+		SetEntityMoveType(iGlow, MOVETYPE_NONE);
+		SetEntityModel(iGlow, sBuffer);
+		SetEntityRenderMode(iGlow, RENDER_TRANSCOLOR);
+		SetEntityRenderColor(iGlow, 0, 0, 0, 1);
+		SetEntProp(iGlow, Prop_Data, "m_takedamage", 0);
+		SetEntProp(iGlow, Prop_Send, "m_bGlowEnabled", 1);
+		SetEntPropFloat(iGlow, Prop_Send, "m_flModelScale", flModelScale);
+		
+		// Set solid flags.
+		new iFlags = GetEntProp(iGlow, Prop_Send, "m_usSolidFlags");
+		if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
+		if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
+		SetEntProp(iGlow, Prop_Send, "m_usSolidFlags", iFlags);
+		
+		// Set effect flags.
+		iFlags = GetEntProp(iGlow, Prop_Send, "m_fEffects");
+		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // EF_BONEMERGE
+		SetEntProp(iGlow, Prop_Send, "m_fEffects", iFlags);
+		
+		SetVariantString("!activator");
+		AcceptEntityInput(iGlow, "SetParent", client);
+		
+		if (sAttachment[0])
+		{
+			SetVariantString(sAttachment);
+			AcceptEntityInput(iGlow, "SetParentAttachment");
+		}
+		
+		g_iPlayerProxyGlowEntity[client] = EntIndexToEntRef(iGlow);
+		
+		SDKHook(iGlow, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
+		
+		return true;
+	}
+	
+	return false;
+}
+
 ClientResetJumpScare(client)
 {
 #if defined DEBUG
@@ -2005,24 +2300,6 @@ ClientResetJumpScare(client)
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetJumpScare(%d)", client);
 #endif
-}
-
-bool:ClientSetQueuePoints(client, iAmount)
-{
-	if (!IsClientConnected(client) || !AreClientCookiesCached(client)) return false;
-	g_iPlayerQueuePoints[client] = iAmount;
-	ClientSaveCookies(client);
-	return true;
-}
-
-ClientSaveCookies(client)
-{
-	if (!IsClientConnected(client) || !AreClientCookiesCached(client)) return;
-	
-	// Save and reset our queue points.
-	decl String:s[64];
-	Format(s, sizeof(s), "%d ; %d ; %d ; %d ; %d", g_iPlayerQueuePoints[client], g_bPlayerShowHints[client], g_iPlayerMuteMode[client], g_bPlayerFlashlightProjected[client], g_bPlayerWantsTheP[client]);
-	SetClientCookie(client, g_hCookie, s);
 }
 
 ClientOnButtonPress(client, button)
@@ -2089,12 +2366,17 @@ ClientOnButtonPress(client, button)
 	}
 }
 
-/*
-ClientOnButtonRelease(client, button)
-{
-}
-*/
+//	==========================================================
+//	DEATH CAM FUNCTIONS
+//	==========================================================
 
+public Action:Hook_DeathCamSetTransmit(slender, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+
+	if (EntRefToEntIndex(g_iPlayerDeathCamEnt2[other]) != slender) return Plugin_Handled;
+	return Plugin_Continue;
+}
 
 ClientResetDeathCam(client)
 {
@@ -2272,6 +2554,10 @@ public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
 	ClientResetDeathCam(client);
 }
 
+//	==========================================================
+//	GHOST MODE FUNCTIONS
+//	==========================================================
+
 ClientEnableGhostMode(client)
 {
 	if (!IsClientInGame(client)) return;
@@ -2368,305 +2654,9 @@ ClientGhostModeNextTarget(client)
 	}
 }
 
-ClientActivateFlashlight(client)
-{
-	ClientDeactivateFlashlight(client);
-	
-	new Float:flDrainRate = SF2_FLASHLIGHT_DRAIN_RATE;
-	if (TF2_GetPlayerClass(client) == TFClass_Engineer) flDrainRate *= 1.33;
-	
-	g_bPlayerFlashlight[client] = true;
-	g_hPlayerFlashlightTimer[client] = CreateTimer(flDrainRate, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	
-	decl Float:flPos[3];
-	GetClientEyePosition(client, flPos);
-	
-	new ent = CreateEntityByName("light_dynamic");
-	if (ent != -1)
-	{
-		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
-		DispatchKeyValue(ent, "targetname", "WUBADUBDUBMOTHERBUCKERS");
-		DispatchKeyValue(ent, "rendercolor", "255 255 255");
-		SetVariantFloat(SF2_FLASHLIGHT_WIDTH);
-		AcceptEntityInput(ent, "spotlight_radius");
-		SetVariantFloat(SF2_FLASHLIGHT_LENGTH);
-		AcceptEntityInput(ent, "distance");
-		SetVariantInt(SF2_FLASHLIGHT_BRIGHTNESS);
-		AcceptEntityInput(ent, "brightness");
-		
-		// Convert WU to inches.
-		new Float:cone = 55.0;
-		cone *= 0.75;
-		
-		SetVariantInt(RoundToFloor(cone));
-		AcceptEntityInput(ent, "_inner_cone");
-		SetVariantInt(RoundToFloor(cone));
-		AcceptEntityInput(ent, "_cone");
-		DispatchSpawn(ent);
-		ActivateEntity(ent);
-		SetVariantString("!activator");
-		AcceptEntityInput(ent, "SetParent", client);
-		AcceptEntityInput(ent, "TurnOn");
-		
-		g_iPlayerFlashlightEnt[client] = EntIndexToEntRef(ent);
-		
-		SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightSetTransmit);
-	}
-	
-	// Create.
-	ent = CreateEntityByName("point_spotlight");
-	if (ent != -1)
-	{
-		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
-		
-		decl String:sBuffer[256];
-		FloatToString(SF2_FLASHLIGHT_LENGTH, sBuffer, sizeof(sBuffer));
-		DispatchKeyValue(ent, "spotlightlength", sBuffer);
-		FloatToString(SF2_FLASHLIGHT_WIDTH, sBuffer, sizeof(sBuffer));
-		DispatchKeyValue(ent, "spotlightwidth", sBuffer);
-		DispatchKeyValue(ent, "rendercolor", "255 255 255");
-		DispatchSpawn(ent);
-		ActivateEntity(ent);
-		SetVariantString("!activator");
-		AcceptEntityInput(ent, "SetParent", client);
-		AcceptEntityInput(ent, "LightOn");
-		
-		g_iPlayerFlashlightEntAng[client] = EntIndexToEntRef(ent);
-	}
-	
-	ClientDeactivateUltravision(client);
-	
-	Call_StartForward(fOnClientActivateFlashlight);
-	Call_PushCell(client);
-	Call_Finish();
-}
-
-ClientDeactivateFlashlight(client)
-{
-	new bool:bOld = g_bPlayerFlashlight[client];
-	g_bPlayerFlashlight[client] = false;
-	
-	new ent = EntRefToEntIndex(g_iPlayerFlashlightEnt[client]);
-	g_iPlayerFlashlightEnt[client] = INVALID_ENT_REFERENCE;
-	if (ent && ent != INVALID_ENT_REFERENCE) 
-	{
-		AcceptEntityInput(ent, "TurnOff");
-		AcceptEntityInput(ent, "Kill");
-	}
-	
-	ent = EntRefToEntIndex(g_iPlayerFlashlightEntAng[client]);
-	g_iPlayerFlashlightEntAng[client] = INVALID_ENT_REFERENCE;
-	if (ent && ent != INVALID_ENT_REFERENCE) 
-	{
-		AcceptEntityInput(ent, "LightOff");
-		CreateTimer(0.1, Timer_KillEntity, g_iPlayerFlashlightEntAng[client], TIMER_FLAG_NO_MAPCHANGE);
-	}
-	
-	if (IsClientInGame(client))
-	{
-		g_hPlayerFlashlightTimer[client] = CreateTimer(SF2_FLASHLIGHT_RECHARGE_RATE, Timer_RechargeFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	}
-	else
-	{
-		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
-	}
-	
-	//ClientFlashlightTurnOff(client);
-	ClientActivateUltravision(client);
-	
-	if (bOld && !g_bPlayerFlashlight[client])
-	{
-		Call_StartForward(fOnClientDeactivateFlashlight);
-		Call_PushCell(client);
-		Call_Finish();
-	}
-}
-
-ClientToggleFlashlight(client)
-{
-	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
-	
-	if (g_bPlayerFlashlight[client]) 
-	{
-		ClientDeactivateFlashlight(client);
-		EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
-		g_flPlayerFlashlightLastEnable[client] = GetGameTime();
-	}
-	else if (!g_bPlayerEliminated[client])
-	{
-		new bool:bCanUseFlashlight = true;
-		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_LIGHTSOUT) bCanUseFlashlight = false;
-	
-		if ((!g_bPlayerFlashlightBroken[client] || 
-			g_flPlayerFlashlightMeter[client] >= SF2_FLASHLIGHT_ENABLEAT) &&
-			bCanUseFlashlight)
-		{
-			ClientActivateFlashlight(client);
-			EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
-			g_flPlayerFlashlightLastEnable[client] = GetGameTime();
-		}
-		else
-		{
-			EmitSoundToClient(client, FLASHLIGHT_NOSOUND, _, SNDCHAN_ITEM, SNDLEVEL_NONE);
-		}
-	}
-}
-
-public Action:Hook_FlashlightSetTransmit(ent, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (EntRefToEntIndex(g_iPlayerFlashlightEnt[other]) != ent) return Plugin_Handled;
-	
-	// We've already checked for flashlight ownership in the last statement. So we can do just this.
-	if (g_bPlayerFlashlightProjected[other]) return Plugin_Handled;
-	
-	return Plugin_Continue;
-}
-
-public Action:Hook_Flashlight2SetTransmit(ent, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	if (EntRefToEntIndex(g_iPlayerFlashlightEntAng[other]) == ent) return Plugin_Handled;
-	return Plugin_Continue;
-}
-
-public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
-{
-	new client = GetClientOfUserId(userid);
-	if (client <= 0) return Plugin_Stop;
-	
-	if (timer != g_hPlayerFlashlightTimer[client]) return Plugin_Stop;
-	
-	if (!g_bRoundInfiniteFlashlight) g_flPlayerFlashlightMeter[client] -= 0.01;
-	
-	if (g_flPlayerFlashlightMeter[client] <= 0.0)
-	{
-		g_flPlayerFlashlightMeter[client] = 0.0;
-		g_bPlayerFlashlightBroken[client] = true;
-		EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
-		ClientDeactivateFlashlight(client);
-		
-		Call_StartForward(fOnClientBreakFlashlight);
-		Call_PushCell(client);
-		Call_Finish();
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Timer_RechargeFlashlight(Handle:timer, any:userid)
-{
-	new client = GetClientOfUserId(userid);
-	if (client <= 0) return Plugin_Stop;
-	
-	if (timer != g_hPlayerFlashlightTimer[client]) return Plugin_Stop;
-	
-	g_flPlayerFlashlightMeter[client] += 0.01;
-	
-	if (g_bPlayerFlashlightBroken[client] && g_flPlayerFlashlightMeter[client] >= SF2_FLASHLIGHT_ENABLEAT)
-	{
-		g_bPlayerFlashlightBroken[client] = false;
-	}
-	
-	if (g_flPlayerFlashlightMeter[client] >= 1.0)
-	{
-		g_flPlayerFlashlightMeter[client] = 1.0;
-		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
-		return Plugin_Stop;
-	}
-	
-	return Plugin_Continue;
-}
-
-ClientActivateUltravision(client)
-{
-	ClientDeactivateUltravision(client);
-	
-	if (!IsClientInGame(client) || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) return;
-	
-	new ent = CreateEntityByName("light_dynamic");
-	if (ent == -1) return;
-	
-	decl Float:flPos[3];
-	GetClientEyePosition(client, flPos);
-	
-	TeleportEntity(ent, flPos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
-	DispatchKeyValue(ent, "rendercolor", "0 200 255");
-	
-	/*
-	if (g_bPlayerGhostMode[client] || g_bPlayerProxy[client]) SetVariantFloat(SF2_ULTRAVISION_WIDTH * 2.0);
-	else SetVariantFloat(SF2_ULTRAVISION_WIDTH);
-	*/
-	SetVariantFloat(SF2_ULTRAVISION_WIDTH);
-	AcceptEntityInput(ent, "spotlight_radius");
-	
-	SetVariantFloat(SF2_ULTRAVISION_LENGTH);
-	AcceptEntityInput(ent, "distance");
-	SetVariantInt(-10); // Start dark, then fade in via timer.
-	AcceptEntityInput(ent, "brightness");
-	
-	// Convert WU to inches.
-	new Float:cone = SF2_ULTRAVISION_CONE;
-	cone *= 0.75;
-	
-	SetVariantInt(RoundToFloor(cone));
-	AcceptEntityInput(ent, "_inner_cone");
-	SetVariantInt(RoundToFloor(cone));
-	AcceptEntityInput(ent, "_cone");
-	DispatchSpawn(ent);
-	ActivateEntity(ent);
-	SetVariantString("!activator");
-	AcceptEntityInput(ent, "SetParent", client);
-	AcceptEntityInput(ent, "TurnOn");
-	SetEntityRenderFx(ent, RENDERFX_SOLID_SLOW);
-	SetEntityRenderColor(ent, 100, 200, 255, 255);
-	g_iPlayerUltravisionEnt[client] = EntIndexToEntRef(ent);
-	
-	SDKHook(ent, SDKHook_SetTransmit, Hook_UltravisionSetTransmit);
-	
-	g_bPlayerUltravision[client] = true;
-	
-	// Fade in effect.
-	CreateTimer(0.05, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-}
-
-public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
-{
-	new ent = EntRefToEntIndex(entref);
-	if (!ent || ent == INVALID_ENT_REFERENCE) return Plugin_Stop;
-	
-	new iBrightness = GetEntProp(ent, Prop_Send, "m_Exponent");
-	if (iBrightness >= SF2_ULTRAVISION_BRIGHTNESS) return Plugin_Stop;
-	
-	iBrightness++;
-	SetVariantInt(iBrightness);
-	AcceptEntityInput(ent, "brightness");
-	
-	return Plugin_Continue;
-}
-
-ClientDeactivateUltravision(client)
-{
-	g_bPlayerUltravision[client] = false;
-	
-	new ent = EntRefToEntIndex(g_iPlayerUltravisionEnt[client]);
-	g_iPlayerUltravisionEnt[client] = INVALID_ENT_REFERENCE;
-	if (ent != INVALID_ENT_REFERENCE)
-	{
-		AcceptEntityInput(ent, "TurnOff");
-		AcceptEntityInput(ent, "Kill");
-	}
-}
-
-public Action:Hook_UltravisionSetTransmit(ent, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	if (!GetConVarBool(g_cvUltravisionEnabled) || EntRefToEntIndex(g_iPlayerUltravisionEnt[other]) != ent || !IsPlayerAlive(other)) return Plugin_Handled;
-	return Plugin_Continue;
-}
+//	==========================================================
+//	SCARE FUNCTIONS
+//	==========================================================
 
 ClientPerformScare(client, iBossIndex)
 {
@@ -2707,46 +2697,9 @@ ClientResetScare(client)
 #endif
 }
 
-public Action:Hook_ClientSetTransmit(client, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (other != client)
-	{
-		if (g_bPlayerGhostMode[client] && !g_bPlayerGhostMode[other]) return Plugin_Handled;
-		
-		if (!g_bRoundEnded)
-		{
-			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
-			{
-				if (!g_bPlayerEliminated[client] && !g_bPlayerEliminated[other] && !g_bPlayerEscaped[other]) return Plugin_Handled; 
-			}
-			
-			if (g_bPlayerInPvP[client] && g_bPlayerInPvP[other]) 
-			{
-				if (TF2_IsPlayerInCondition(client, TFCond_Cloaked) &&
-					!TF2_IsPlayerInCondition(client, TFCond_CloakFlicker) &&
-					!TF2_IsPlayerInCondition(client, TFCond_Jarated) &&
-					!TF2_IsPlayerInCondition(client, TFCond_Milked) &&
-					!TF2_IsPlayerInCondition(client, TFCond_OnFire) &&
-					(GetGameTime() > GetEntPropFloat(client, Prop_Send, "m_flInvisChangeCompleteTime")))
-				{
-					return Plugin_Handled;
-				}
-			}
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Hook_DeathCamSetTransmit(slender, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	if (EntRefToEntIndex(g_iPlayerDeathCamEnt2[other]) != slender) return Plugin_Handled;
-	return Plugin_Continue;
-}
+//	==========================================================
+//	ANTI-CAMPING FUNCTIONS
+//	==========================================================
 
 stock ClientResetCampingStats(client)
 {
@@ -2764,148 +2717,6 @@ stock ClientResetCampingStats(client)
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetCampingStats(%d)", client);
 #endif
-}
-
-stock bool:IsClientInPvP(client)
-{
-	return g_bPlayerInPvP[client];
-}
-
-stock ClientEnablePvP(client)
-{
-	if (!IsValidClient(client)) return;
-	
-	new bool:bWasInPvP = g_bPlayerInPvP[client];
-	g_bPlayerInPvP[client] = true;
-	g_hPlayerPvPTimer[client] = INVALID_HANDLE;
-	g_iPlayerPvPTimerCount[client] = 0;
-	
-	if (!bWasInPvP)
-	{
-		ClientRemoveAllProjectiles(client);
-		
-		new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
-		TF2_RegeneratePlayer(client);
-		SetEntProp(client, Prop_Data, "m_iHealth", iHealth);
-		SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
-		
-		SDKHook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
-	}
-}
-
-/*
-public Action:Hook_PlayerResourceClientTeamNum(entity, const String:PropName[], &iValue, element)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (IsValidClient(entity) && IsClientInPvP(entity))
-	{
-		iValue = 0;
-		return Plugin_Changed;
-	}
-	
-	return Plugin_Continue;
-}
-*/
-
-stock ClientDisablePvP(client)
-{
-	new bool:bWasInPvP = g_bPlayerInPvP[client];
-	
-	if (bWasInPvP)
-	{
-		if (IsValidClient(client))
-		{
-			ClientRemoveAllProjectiles(client);
-			
-			TF2_RemoveCondition(client, TFCond_Zoomed);
-			
-			new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
-			TF2_RegeneratePlayer(client);
-			SetEntProp(client, Prop_Data, "m_iHealth", iHealth);
-			SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
-			
-			SDKUnhook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
-		}
-	}
-	
-	g_bPlayerInPvP[client] = false;
-	g_hPlayerPvPTimer[client] = INVALID_HANDLE;
-	g_iPlayerPvPTimerCount[client] = 0;
-}
-
-stock ClientResetPvP(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetPvP(%d)", client);
-#endif
-
-	ClientDisablePvP(client);
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetPvP(%d)", client);
-#endif
-}
-
-public Action:Timer_ClientDisablePvP(Handle:timer, any:userid)
-{
-	new client = GetClientOfUserId(userid);
-	if (client <= 0) return Plugin_Stop;
-	
-	if (timer != g_hPlayerPvPTimer[client]) return Plugin_Stop;
-	
-	if (!IsClientInPvP(client)) return Plugin_Stop;
-	
-	if (g_iPlayerPvPTimerCount[client] <= 0)
-	{
-		ClientDisablePvP(client);
-		return Plugin_Stop;
-	}
-	
-	g_iPlayerPvPTimerCount[client]--;
-	
-	if (!g_bPlayerProxyAvailableInForce[client])
-	{
-		SetHudTextParams(-1.0, 0.75, 
-			1.0,
-			255, 255, 255, 255,
-			_,
-			_,
-			0.25, 1.25);
-		
-		ShowSyncHudText(client, g_hHudSync, "%T", "SF2 Exiting PvP Arena", client, g_iPlayerPvPTimerCount[client]);
-	}
-	
-	return Plugin_Continue;
-}
-
-stock ClientRemoveAllProjectiles(client)
-{
-	for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
-	{
-		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, g_sPlayerProjectileClasses[i])) != -1)
-		{
-			new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
-			new bool:bMine = false;
-		
-			new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
-			if (iOwnerEntity == client)
-			{
-				bMine = true;
-			}
-			else if (iThrowerOffset != -1)
-			{
-				iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
-				if (iOwnerEntity == client)
-				{
-					bMine = true;
-				}
-			}
-			
-			if (bMine) AcceptEntityInput(ent, "Kill");
-		}
-	}
 }
 
 public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
@@ -2984,34 +2795,111 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 	return Plugin_Continue;
 }
 
-stock ClientResetFlashlight(client)
+//	==========================================================
+//	PVP FUNCTIONS
+//	==========================================================
+
+stock bool:IsClientInPvP(client)
+{
+	return g_bPlayerInPvP[client];
+}
+
+stock ClientEnablePvP(client)
+{
+	if (!IsValidClient(client)) return;
+	
+	new bool:bWasInPvP = g_bPlayerInPvP[client];
+	g_bPlayerInPvP[client] = true;
+	g_hPlayerPvPTimer[client] = INVALID_HANDLE;
+	g_iPlayerPvPTimerCount[client] = 0;
+	
+	if (!bWasInPvP)
+	{
+		ClientRemoveAllProjectiles(client);
+		
+		new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
+		TF2_RegeneratePlayer(client);
+		SetEntProp(client, Prop_Data, "m_iHealth", iHealth);
+		SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
+		
+		SDKHook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
+	}
+}
+
+stock ClientDisablePvP(client)
+{
+	new bool:bWasInPvP = g_bPlayerInPvP[client];
+	
+	if (bWasInPvP)
+	{
+		if (IsValidClient(client))
+		{
+			ClientRemoveAllProjectiles(client);
+			
+			TF2_RemoveCondition(client, TFCond_Zoomed);
+			
+			new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
+			TF2_RegeneratePlayer(client);
+			SetEntProp(client, Prop_Data, "m_iHealth", iHealth);
+			SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
+			
+			SDKUnhook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
+		}
+	}
+	
+	g_bPlayerInPvP[client] = false;
+	g_hPlayerPvPTimer[client] = INVALID_HANDLE;
+	g_iPlayerPvPTimerCount[client] = 0;
+}
+
+stock ClientResetPvP(client)
 {
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetFlashlight(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetPvP(%d)", client);
 #endif
 
-	ClientDeactivateFlashlight(client);
-	g_flPlayerFlashlightMeter[client] = 1.0;
-	g_bPlayerFlashlightBroken[client] = false;
-	g_flPlayerFlashlightLastEnable[client] = GetGameTime();
+	ClientDisablePvP(client);
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetFlashlight(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetPvP(%d)", client);
 #endif
 }
 
-stock ClientResetUltravision(client)
+public Action:Timer_ClientDisablePvP(Handle:timer, any:userid)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetUltravision(%d)", client);
-#endif
-
-	ClientDeactivateUltravision(client);
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetUltravision(%d)", client);
-#endif
+	if (timer != g_hPlayerPvPTimer[client]) return Plugin_Stop;
+	
+	if (!IsClientInPvP(client)) return Plugin_Stop;
+	
+	if (g_iPlayerPvPTimerCount[client] <= 0)
+	{
+		ClientDisablePvP(client);
+		return Plugin_Stop;
+	}
+	
+	g_iPlayerPvPTimerCount[client]--;
+	
+	if (!g_bPlayerProxyAvailableInForce[client])
+	{
+		SetHudTextParams(-1.0, 0.75, 
+			1.0,
+			255, 255, 255, 255,
+			_,
+			_,
+			0.25, 1.25);
+		
+		ShowSyncHudText(client, g_hHudSync, "%T", "SF2 Exiting PvP Arena", client, g_iPlayerPvPTimerCount[client]);
+	}
+	
+	return Plugin_Continue;
 }
+
+//	==========================================================
+//	BLINK FUNCTIONS
+//	==========================================================
 
 stock ClientResetBlink(client)
 {
@@ -3083,29 +2971,50 @@ public Action:Timer_BlinkTimer2(Handle:timer, any:userid)
 	g_hPlayerBlinkTimer[client] = CreateTimer(GetClientBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
-stock ClientResetSlenderStats(client)
+stock Float:GetClientBlinkRate(client)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetSlenderStats(%d)", client);
-#endif
-
-	g_iPlayerStaticMaster[client] = -1;
-	g_flPlayerSeesSlenderMeter[client] = 0.0;
+	new Float:flValue = GetConVarFloat(g_cvPlayerBlinkRate);
+	if (GetEntProp(client, Prop_Send, "m_nWaterLevel") >= 3) flValue *= 0.75;
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		g_bPlayerSeesSlender[client][i] = false;
-		g_flPlayerSeesSlenderLastTime[client][i] = -1.0;
-		g_flPlayerSeesSlenderLastTime2[client][i] = -1.0;
-		g_hPlayerStaticTimer[client][i] = INVALID_HANDLE;
-		g_flPlayerStaticLastMeter[client][i] = 0.0;
-		g_flPlayerStaticLastTime[client][i] = -1.0;
+		if (g_bPlayerSeesSlender[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_look_rate_multiply", 1.0);
+		else if (g_bPlayerStatic[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_static_rate_multiply", 1.0);
 	}
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetSlenderStats(%d)", client);
-#endif
+	if (TF2_GetPlayerClass(client) == TFClass_Sniper) flValue *= 1.4;
+	
+	if (g_bPlayerFlashlight[client])
+	{
+		decl Float:startPos[3], Float:endPos[3], Float:flDirection[3];
+		new Float:flLength = SF2_FLASHLIGHT_LENGTH;
+		GetClientEyePosition(client, startPos);
+		GetClientEyePosition(client, endPos);
+		GetClientEyeAngles(client, flDirection);
+		GetAngleVectors(flDirection, flDirection, NULL_VECTOR, NULL_VECTOR);
+		NormalizeVector(flDirection, flDirection);
+		ScaleVector(flDirection, flLength);
+		AddVectors(endPos, flDirection, endPos);
+		new Handle:hTrace = TR_TraceRayFilterEx(startPos, endPos, MASK_VISIBLE, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, client);
+		TR_GetEndPosition(endPos, hTrace);
+		new bool:bHit = TR_DidHit(hTrace);
+		CloseHandle(hTrace);
+		
+		if (bHit)
+		{
+			new Float:flPercent = (GetVectorDistance(startPos, endPos) / flLength);
+			flPercent *= 3.5;
+			if (flPercent > 1.0) flPercent = 1.0;
+			flValue *= flPercent;
+		}
+	}
+	
+	return flValue;
 }
+
+//	==========================================================
+//	SCREEN OVERLAY FUNCTIONS
+//	==========================================================
 
 stock ClientResetOverlay(client)
 {
@@ -3151,32 +3060,9 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	return Plugin_Continue;
 }
 
-// This could be used for entities as well.
-stock ClientStopAllSlenderSounds(client, const String:profileName[], const String:sectionName[], iChannel)
-{
-	if (!client || !IsValidEntity(client)) return;
-	if (g_hConfig == INVALID_HANDLE) return;
-	
-	decl String:buffer[PLATFORM_MAX_PATH];
-	
-	KvRewind(g_hConfig);
-	if (KvJumpToKey(g_hConfig, profileName))
-	{
-		decl String:s[32];
-		
-		if (KvJumpToKey(g_hConfig, sectionName))
-		{
-			for (new i2 = 1;; i2++)
-			{
-				IntToString(i2, s, sizeof(s));
-				KvGetString(g_hConfig, s, buffer, sizeof(buffer));
-				if (!buffer[0]) break;
-				
-				StopSound(client, iChannel, buffer);
-			}
-		}
-	}
-}
+//	==========================================================
+//	MUSIC SYSTEM FUNCTIONS
+//	==========================================================
 
 stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 {
@@ -3813,6 +3699,37 @@ stock ClientRemoveMusicFlag(client, iFlag)
 	if (ClientHasMusicFlag(client, iFlag)) g_iPlayerMusicFlags[client] &= ~iFlag;
 }
 
+//	==========================================================
+//	MISC FUNCTIONS
+//	==========================================================
+
+// This could be used for entities as well.
+stock ClientStopAllSlenderSounds(client, const String:profileName[], const String:sectionName[], iChannel)
+{
+	if (!client || !IsValidEntity(client)) return;
+	if (g_hConfig == INVALID_HANDLE) return;
+	
+	decl String:buffer[PLATFORM_MAX_PATH];
+	
+	KvRewind(g_hConfig);
+	if (KvJumpToKey(g_hConfig, profileName))
+	{
+		decl String:s[32];
+		
+		if (KvJumpToKey(g_hConfig, sectionName))
+		{
+			for (new i2 = 1;; i2++)
+			{
+				IntToString(i2, s, sizeof(s));
+				KvGetString(g_hConfig, s, buffer, sizeof(buffer));
+				if (!buffer[0]) break;
+				
+				StopSound(client, iChannel, buffer);
+			}
+		}
+	}
+}
+
 stock ClientUpdateListeningFlags(client, bool:bReset=false)
 {
 	if (!IsClientInGame(client)) return;
@@ -3936,143 +3853,6 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 	}
 }
 
-/*
-stock ClientUpdateListeningFlags(client, bool:bReset=false)
-{
-	if (!IsClientInGame(client)) return;
-	
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (i == client || !IsClientInGame(i)) continue;
-		
-		if (bReset || g_bRoundEnded)
-		{
-			SetListenOverride(client, i, Listen_Default);
-			SetListenOverride(i, client, Listen_Default);
-		}
-		else
-		{
-			if (g_bPlayerEliminated[client])
-			{
-				if (!g_bPlayerEliminated[i])
-				{
-					if (g_iPlayerMuteMode[client] == MuteMode_DontHearOtherTeam)
-					{
-						SetListenOverride(client, i, Listen_No);
-					}
-					else if (g_iPlayerMuteMode[client] == MuteMode_DontHearOtherTeamIfNotProxy && !g_bPlayerProxy[client])
-					{
-						SetListenOverride(client, i, Listen_No);
-					}
-					else
-					{
-						SetListenOverride(client, i, Listen_Default);
-					}
-				
-					SetListenOverride(i, client, Listen_No);
-				}
-				else
-				{
-					SetListenOverride(i, client, Listen_Default);
-					SetListenOverride(client, i, Listen_Default);
-				}
-			}
-			else
-			{
-				if (!g_bPlayerEliminated[i])
-				{
-					if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
-					{
-						if (g_bPlayerEscaped[i])
-						{
-							if (!g_bPlayerEscaped[client])
-							{
-								SetListenOverride(client, i, Listen_No);
-								SetListenOverride(i, client, Listen_Default);
-							}
-							else
-							{
-								SetListenOverride(client, i, Listen_Yes);
-								SetListenOverride(i, client, Listen_Default);
-							}
-						}
-						else
-						{
-							if (!g_bPlayerEscaped[client])
-							{
-								SetListenOverride(client, i, Listen_No);
-								SetListenOverride(i, client, Listen_No);
-							}
-							else
-							{
-								SetListenOverride(client, i, Listen_Default);
-								SetListenOverride(i, client, Listen_No);
-							}
-						}
-					}
-					else
-					{
-						new bool:bCanHear = false;
-						if (GetConVarFloat(g_cvPlayerVoiceDistance) <= 0.0) bCanHear = true;
-						
-						if (!bCanHear)
-						{
-							decl Float:flMyPos[3], Float:flHisPos[3];
-							GetClientEyePosition(client, flMyPos);
-							GetClientEyePosition(i, flHisPos);
-							
-							new Float:flDist = GetVectorDistance(flMyPos, flHisPos);
-							
-							if (GetConVarFloat(g_cvPlayerVoiceWallScale) > 0.0)
-							{
-								new Handle:hTrace = TR_TraceRayFilterEx(flMyPos, flHisPos, MASK_SOLID_BRUSHONLY, RayType_EndPoint, TraceRayDontHitPlayers);
-								new bool:bDidHit = TR_DidHit(hTrace);
-								CloseHandle(hTrace);
-								
-								if (bDidHit)
-								{
-									flDist *= GetConVarFloat(g_cvPlayerVoiceWallScale);
-								}
-							}
-							
-							if (flDist <= GetConVarFloat(g_cvPlayerVoiceDistance))
-							{
-								bCanHear = true;
-							}
-						}
-						
-						if (bCanHear)
-						{
-							if (g_bPlayerGhostMode[i] != g_bPlayerGhostMode[client] &&
-								g_bPlayerEscaped[i] != g_bPlayerEscaped[client])
-							{
-								bCanHear = false;
-							}
-						}
-						
-						if (bCanHear)
-						{
-							SetListenOverride(client, i, Listen_Default);
-							SetListenOverride(i, client, Listen_Default);
-						}
-						else
-						{
-							SetListenOverride(client, i, Listen_No);
-							SetListenOverride(i, client, Listen_No);
-						}
-					}
-				}
-				else
-				{
-					SetListenOverride(client, i, Listen_No);
-					SetListenOverride(i, client, Listen_Default);
-				}
-			}
-		}
-	}
-}
-*/
-
 stock ClientShowMainMessage(client, const String:sMessage[], any:...)
 {
 	decl String:message[512];
@@ -4091,45 +3871,167 @@ stock ClientShowMainMessage(client, const String:sMessage[], any:...)
 	ShowSyncHudText(client, g_hHudSync, message);
 }
 
-stock Float:GetClientBlinkRate(client)
+stock ClientResetSlenderStats(client)
 {
-	new Float:flValue = GetConVarFloat(g_cvPlayerBlinkRate);
-	if (GetEntProp(client, Prop_Send, "m_nWaterLevel") >= 3) flValue *= 0.75;
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetSlenderStats(%d)", client);
+#endif
+
+	g_iPlayerStaticMaster[client] = -1;
+	g_flPlayerSeesSlenderMeter[client] = 0.0;
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (g_bPlayerSeesSlender[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_look_rate_multiply", 1.0);
-		else if (g_bPlayerStatic[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_static_rate_multiply", 1.0);
+		g_bPlayerSeesSlender[client][i] = false;
+		g_flPlayerSeesSlenderLastTime[client][i] = -1.0;
+		g_flPlayerSeesSlenderLastTime2[client][i] = -1.0;
+		g_hPlayerStaticTimer[client][i] = INVALID_HANDLE;
+		g_flPlayerStaticLastMeter[client][i] = 0.0;
+		g_flPlayerStaticLastTime[client][i] = -1.0;
 	}
 	
-	if (TF2_GetPlayerClass(client) == TFClass_Sniper) flValue *= 1.4;
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetSlenderStats(%d)", client);
+#endif
+}
+
+bool:ClientSetQueuePoints(client, iAmount)
+{
+	if (!IsClientConnected(client) || !AreClientCookiesCached(client)) return false;
+	g_iPlayerQueuePoints[client] = iAmount;
+	ClientSaveCookies(client);
+	return true;
+}
+
+ClientSaveCookies(client)
+{
+	if (!IsClientConnected(client) || !AreClientCookiesCached(client)) return;
 	
-	if (g_bPlayerFlashlight[client])
+	// Save and reset our queue points.
+	decl String:s[64];
+	Format(s, sizeof(s), "%d ; %d ; %d ; %d ; %d", g_iPlayerQueuePoints[client], g_bPlayerShowHints[client], g_iPlayerMuteMode[client], g_bPlayerFlashlightProjected[client], g_bPlayerWantsTheP[client]);
+	SetClientCookie(client, g_hCookie, s);
+}
+
+stock ClientRemoveAllProjectiles(client)
+{
+	for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
 	{
-		decl Float:startPos[3], Float:endPos[3], Float:flDirection[3];
-		new Float:flLength = SF2_FLASHLIGHT_LENGTH;
-		GetClientEyePosition(client, startPos);
-		GetClientEyePosition(client, endPos);
-		GetClientEyeAngles(client, flDirection);
-		GetAngleVectors(flDirection, flDirection, NULL_VECTOR, NULL_VECTOR);
-		NormalizeVector(flDirection, flDirection);
-		ScaleVector(flDirection, flLength);
-		AddVectors(endPos, flDirection, endPos);
-		new Handle:hTrace = TR_TraceRayFilterEx(startPos, endPos, MASK_VISIBLE, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, client);
-		TR_GetEndPosition(endPos, hTrace);
-		new bool:bHit = TR_DidHit(hTrace);
-		CloseHandle(hTrace);
-		
-		if (bHit)
+		new ent = -1;
+		while ((ent = FindEntityByClassname(ent, g_sPlayerProjectileClasses[i])) != -1)
 		{
-			new Float:flPercent = (GetVectorDistance(startPos, endPos) / flLength);
-			flPercent *= 3.5;
-			if (flPercent > 1.0) flPercent = 1.0;
-			flValue *= flPercent;
+			new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
+			new bool:bMine = false;
+		
+			new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
+			if (iOwnerEntity == client)
+			{
+				bMine = true;
+			}
+			else if (iThrowerOffset != -1)
+			{
+				iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
+				if (iOwnerEntity == client)
+				{
+					bMine = true;
+				}
+			}
+			
+			if (bMine) AcceptEntityInput(ent, "Kill");
+		}
+	}
+}
+
+stock ClientViewPunch(client, const Float:angleOffset[3])
+{
+	if (g_offsPlayerPunchAngleVel == -1) return;
+	
+	decl Float:flOffset[3];
+	for (new i = 0; i < 3; i++) flOffset[i] = angleOffset[i];
+	ScaleVector(flOffset, 20.0);
+	
+	if (!IsFakeClient(client))
+	{
+		new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
+		new Float:flCalcDiff = (((1.0 / 2500.0) * Pow(flLatency, 2.0)) + ((3.0 / 50.0) * flLatency) + 2.0);
+		ScaleVector(flOffset, flCalcDiff);
+	}
+	
+	decl Float:flAngleVel[3];
+	GetEntDataVector(client, g_offsPlayerPunchAngleVel, flAngleVel);
+	AddVectors(flAngleVel, flOffset, flOffset);
+	SetEntDataVector(client, g_offsPlayerPunchAngleVel, flOffset, true);
+}
+
+public Action:Hook_ProxyGlowSetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	new iOwner = -1;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i)) continue;
+		if (EntRefToEntIndex(g_iPlayerProxyGlowEntity[i]) == ent)
+		{
+			iOwner = i;
+			break;
 		}
 	}
 	
-	return flValue;
+	if (iOwner != -1)
+	{
+		if (!IsPlayerAlive(iOwner) || g_bPlayerEliminated[iOwner]) return Plugin_Handled;
+		if (!IsPlayerAlive(other) || (!g_bPlayerProxy[other] && !g_bPlayerGhostMode[other])) return Plugin_Handled;
+	}
+	
+	return Plugin_Continue;
+}
+
+stock ClientSetFOV(client, iFOV)
+{
+	SetEntData(client, g_offsPlayerFOV, iFOV);
+	SetEntData(client, g_offsPlayerDefaultFOV, iFOV);
+}
+
+public OnClientGetDesiredFOV(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
+{
+	if (!IsValidClient(client)) return;
+	
+	g_iPlayerDesiredFOV[client] = StringToInt(cvarValue);
+	ClientSetFOV(client, g_iPlayerDesiredFOV[client]);
+}
+
+stock TF2_GetClassName(TFClassType:iClass, String:sBuffer[], sBufferLen)
+{
+	switch (iClass)
+	{
+		case TFClass_Scout: strcopy(sBuffer, sBufferLen, "scout");
+		case TFClass_Sniper: strcopy(sBuffer, sBufferLen, "sniper");
+		case TFClass_Soldier: strcopy(sBuffer, sBufferLen, "soldier");
+		case TFClass_DemoMan: strcopy(sBuffer, sBufferLen, "demoman");
+		case TFClass_Heavy: strcopy(sBuffer, sBufferLen, "heavyweapons");
+		case TFClass_Medic: strcopy(sBuffer, sBufferLen, "medic");
+		case TFClass_Pyro: strcopy(sBuffer, sBufferLen, "pyro");
+		case TFClass_Spy: strcopy(sBuffer, sBufferLen, "spy");
+		case TFClass_Engineer: strcopy(sBuffer, sBufferLen, "engineer");
+		default: strcopy(sBuffer, sBufferLen, "");
+	}
+}
+
+stock ClientSDKFlashlightTurnOn(client)
+{
+	if (g_hSDKPlayerFlashlightTurnOn == INVALID_HANDLE) return;
+	if (!IsValidClient(client)) return;
+	
+	SDKCall(g_hSDKPlayerFlashlightTurnOn, client);
+}
+
+stock ClientSDKFlashlightTurnOff(client)
+{
+	if (g_hSDKPlayerFlashlightTurnOff == INVALID_HANDLE) return;
+	if (!IsValidClient(client)) return;
+	
+	SDKCall(g_hSDKPlayerFlashlightTurnOff, client);
 }
 
 #define SF2_PLAYER_LC_EYEANGLES 90.0
@@ -4540,15 +4442,6 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 							TF2_RemoveWeaponSlot(client, iSlot);
 							
 							hWeapon = PrepareItemHandle("tf_weapon_fireaxe", 214, 0, 0, "180 ; 20.0 ; 206 ; 1.33");
-							new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
-							CloseHandle(hWeapon);
-							EquipPlayerWeapon(client, iEnt);
-						}
-						case 357: // Half-Zatoichi
-						{
-							TF2_RemoveWeaponSlot(client, iSlot);
-							
-							hWeapon = PrepareItemHandle("tf_weapon_sword", 357, 0, 0, "219 ; 1.0 ; 180 ; 20.0 ; 226 ; 1.0");
 							new iEnt = TF2Items_GiveNamedItem(client, hWeapon);
 							CloseHandle(hWeapon);
 							EquipPlayerWeapon(client, iEnt);

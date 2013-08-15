@@ -116,8 +116,11 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 {
 	RemoveSlender(iBossIndex);
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	
 	decl Float:flTruePos[3];
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "pos_offset", flTruePos);
+	GetProfileVector(sProfile, "pos_offset", flTruePos);
 	AddVectors(flTruePos, pos, flTruePos);
 	
 	new iSlenderModel = SpawnSlenderModel(iBossIndex, flTruePos);
@@ -137,12 +140,12 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 		{
 			g_iSlender[iBossIndex] = g_iSlenderModel[iBossIndex];
 			SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
-		
+			
 			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderBlinkBossThink, g_iSlender[iBossIndex], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 		}
 		case 2:
 		{
-			GetProfileString(g_strSlenderProfile[iBossIndex], "model", sBuffer, sizeof(sBuffer));
+			GetProfileString(sProfile, "model", sBuffer, sizeof(sBuffer));
 			
 			new iBoss = CreateEntityByName("monster_generic");
 			SetEntityModel(iBoss, sBuffer);
@@ -165,19 +168,19 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			g_iSlenderState[iBossIndex] = STATE_IDLE;
 			g_bSlenderAttacking[iBossIndex] = false;
 			g_hSlenderMoveTimer[iBossIndex] = INVALID_HANDLE;
-			g_iSlenderHealthUntilStun[iBossIndex] = GetProfileNum(g_strSlenderProfile[iBossIndex], "health_stun", 85);
+			g_iSlenderHealthUntilStun[iBossIndex] = GetProfileNum(sProfile, "health_stun", 85);
 			g_flSlenderLastHeardFootstep[iBossIndex] = GetGameTime();
 			g_flSlenderLastHeardVoice[iBossIndex] = GetGameTime();
 			g_flSlenderLastHeardWeapon[iBossIndex] = GetGameTime();
 			g_flSlenderNextVoiceSound[iBossIndex] = GetGameTime();
 			g_flSlenderNextMoanSound[iBossIndex] = GetGameTime();
 			g_flSlenderNextWanderPos[iBossIndex] = GetGameTime();
-			g_flSlenderTimeUntilKill[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "idle_lifetime", 10.0);
+			g_flSlenderTimeUntilKill[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "idle_lifetime", 10.0);
 			g_flSlenderTimeUntilRecover[iBossIndex] = -1.0;
 			g_flSlenderTimeUntilAlert[iBossIndex] = -1.0;
 			g_flSlenderTimeUntilIdle[iBossIndex] = -1.0;
 			g_flSlenderTimeUntilChase[iBossIndex] = -1.0;
-			g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_cooldown", 2.0);
+			g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "jump_cooldown", 2.0);
 			g_flSlenderNextTrackTargetPos[iBossIndex] = GetGameTime();
 			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderChaseBossThink, EntIndexToEntRef(iBoss), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 			
@@ -199,7 +202,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			SlenderClearTargetMemory(iBossIndex);
 			SlenderResetSoundData(iBossIndex);
 			
-			if (GetProfileNum(g_strSlenderProfile[iBossIndex], "stun_enabled"))
+			if (GetProfileNum(sProfile, "stun_enabled"))
 			{
 				SetEntProp(iBoss, Prop_Data, "m_takedamage", 1);
 			}
@@ -214,6 +217,8 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 		}
 	}
 	
+	SlenderSpawnEffects(iBossIndex, EffectEvent_Constant);
+	
 	// Initialize our pose parameters, if needed.
 	new iPose = EntRefToEntIndex(g_iSlenderPoseEnt[iBossIndex]);
 	g_iSlenderPoseEnt[iBossIndex] = INVALID_ENT_REFERENCE;
@@ -223,7 +228,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 	}
 	
 	decl String:sPoseParameter[64];
-	GetProfileString(g_strSlenderProfile[iBossIndex], "pose_parameter", sPoseParameter, sizeof(sPoseParameter));
+	GetProfileString(sProfile, "pose_parameter", sPoseParameter, sizeof(sPoseParameter));
 	if (sPoseParameter[0])
 	{
 		iPose = CreateEntityByName("point_posecontroller");
@@ -235,7 +240,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			
 			DispatchKeyValue(iPose, "PropName", sBuffer);
 			DispatchKeyValue(iPose, "PoseParameterName", sPoseParameter);
-			DispatchKeyValueFloat(iPose, "PoseValue", GetProfileFloat(g_strSlenderProfile[iBossIndex], "pose_parameter_max"));
+			DispatchKeyValueFloat(iPose, "PoseValue", GetProfileFloat(sProfile, "pose_parameter_max"));
 			DispatchSpawn(iPose);
 			SetVariantString(sPoseParameter);
 			AcceptEntityInput(iPose, "SetPoseParameterName");
@@ -1243,47 +1248,69 @@ stock SpawnSlenderModel(iBossIndex, const Float:pos[3])
 		return -1;
 	}
 	
-	decl String:buffer[PLATFORM_MAX_PATH];
-	GetProfileString(g_strSlenderProfile[iBossIndex], "model", buffer, sizeof(buffer));
+	decl String:buffer[PLATFORM_MAX_PATH], String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	
+	GetProfileString(sProfile, "model", buffer, sizeof(buffer));
 	if (!buffer[0])
 	{
 		LogError("Could not spawn boss model: model is invalid!");
 		return -1;
 	}
 	
-	new Float:flModelScale = GetProfileFloat(g_strSlenderProfile[iBossIndex], "model_scale");
+	new Float:flModelScale = GetProfileFloat(sProfile, "model_scale");
 	if (flModelScale <= 0.0)
 	{
 		LogError("Could not spawn boss model: model scale is less than or equal to 0.0!");
 		return -1;
 	}
 	
-	new slender = CreateEntityByName("prop_dynamic_override");
-	if (slender != -1)
+	new iSlenderModel = CreateEntityByName("prop_dynamic_override");
+	if (iSlenderModel != -1)
 	{
-		SetEntityModel(slender, buffer);
+		SetEntityModel(iSlenderModel, buffer);
 		
-		TeleportEntity(slender, pos, NULL_VECTOR, NULL_VECTOR);
-		DispatchSpawn(slender);
-		ActivateEntity(slender);
+		TeleportEntity(iSlenderModel, pos, NULL_VECTOR, NULL_VECTOR);
+		DispatchSpawn(iSlenderModel);
+		ActivateEntity(iSlenderModel);
 		
-		GetProfileString(g_strSlenderProfile[iBossIndex], "animation_idle", buffer, sizeof(buffer));
+		GetProfileString(sProfile, "animation_idle", buffer, sizeof(buffer));
 		if (buffer[0])
 		{
 			SetVariantString(buffer);
-			AcceptEntityInput(slender, "SetDefaultAnimation");
+			AcceptEntityInput(iSlenderModel, "SetDefaultAnimation");
 			SetVariantString(buffer);
-			AcceptEntityInput(slender, "SetAnimation");
-			AcceptEntityInput(slender, "DisableCollision");
+			AcceptEntityInput(iSlenderModel, "SetAnimation");
+			AcceptEntityInput(iSlenderModel, "DisableCollision");
 		}
 		
-		SetVariantFloat(GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_idle_playbackrate", 1.0));
-		AcceptEntityInput(slender, "SetPlaybackRate");
+		SetVariantFloat(GetProfileFloat(sProfile, "animation_idle_playbackrate", 1.0));
+		AcceptEntityInput(iSlenderModel, "SetPlaybackRate");
 		
-		SetEntPropFloat(slender, Prop_Send, "m_flModelScale", flModelScale);
+		SetEntPropFloat(iSlenderModel, Prop_Send, "m_flModelScale", flModelScale);
+		
+		// Create special effects.
+		SetEntityRenderMode(iSlenderModel, RenderMode:GetProfileNum(sProfile, "effect_rendermode", _:RENDER_NORMAL));
+		SetEntityRenderFx(iSlenderModel, RenderFx:GetProfileNum(sProfile, "effect_renderfx", _:RENDERFX_NONE));
+		
+		decl iColor[4];
+		GetProfileColor(sProfile, "effect_rendercolor", iColor[0], iColor[1], iColor[2], iColor[3]);
+		SetEntityRenderColor(iSlenderModel, iColor[0], iColor[1], iColor[2], iColor[3]);
+		
+		KvRewind(g_hConfig);
+		if (KvJumpToKey(g_hConfig, sProfile) && 
+			KvJumpToKey(g_hConfig, "effects") &&
+			KvGotoFirstSubKey(g_hConfig))
+		{
+			do
+			{
+				
+			}
+			while KvGotoNextKey(g_hConfig);
+		}
 	}
 	
-	return slender;
+	return iSlenderModel;
 }
 
 stock bool:PlayerCanSeeSlender(client, iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink=false, bool:bCheckEliminated=true)

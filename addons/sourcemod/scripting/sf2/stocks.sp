@@ -232,7 +232,7 @@ stock FindStringIndex2(tableidx, const String:str[])
 
 stock Handle:PrepareItemHandle(String:classname[], index, level, quality, String:att[])
 {
-	new Handle:hItem = TF2Items_CreateItem(OVERRIDE_ALL | FORCE_GENERATION);
+	new Handle:hItem = TF2Items_CreateItem(OVERRIDE_CLASSNAME | OVERRIDE_ITEM_DEF | OVERRIDE_ITEM_LEVEL | OVERRIDE_ITEM_QUALITY | OVERRIDE_ATTRIBUTES | FORCE_GENERATION);
 	TF2Items_SetClassname(hItem, classname);
 	TF2Items_SetItemIndex(hItem, index);
 	TF2Items_SetLevel(hItem, level);
@@ -404,6 +404,24 @@ stock SetAnimation(iEntity, const String:sAnimation[], bool:bDefaultAnimation=tr
 	AcceptEntityInput(iEntity, "SetAnimation");
 	SetVariantFloat(flPlaybackRate);
 	AcceptEntityInput(iEntity, "SetPlaybackRate");
+}
+
+stock VectorTransform(const Float:offset[3], const Float:worldpos[3], const Float:ang[3], Float:buffer[3])
+{
+	decl Float:fwd[3], Float:right[3], Float:up[3];
+	GetAngleVectors(ang, fwd, right, up);
+	
+	NormalizeVector(fwd, fwd);
+	NormalizeVector(right, right);
+	NormalizeVector(up, up);
+	
+	ScaleVector(right, offset[1]);
+	ScaleVector(fwd, offset[0]);
+	ScaleVector(up, offset[2]);
+	
+	buffer[0] = worldpos[0] + right[0] + fwd[0] + up[0];
+	buffer[1] = worldpos[1] + right[1] + fwd[1] + up[1];
+	buffer[2] = worldpos[2] + right[2] + fwd[2] + up[2];
 }
 
 public bool:TraceRayDontHitEntity(entity, mask, any:data)

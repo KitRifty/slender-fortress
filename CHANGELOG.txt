@@ -1,7 +1,11 @@
 Version 0.1.8a (August 13, 2013):
 - Added "SF2_OnPagesSpawned" forward
 - Reorganized all sections of code in the main scripting file (sf2.sp)
+- Reorganized all sections of code in the main client scripting file (sf2/client.sp)
 - Cleaned up the movement code of chasing bosses a bit
+- Fixed the Half-Zatoichi sounding like a bottle
+- Fixed the Half-Zatoichi still regenerating all health on kill (see below)
+- Added "sf2_halfzatoichi_healthgain" cvar, which controls how much health should be gained from using the Half-Zatoichi. Set to -1 for normal behavior.
 
 Version 0.1.8 (August 6, 2013):
 - Fixed a bug where Proxies could not see RED player outlines in different sections of the map

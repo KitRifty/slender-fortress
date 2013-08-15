@@ -338,7 +338,7 @@ stock Float:GetProfileFloat(const String:strName[], const String:keyValue[], Flo
 
 stock bool:GetProfileVector(const String:strName[], const String:keyValue[], Float:buffer[3], const Float:defaultValue[3]=NULL_VECTOR)
 {
-	for (new i = 0; i < 3; i++) buffer[0] = defaultValue[0];
+	for (new i = 0; i < 3; i++) buffer[i] = defaultValue[i];
 	
 	if (g_hConfig == INVALID_HANDLE) return false;
 	
@@ -346,6 +346,35 @@ stock bool:GetProfileVector(const String:strName[], const String:keyValue[], Flo
 	if (!KvJumpToKey(g_hConfig, strName)) return false;
 	
 	KvGetVector(g_hConfig, keyValue, buffer, defaultValue);
+	return true;
+}
+
+stock bool:GetProfileColor(const String:strName[], 
+	const String:keyValue[], 
+	&r, 
+	&g, 
+	&b, 
+	&a,
+	dr=255,
+	dg=255,
+	db=255,
+	da=255)
+{
+	r = dr;
+	g = dg;
+	b = db;
+	a = da;
+
+	if (g_hConfig == INVALID_HANDLE) return false;
+	
+	KvRewind(g_hConfig);
+	if (!KvJumpToKey(g_hConfig, strName)) return false;
+	
+	decl String:sValue[64];
+	KvGetString(g_hConfig, keyValue, sValue, sizeof(sValue));
+	if (!sValue[0]) return false;
+	
+	KvGetColor(g_hConfig, keyValue, r, g, b, a);
 	return true;
 }
 

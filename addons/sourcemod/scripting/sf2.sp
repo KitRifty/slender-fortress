@@ -153,6 +153,9 @@ new bool:g_bPlayerSeesSlender[MAXPLAYERS + 1][MAX_BOSSES];
 new Float:g_flPlayerSeesSlenderLastTime[MAXPLAYERS + 1][MAX_BOSSES];
 new Float:g_flPlayerSeesSlenderLastTime2[MAXPLAYERS + 1][MAX_BOSSES];
 new Float:g_flPlayerSeesSlenderMeter[MAXPLAYERS + 1];
+
+// Player static data.
+new bool:g_bPlayerStatic[MAXPLAYERS + 1][MAX_BOSSES];
 new Handle:g_hPlayerStaticTimer[MAXPLAYERS + 1][MAX_BOSSES];
 new g_iPlayerStaticMaster[MAXPLAYERS + 1] = { -1, ... };
 new String:g_strPlayerStaticSound[MAXPLAYERS + 1][PLATFORM_MAX_PATH];
@@ -223,20 +226,25 @@ new bool:g_bPlayerGhostMode[MAXPLAYERS + 1];
 new g_iPlayerGhostModeTarget[MAXPLAYERS + 1];
 new bool:g_bPlayerEliminated[MAXPLAYERS + 1];
 new bool:g_bPlayerEscaped[MAXPLAYERS + 1];
-new bool:g_bPlayerStatic[MAXPLAYERS + 1][MAX_BOSSES];
 new g_iPlayerFoundPages[MAXPLAYERS + 1];
 new g_iPlayerQueuePoints[MAXPLAYERS + 1];
 new bool:g_bPlayerPlaying[MAXPLAYERS + 1];
 new Handle:g_hPlayerOverlayCheck[MAXPLAYERS + 1];
+
+// Anti-camping data.
 new g_iPlayerCampingStrikes[MAXPLAYERS + 1];
 new Handle:g_hPlayerCampingTimer[MAXPLAYERS + 1];
 new Float:g_flPlayerCampingLastPosition[MAXPLAYERS + 1][3];
 new bool:g_bPlayerCampingFirstTime[MAXPLAYERS + 1];
+
+// Player Blink data.
 new Handle:g_hPlayerBlinkTimer[MAXPLAYERS + 1];
 new bool:g_bPlayerBlink[MAXPLAYERS + 1];
 new Float:g_flPlayerBlinkMeter[MAXPLAYERS + 1];
 new g_iPlayerBlinkCount[MAXPLAYERS + 1];
 new Handle:g_hPlayerSwitchBlueTimer[MAXPLAYERS + 1];
+
+// Player PVP data.
 new bool:g_bPlayerInPvP[MAXPLAYERS + 1];
 new bool:g_bPlayerInPvPSpawning[MAXPLAYERS + 1];
 new bool:g_bPlayerInPvPTrigger[MAXPLAYERS + 1];
@@ -361,6 +369,7 @@ new Handle:g_cvPlayerViewBobSprintEnabled;
 new Handle:g_cvPlayerFakeLagCompensation;
 new Handle:g_cvPlayerProxyWaitTime;
 new Handle:g_cvPlayerProxyAsk;
+new Handle:g_cvHalfZatoichiHealthGain;
 
 #if defined DEBUG
 new Handle:g_cvDebugDetail;
@@ -440,6 +449,8 @@ new Handle:g_hSDKWeaponShotgunPrimary;
 new Handle:g_hSDKWeaponPistol;
 new Handle:g_hSDKWeaponWrench;
 
+new Handle:g_hSDKPlayerFlashlightTurnOn;
+new Handle:g_hSDKPlayerFlashlightTurnOff;
 new Handle:g_hSDKGetMaxHealth;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
@@ -447,6 +458,7 @@ new Handle:g_hSDKShouldTransmit;
 
 #include "sf2/stocks.sp"
 #include "sf2/profiles.sp"
+#include "sf2/effects.sp"
 #include "sf2/client.sp"
 #include "sf2/slender_stocks.sp"
 #include "sf2/specialround.sp"
@@ -616,6 +628,8 @@ public OnPluginStart()
 	
 	g_cvPlayerProxyWaitTime = CreateConVar("sf2_player_proxy_waittime", "35", "How long (in seconds) after a player was chosen to be a Proxy must the system wait before choosing him again.");
 	g_cvPlayerProxyAsk = CreateConVar("sf2_player_proxy_ask", "0", "Set to 1 if the player can choose before becoming a Proxy, set to 0 to force.");
+	
+	g_cvHalfZatoichiHealthGain = CreateConVar("sf2_halfzatoichi_healthgain", "20", "How much health should be gained from killing a player with the Half-Zatoichi? Set to -1 for default behavior.");
 	
 	// Register console commands.
 	RegConsoleCmd("sm_sf2", Command_MainMenu);
@@ -6200,12 +6214,51 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 			
 			ClientResetProxy(client, false);
 			ClientUpdateListeningFlags(client);
+			
+			// Half-Zatoichi nerf code.
+			new iKatanaHealthGain = GetConVarInt(g_cvHalfZatoichiHealthGain);
+			if (iKatanaHealthGain >= 0)
+			{
+				new iAttacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+				if (iAttacker > 0)
+				{
+					if (!IsClientInPvP(iAttacker) && (!g_bPlayerEliminated[iAttacker] || g_bPlayerProxy[iAttacker]))
+					{
+						decl String:sWeapon[64];
+						GetEventString(event, "weapon", sWeapon, sizeof(sWeapon));
+						
+						if (StrEqual(sWeapon, "demokatana"))
+						{
+							new iAttackerPreHealth = GetEntProp(iAttacker, Prop_Send, "m_iHealth");
+							new Handle:hPack = CreateDataPack();
+							WritePackCell(hPack, GetClientUserId(iAttacker));
+							WritePackCell(hPack, iAttackerPreHealth + iKatanaHealthGain);
+							
+							CreateTimer(0.0, Timer_SetPlayerHealth, hPack, TIMER_FLAG_NO_MAPCHANGE);
+						}
+					}
+				}
+			}
 		}
 	}
 	
 #if defined DEBUG
 	DebugMessage("EVENT END: Event_PlayerDeath");
 #endif
+}
+
+public Action:Timer_SetPlayerHealth(Handle:timer, any:data)
+{
+	new Handle:hPack = Handle:data;
+	ResetPack(hPack);
+	new iAttacker = GetClientOfUserId(ReadPackCell(hPack));
+	new iHealth = ReadPackCell(hPack);
+	CloseHandle(hPack);
+	
+	if (iAttacker <= 0) return;
+	
+	SetEntProp(iAttacker, Prop_Data, "m_iHealth", iHealth);
+	SetEntProp(iAttacker, Prop_Send, "m_iHealth", iHealth);
 }
 
 public Action:Timer_PlayerSwitchToBlue(Handle:timer, any:userid)
