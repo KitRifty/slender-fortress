@@ -133,6 +133,13 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 	
 	switch (g_iSlenderType[iBossIndex])
 	{
+		case 1:
+		{
+			g_iSlender[iBossIndex] = g_iSlenderModel[iBossIndex];
+			SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
+		
+			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderBlinkBossThink, g_iSlender[iBossIndex], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+		}
 		case 2:
 		{
 			GetProfileString(g_strSlenderProfile[iBossIndex], "model", sBuffer, sizeof(sBuffer));
@@ -149,6 +156,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			AcceptEntityInput(iSlenderModel, "EnableShadow");
 			SetEntProp(iSlenderModel, Prop_Send, "m_usSolidFlags", FSOLID_NOT_SOLID | FSOLID_TRIGGER);
 			AcceptEntityInput(iBoss, "DisableShadow");
+			SetEntPropFloat(iBoss, Prop_Data, "m_flFriction", 0.0);
 			
 			// Reset stats.
 			g_iSlender[iBossIndex] = EntIndexToEntRef(iBoss);
@@ -171,7 +179,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			g_flSlenderTimeUntilChase[iBossIndex] = -1.0;
 			g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_cooldown", 2.0);
 			g_flSlenderNextTrackTargetPos[iBossIndex] = GetGameTime();
-			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderThink, EntIndexToEntRef(iBoss), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderChaseBossThink, EntIndexToEntRef(iBoss), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 			
 			for (new i = 0; i < 3; i++)
 			{
@@ -472,46 +480,60 @@ SlenderGetBestPathNodeToTarget(iBossIndex)
 	new Handle:hLocs = g_hSlenderTargetMemory[iBossIndex];
 	if (hLocs == INVALID_HANDLE) return -1;
 	
-	decl Float:flMyPos[3], Float:flTargetPos[3], Float:flBestPos[3], Float:flBuffer[3];
-	SlenderGetAbsOrigin(iBossIndex, flMyPos);
-	GetClientAbsOrigin(iTarget, flTargetPos);
+	decl Float:flMyPos[3], Float:flSlenderMins[3], Float:flSlenderMaxs[3], Float:flNodePos[3];
+	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
+	GetEntPropVector(slender, Prop_Send, "m_vecMins", flSlenderMins);
+	GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flSlenderMaxs);
 	
-	new Float:tempDist;
-	new bestIndex = -1;
-	new Float:bestDist = 99999999.0;
-	new size = GetArraySize(hLocs);
-	for (new i = 0; i < size; i++)
+	new Float:flTraceMins[3], Float:flTraceMaxs[3];
+	for (new i = 0; i < 2; i++)
 	{
-		flBuffer[0] = Float:GetArrayCell(hLocs, i);
-		flBuffer[1] = Float:GetArrayCell(hLocs, i, 1);
-		flBuffer[2] = Float:GetArrayCell(hLocs, i, 2);
+		flTraceMins[i] = flSlenderMins[i];
+		flTraceMaxs[i] = flSlenderMaxs[i];
+	}
+	
+	new iBestIndex = -1;
+	
+	for (new i = 0, iSize = GetArraySize(hLocs); i < iSize; i++)
+	{
+		flNodePos[0] = Float:GetArrayCell(hLocs, i);
+		flNodePos[1] = Float:GetArrayCell(hLocs, i, 1);
+		flNodePos[2] = Float:GetArrayCell(hLocs, i, 2);
 		
-		new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, flTargetPos, g_flSlenderMins[iBossIndex], g_flSlenderMaxs[iBossIndex], MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, slender);
-		new iEntity = TR_GetEntityIndex(hTrace);
+		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
+		for (new i2 = 0; i2 < 3; i2++)
+		{
+			flTraceStartPos[i2] = flMyPos[i2] + ((flSlenderMins[i2] + flSlenderMaxs[i2]) / 2.0);
+			flTraceEndPos[i2] = flNodePos[i2] + ((flSlenderMins[i2] + flSlenderMaxs[i2]) / 2.0);
+		}
+		
+		new Handle:hTrace = TR_TraceHullFilterEx(flMyPos,
+			flTraceEndPos, 
+			flTraceMins, 
+			flTraceMaxs, 
+			MASK_NPCSOLID, 
+			TraceRayBossVisibility, 
+			slender);
+			
+		new iHitEntity = TR_GetEntityIndex(hTrace);
+		new bool:bDidHit = TR_DidHit(hTrace);
 		CloseHandle(hTrace);
 		
-		new Float:flValue = float(i);
-		if (!IsValidEntity(iEntity)) flValue *= 10.0;
-		
-		if ((tempDist = GetVectorDistance(flBuffer, flMyPos) - (flValue)) < bestDist)
+		if (!bDidHit || iHitEntity == iTarget)
 		{
-			bestIndex = i;
-			bestDist = tempDist;
-			flBestPos[0] = flBuffer[0];
-			flBestPos[1] = flBuffer[1];
-			flBestPos[2] = flBuffer[2];
+			iBestIndex = i;
 		}
 	}
 	
-	if (bestIndex > 0)
+	if (iBestIndex > 0)
 	{
-		for (new i = 0; i < bestIndex - 1; i++)
+		for (new i = 0; i < iBestIndex - 1; i++)
 		{
 			RemoveFromArray(hLocs, 0);
 		}
 	}
 	
-	return bestIndex;
+	return iBestIndex;
 }
 
 bool:SlenderGetPathNodePosition(iBossIndex, index2, Float:buffer[3])
@@ -1321,4 +1343,22 @@ stock Float:SlenderGetDistanceFromPlayer(iBossIndex, client)
 	}
 	
 	return -1.0;
+}
+
+public bool:TraceRayBossVisibility(entity, mask, any:data)
+{
+	if (entity == data || IsValidClient(entity)) return false;
+	
+	new iBossIndex = SlenderEntIndexToArrayIndex(entity);
+	if (iBossIndex != -1) return false;
+	
+	if (IsValidEdict(entity))
+	{
+		decl String:sClass[64];
+		GetEntityNetClass(entity, sClass, sizeof(sClass));
+		
+		if (StrEqual(sClass, "CTFAmmoPack")) return false;
+	}
+	
+	return true;
 }

@@ -235,24 +235,6 @@ ClientDisableFakeLagCompensation(client)
 	g_iPlayerLagCompensationTeam[client] = -1;
 }
 
-/*
-public Action:Hook_ClientTeamNumSendProxy(entity, const String:PropName[], &iValue, element)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (IsValidClient(entity))
-	{
-		if (g_bPlayerLagCompensation[entity]) 
-		{
-			iValue = g_iPlayerLagCompensationTeam[entity];
-			return Plugin_Changed;
-		}
-	}
-	
-	return Plugin_Continue;
-}
-*/
-
 public Hook_ClientPreThink(client)
 {
 	if (!g_bEnabled) return;
@@ -2396,59 +2378,61 @@ ClientActivateFlashlight(client)
 	g_bPlayerFlashlight[client] = true;
 	g_hPlayerFlashlightTimer[client] = CreateTimer(flDrainRate, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
+	decl Float:flPos[3];
+	GetClientEyePosition(client, flPos);
+	
 	new ent = CreateEntityByName("light_dynamic");
-	if (ent == -1) return;
-	
-	decl Float:pos[3];
-	GetClientEyePosition(client, pos);
-	
-	TeleportEntity(ent, pos, NULL_VECTOR, NULL_VECTOR);
-	DispatchKeyValue(ent, "targetname", "WUBADUBDUBMOTHERBUCKERS");
-	DispatchKeyValue(ent, "rendercolor", "255 255 255");
-	SetVariantFloat(SF2_FLASHLIGHT_WIDTH);
-	AcceptEntityInput(ent, "spotlight_radius");
-	SetVariantFloat(SF2_FLASHLIGHT_LENGTH);
-	AcceptEntityInput(ent, "distance");
-	SetVariantInt(SF2_FLASHLIGHT_BRIGHTNESS);
-	AcceptEntityInput(ent, "brightness");
-	
-	// Convert WU to inches.
-	new Float:cone = 55.0;
-	cone *= 0.75;
-	
-	SetVariantInt(RoundToFloor(cone));
-	AcceptEntityInput(ent, "_inner_cone");
-	SetVariantInt(RoundToFloor(cone));
-	AcceptEntityInput(ent, "_cone");
-	DispatchSpawn(ent);
-	ActivateEntity(ent);
-	SetVariantString("!activator");
-	AcceptEntityInput(ent, "SetParent", client);
-	AcceptEntityInput(ent, "TurnOn");
-	
-	g_iPlayerFlashlightEnt[client] = EntIndexToEntRef(ent);
-	
-	SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightSetTransmit);
+	if (ent != -1)
+	{
+		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
+		DispatchKeyValue(ent, "targetname", "WUBADUBDUBMOTHERBUCKERS");
+		DispatchKeyValue(ent, "rendercolor", "255 255 255");
+		SetVariantFloat(SF2_FLASHLIGHT_WIDTH);
+		AcceptEntityInput(ent, "spotlight_radius");
+		SetVariantFloat(SF2_FLASHLIGHT_LENGTH);
+		AcceptEntityInput(ent, "distance");
+		SetVariantInt(SF2_FLASHLIGHT_BRIGHTNESS);
+		AcceptEntityInput(ent, "brightness");
+		
+		// Convert WU to inches.
+		new Float:cone = 55.0;
+		cone *= 0.75;
+		
+		SetVariantInt(RoundToFloor(cone));
+		AcceptEntityInput(ent, "_inner_cone");
+		SetVariantInt(RoundToFloor(cone));
+		AcceptEntityInput(ent, "_cone");
+		DispatchSpawn(ent);
+		ActivateEntity(ent);
+		SetVariantString("!activator");
+		AcceptEntityInput(ent, "SetParent", client);
+		AcceptEntityInput(ent, "TurnOn");
+		
+		g_iPlayerFlashlightEnt[client] = EntIndexToEntRef(ent);
+		
+		SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightSetTransmit);
+	}
 	
 	// Create.
 	ent = CreateEntityByName("point_spotlight");
-	if (ent == -1) return;
-	
-	TeleportEntity(ent, pos, NULL_VECTOR, NULL_VECTOR);
-	
-	decl String:sBuffer[256];
-	FloatToString(SF2_FLASHLIGHT_LENGTH, sBuffer, sizeof(sBuffer));
-	DispatchKeyValue(ent, "spotlightlength", sBuffer);
-	FloatToString(SF2_FLASHLIGHT_WIDTH, sBuffer, sizeof(sBuffer));
-	DispatchKeyValue(ent, "spotlightwidth", sBuffer);
-	DispatchKeyValue(ent, "rendercolor", "255 255 255");
-	DispatchSpawn(ent);
-	ActivateEntity(ent);
-	SetVariantString("!activator");
-	AcceptEntityInput(ent, "SetParent", client);
-	AcceptEntityInput(ent, "LightOn");
-	
-	g_iPlayerFlashlightEntAng[client] = EntIndexToEntRef(ent);
+	if (ent != -1)
+	{
+		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
+		
+		decl String:sBuffer[256];
+		FloatToString(SF2_FLASHLIGHT_LENGTH, sBuffer, sizeof(sBuffer));
+		DispatchKeyValue(ent, "spotlightlength", sBuffer);
+		FloatToString(SF2_FLASHLIGHT_WIDTH, sBuffer, sizeof(sBuffer));
+		DispatchKeyValue(ent, "spotlightwidth", sBuffer);
+		DispatchKeyValue(ent, "rendercolor", "255 255 255");
+		DispatchSpawn(ent);
+		ActivateEntity(ent);
+		SetVariantString("!activator");
+		AcceptEntityInput(ent, "SetParent", client);
+		AcceptEntityInput(ent, "LightOn");
+		
+		g_iPlayerFlashlightEntAng[client] = EntIndexToEntRef(ent);
+	}
 	
 	ClientDeactivateUltravision(client);
 	
@@ -2464,20 +2448,19 @@ ClientDeactivateFlashlight(client)
 	
 	new ent = EntRefToEntIndex(g_iPlayerFlashlightEnt[client]);
 	g_iPlayerFlashlightEnt[client] = INVALID_ENT_REFERENCE;
-	if (ent != INVALID_ENT_REFERENCE) 
+	if (ent && ent != INVALID_ENT_REFERENCE) 
 	{
 		AcceptEntityInput(ent, "TurnOff");
 		AcceptEntityInput(ent, "Kill");
 	}
 	
 	ent = EntRefToEntIndex(g_iPlayerFlashlightEntAng[client]);
+	g_iPlayerFlashlightEntAng[client] = INVALID_ENT_REFERENCE;
 	if (ent && ent != INVALID_ENT_REFERENCE) 
 	{
 		AcceptEntityInput(ent, "LightOff");
 		CreateTimer(0.1, Timer_KillEntity, g_iPlayerFlashlightEntAng[client], TIMER_FLAG_NO_MAPCHANGE);
 	}
-	
-	g_iPlayerFlashlightEntAng[client] = INVALID_ENT_REFERENCE;
 	
 	if (IsClientInGame(client))
 	{

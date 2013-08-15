@@ -3744,7 +3744,7 @@ public Action:Hook_SlenderObjectSetTransmit(ent, other)
 //			- If I lose sight or I'm unable to traverse safely, find paths around obstacles and follow memorized path.
 //			- If I reach the end of my path and I still don't see him and I still want to pursue him, keep on going in the direction I'm going.
 
-public Action:Timer_SlenderThink(Handle:timer, any:entref)
+public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 {
 	if (!g_bEnabled) return Plugin_Stop;
 
@@ -3758,13 +3758,16 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	
 	if (g_iSlenderFlags[iBossIndex] & SFF_MARKEDASFAKE) return Plugin_Stop;
 	
-	decl Float:flMyVelocity[3], Float:flMyPos[3], Float:flMyEyeAng[3];
-	new Float:flBuffer[3], Float:flBuffer2[3];
+	decl Float:flSlenderVelocity[3], Float:flMyPos[3], Float:flMyEyeAng[3];
+	new Float:flBuffer[3];
 	
-	GetEntPropVector(slender, Prop_Data, "m_vecAbsVelocity", flMyVelocity);
+	decl String:sSlenderProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	strcopy(sSlenderProfile, sizeof(sSlenderProfile), g_strSlenderProfile[iBossIndex]);
+	
+	GetEntPropVector(slender, Prop_Data, "m_vecAbsVelocity", flSlenderVelocity);
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", flBuffer, Float:{ 0.0, 0.0, 0.0 });
+	GetProfileVector(sSlenderProfile, "eye_ang_offset", flBuffer, Float:{ 0.0, 0.0, 0.0 });
 	AddVectors(flMyEyeAng, flBuffer, flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
 	
@@ -3772,8 +3775,8 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	new Float:flVelocityRatioWalk;
 	new Float:flOriginalSpeed = g_flSlenderSpeed[iBossIndex];
 	new Float:flOriginalWalkSpeed = g_flSlenderWalkSpeed[iBossIndex];
-	new Float:flMaxSpeed = GetProfileFloat(g_strSlenderProfile[iBossIndex], "speed_max");
-	new Float:flMaxWalkSpeed = GetProfileFloat(g_strSlenderProfile[iBossIndex], "walkspeed_max");
+	new Float:flMaxSpeed = GetProfileFloat(sSlenderProfile, "speed_max");
+	new Float:flMaxWalkSpeed = GetProfileFloat(sSlenderProfile, "walkspeed_max");
 	new Float:flTurnRate = g_flSlenderTurnRate[iBossIndex];
 	
 	new Float:flSpeed = flOriginalSpeed * g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier;
@@ -3785,10 +3788,10 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	else if (flMaxWalkSpeed > flOriginalWalkSpeed && flWalkSpeed > flMaxWalkSpeed) flWalkSpeed = flMaxWalkSpeed;
 	
 	if (flSpeed <= 0.0) flVelocityRatio = 0.0;
-	else flVelocityRatio = GetVectorLength(flMyVelocity) / flOriginalSpeed;
+	else flVelocityRatio = GetVectorLength(flSlenderVelocity) / flOriginalSpeed;
 	
 	if (flWalkSpeed <= 0.0) flVelocityRatioWalk = 0.0;
-	else flVelocityRatioWalk = GetVectorLength(flMyVelocity) / flOriginalWalkSpeed;
+	else flVelocityRatioWalk = GetVectorLength(flSlenderVelocity) / flOriginalWalkSpeed;
 	
 	new iOldState = g_iSlenderState[iBossIndex];
 	new iOldTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
@@ -3796,91 +3799,153 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	new iNewTarget = INVALID_ENT_REFERENCE;
 	new iState = iOldState;
 	
-	new Float:flBestDist = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_range");
+	new Float:flBestDist = GetProfileFloat(sSlenderProfile, "search_range");
 	
 	new bool:bPlayerInFOV[MAXPLAYERS + 1];
 	new Float:flPlayerDists[MAXPLAYERS + 1];
 	
 	new bool:bAttackEliminated = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
-	new bool:bInFlashlight = false;
+	new bool:bStunEnabled = bool:GetProfileNum(sSlenderProfile, "stun_enabled");
 	
-	decl Float:flTempPos[3], Float:flTempAng[3];
+	decl Float:flSlenderMins[3], Float:flSlenderMaxs[3];
+	GetEntPropVector(slender, Prop_Send, "m_vecMins", flSlenderMins);
+	GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flSlenderMaxs);
 	
-	// Get a new target that we can change to just in case we need to.
+	decl Float:flTraceMins[3], Float:flTraceMaxs[3];
+	flTraceMins[0] = flSlenderMins[0];
+	flTraceMins[1] = flSlenderMins[1];
+	flTraceMins[2] = 0.0;
+	flTraceMaxs[0] = flSlenderMaxs[0];
+	flTraceMaxs[1] = flSlenderMaxs[1];
+	flTraceMaxs[2] = 0.0;
+	
+	// Get a new target that we can change to just in case we need one.
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerDeathCam[i] || (!bAttackEliminated && g_bPlayerEliminated[i]) || g_bPlayerGhostMode[i] || g_bPlayerEscaped[i]) continue;
+		if (!IsClientInGame(i) || 
+			!IsPlayerAlive(i) || 
+			g_bPlayerDeathCam[i] || 
+			(!bAttackEliminated && g_bPlayerEliminated[i]) ||
+			g_bPlayerGhostMode[i] || 
+			g_bPlayerEscaped[i]) continue;
 		
-		if (g_bPlayerFlashlight[i])
-		{
-			decl Float:flEndPos[3];
-			
-			GetClientEyePosition(i, flTempPos);
-			GetClientEyeAngles(i, flTempAng);
-			new Handle:hTrace = TR_TraceRayFilterEx(flTempPos, flTempAng, MASK_PLAYERSOLID, RayType_Infinite, TraceRayDontHitEntity, i);
-			new iHitIndex = TR_GetEntityIndex(hTrace);
-			TR_GetEndPosition(flEndPos, hTrace);
-			CloseHandle(hTrace);
-			
-			if (iHitIndex == slender)
-			{
-				if (GetVectorDistance(flTempPos, flEndPos) <= SF2_FLASHLIGHT_LENGTH)
-				{
-					bInFlashlight = true;
-				}
-			}
-		}
+		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
+		SlenderGetEyePosition(iBossIndex, flTraceStartPos);
+		GetClientEyePosition(i, flTraceEndPos);
 		
-		if (!PlayerCanSeeSlender(i, iBossIndex, false, false, !bAttackEliminated)) continue;
+		new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+			flTraceEndPos,
+			flTraceMins,
+			flTraceMaxs,
+			MASK_NPCSOLID,
+			TraceRayBossVisibility,
+			slender);
+		
+		new bool:bIsVisible = !TR_DidHit(hTrace);
+		new iTraceHitEntity = TR_GetEntityIndex(hTrace);
+		CloseHandle(hTrace);
+		
+		if (!bIsVisible && iTraceHitEntity == i) bIsVisible = true;
 		
 		// FOV check.
-		AddVectors(flMyPos, g_flSlenderVisiblePos[iBossIndex], flBuffer);
-		GetClientEyePosition(i, flBuffer2);
-		SubtractVectors(flBuffer2, flBuffer, flBuffer);
-		GetVectorAngles(flBuffer, flBuffer);
-		
 		new bool:bNear = false;
-		if (GetVectorDistance(flMyPos, flBuffer2) <= GetProfileFloat(g_strSlenderProfile[iBossIndex], "wake_radius", 400.0))
+		if (GetVectorDistance(flTraceStartPos, flTraceEndPos) <= GetProfileFloat(sSlenderProfile, "wake_radius", 150.0))
 		{
 			bNear = true;
 		}
 		
-		if (!bNear)
+		SubtractVectors(flTraceEndPos, flTraceStartPos, flBuffer);
+		GetVectorAngles(flBuffer, flBuffer);
+		
+		if (FloatAbs(AngleDiff(flMyEyeAng[1], flBuffer[1])) <= (g_flSlenderFOV[iBossIndex] * 0.5))
 		{
-			if (FloatAbs(AngleDiff(flMyEyeAng[1], flBuffer[1])) > (g_flSlenderFOV[iBossIndex] * 0.5)) continue;
 			bPlayerInFOV[i] = true;
 		}
 		
-		new Float:flDist, Float:flPercent;
-		flPercent = g_iPageMax > 0 ? (float(g_iPlayerFoundPages[i]) / float(g_iPageMax)) : 0.0;
+		new Float:flDist, Float:flPriorityValue;
+		flPriorityValue = g_iPageMax > 0 ? (float(g_iPlayerFoundPages[i]) / float(g_iPageMax)) : 0.0;
 		
-		GetClientAbsOrigin(i, flBuffer);
-		flDist = GetVectorDistance(flBuffer, flMyPos);
+		if (TF2_GetPlayerClass(i) == TFClass_Medic) flPriorityValue += 0.5;
+		
+		flDist = GetVectorDistance(flTraceStartPos, flTraceEndPos);
 		flPlayerDists[i] = flDist;
 		
-		flDist -= (flDist * flPercent);
-		
-		if (flDist < flBestDist)
+		if (bNear || (bIsVisible && bPlayerInFOV[i]))
 		{
-			iNewTarget = i;
-			flBestDist = flDist;
-		}
+			decl Float:flTargetPos[3];
+			GetClientAbsOrigin(i, flTargetPos);
 		
-		g_flSlenderLastFoundPlayer[iBossIndex][i] = GetGameTime();
-		g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flBuffer[0];
-		g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flBuffer[1];
-		g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flBuffer[2];
+			// Subtract distance to induce priority.
+			flDist -= (flDist * flPriorityValue);
+		
+			if (flDist < flBestDist)
+			{
+				iNewTarget = i;
+				flBestDist = flDist;
+			}
+			
+			g_flSlenderLastFoundPlayer[iBossIndex][i] = GetGameTime();
+			g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flTargetPos[0];
+			g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flTargetPos[1];
+			g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flTargetPos[2];
+		}
 	}
 	
+	new bool:bInFlashlight = false;
+	
+	// Check to see if someone is facing at us with flashlight on. Only if I'm facing them too. BLINDNESS!
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i) || 
+			!IsPlayerAlive(i) || 
+			!g_bPlayerFlashlight[i] ||
+			!bPlayerInFOV[i]) continue;
+		
+		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
+		GetClientEyePosition(i, flTraceStartPos);
+		SlenderGetEyePosition(iBossIndex, flTraceEndPos);
+		
+		if (GetVectorDistance(flTraceStartPos, flTraceEndPos) <= SF2_FLASHLIGHT_LENGTH)
+		{
+			decl Float:flEyeAng[3], Float:flRequiredAng[3];
+			GetClientEyeAngles(i, flEyeAng);
+			SubtractVectors(flTraceEndPos, flTraceStartPos, flRequiredAng);
+			GetVectorAngles(flRequiredAng, flRequiredAng);
+			
+			if ((FloatAbs(AngleDiff(flEyeAng[0], flRequiredAng[0])) + FloatAbs(AngleDiff(flEyeAng[1], flRequiredAng[1]))) <= 45.0)
+			{
+				new Handle:hTrace = TR_TraceRayFilterEx(flTraceStartPos,
+					flTraceEndPos,
+					MASK_PLAYERSOLID,
+					RayType_EndPoint,
+					TraceRayBossVisibility,
+					slender);
+					
+				new bool:bDidHit = TR_DidHit(hTrace);
+				CloseHandle(hTrace);
+				
+				if (!bDidHit)
+				{
+					bInFlashlight = true;
+					break;
+				}
+			}
+		}
+	}
+	
+	// Damage us if we're in a flashlight.
 	if (bInFlashlight)
 	{
-		if (g_iSlenderHealthUntilStun[iBossIndex] > 0)
+		if (bStunEnabled)
 		{
-			g_iSlenderHealthUntilStun[iBossIndex] -= GetProfileNum(g_strSlenderProfile[iBossIndex], "stun_damage_flashlight");
+			if (g_iSlenderHealthUntilStun[iBossIndex] > 0)
+			{
+				g_iSlenderHealthUntilStun[iBossIndex] -= GetProfileNum(sSlenderProfile, "stun_damage_flashlight");
+			}
 		}
 	}
 	
-	if (IsValidClient(iNewTarget))
+	if (IsValidEdict(iNewTarget))
 	{
 		g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iNewTarget);
 	}
@@ -3888,7 +3953,12 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	new iTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
 	if (iTarget != INVALID_ENT_REFERENCE)
 	{
-		if (!IsClientInGame(iTarget) || !IsPlayerAlive(iTarget) || (!(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS) && g_bPlayerEliminated[iTarget]) || g_bPlayerDeathCam[iTarget] || g_bPlayerGhostMode[iTarget] || g_bPlayerEscaped[iTarget])
+		if (!IsClientInGame(iTarget) || 
+			!IsPlayerAlive(iTarget) || 
+			(!bAttackEliminated && g_bPlayerEliminated[iTarget]) || 
+			g_bPlayerDeathCam[iTarget] || 
+			g_bPlayerGhostMode[iTarget] || 
+			g_bPlayerEscaped[iTarget])
 		{
 			// Clear our target; he's not valid anymore.
 			g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
@@ -3929,11 +3999,11 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 			
 			if (bTrackingSound)
 			{
-				if ((GetGameTime() - g_flSlenderTargetSoundTime[iBossIndex]) > GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_sound_duration", 7.0))
+				if ((GetGameTime() - g_flSlenderTargetSoundTime[iBossIndex]) > GetProfileFloat(sSlenderProfile, "search_sound_duration", 7.0))
 				{
 					SlenderResetSoundData(iBossIndex, false);
 				}
-				else if (g_iSlenderTargetSoundCount[iBossIndex] >= GetProfileNum(g_strSlenderProfile[iBossIndex], "search_sound_count_until_alert", 5))
+				else if (g_iSlenderTargetSoundCount[iBossIndex] >= GetProfileNum(sSlenderProfile, "search_sound_count_until_alert", 5))
 				{
 					// Someone's making some noise over there!
 					iState = STATE_ALERT;
@@ -3944,14 +4014,40 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 		{
 			if (IsValidClient(iTarget))
 			{
-				// I'm coming for you...
 				if (GetGameTime() >= g_flSlenderTimeUntilIdle[iBossIndex])
 				{
 					iState = STATE_IDLE;
 				}
 				else if (GetGameTime() >= g_flSlenderTimeUntilChase[iBossIndex])
 				{
-					if (PlayerCanSeeSlender(iTarget, iBossIndex, false, false, !bAttackEliminated))
+					decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
+					SlenderGetEyePosition(iBossIndex, flTraceStartPos);
+					
+					if (IsValidClient(iTarget)) GetClientEyePosition(iTarget, flTraceEndPos);
+					else
+					{
+						decl Float:flTargetMins[3], Float:flTargetMaxs[3];
+						GetEntPropVector(iTarget, Prop_Send, "m_vecMins", flTargetMins);
+						GetEntPropVector(iTarget, Prop_Send, "m_vecMaxs", flTargetMaxs);
+						GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flTraceEndPos);
+						for (new i = 0; i < 3; i++) flTraceEndPos[i] += ((flTargetMins[i] + flTargetMaxs[i]) / 2.0);
+					}
+					
+					new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+						flTraceEndPos,
+						flTraceMins,
+						flTraceMaxs,
+						MASK_NPCSOLID,
+						TraceRayBossVisibility,
+						slender);
+						
+					new bool:bIsVisible = !TR_DidHit(hTrace);
+					new iTraceHitEntity = TR_GetEntityIndex(hTrace);
+					CloseHandle(hTrace);
+					
+					if (!bIsVisible && iTraceHitEntity == iTarget) bIsVisible = true;
+					
+					if (bPlayerInFOV[iTarget] && bIsVisible)
 					{
 						// AHAHAHAH! I GOT YOU NOW!
 						iState = STATE_CHASE;
@@ -3960,7 +4056,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 			}
 			else if (bTrackingSound)
 			{
-				if ((GetGameTime() - g_flSlenderTargetSoundTime[iBossIndex]) > GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_sound_duration", 7.0))
+				if ((GetGameTime() - g_flSlenderTargetSoundTime[iBossIndex]) > GetProfileFloat(sSlenderProfile, "search_sound_duration", 7.0))
 				{
 					SlenderResetSoundData(iBossIndex, false);
 				}
@@ -3975,11 +4071,43 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 		{
 			if (iState == STATE_CHASE)
 			{
-				if (IsValidClient(iTarget))
+				if (IsValidEdict(iTarget))
 				{
-					if (!PlayerCanSeeSlender(iTarget, iBossIndex, false, false, !bAttackEliminated))
+					decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
+					SlenderGetEyePosition(iBossIndex, flTraceStartPos);
+					
+					if (IsValidClient(iTarget))
 					{
-						if (SlenderGetBestPathNodeToTarget(iBossIndex) == -1 || GetGameTime() >= g_flSlenderTimeUntilAlert[iBossIndex])
+						GetClientEyePosition(iTarget, flTraceEndPos);
+					}
+					else
+					{
+						decl Float:flTargetMins[3], Float:flTargetMaxs[3];
+						GetEntPropVector(iTarget, Prop_Send, "m_vecMins", flTargetMins);
+						GetEntPropVector(iTarget, Prop_Send, "m_vecMaxs", flTargetMaxs);
+						GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flTraceEndPos);
+						for (new i = 0; i < 3; i++) flTraceEndPos[i] += ((flTargetMins[i] + flTargetMaxs[i]) / 2.0);
+					}
+					
+					new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+						flTraceEndPos,
+						flTraceMins,
+						flTraceMaxs,
+						MASK_NPCSOLID,
+						TraceRayBossVisibility,
+						slender);
+						
+					new bool:bIsVisible = !TR_DidHit(hTrace);
+					new iTraceHitEntityIndex = TR_GetEntityIndex(hTrace);
+					CloseHandle(hTrace);
+					
+					if (!bIsVisible && iTraceHitEntityIndex == iTarget) bIsVisible = true;
+					
+					new iBestPathNode = SlenderGetBestPathNodeToTarget(iBossIndex);
+					
+					if (!bIsVisible)
+					{
+						if (iBestPathNode == -1 || GetGameTime() >= g_flSlenderTimeUntilAlert[iBossIndex])
 						{
 							// Player is too fast for me; go into alert mode.
 							iState = STATE_ALERT;
@@ -3987,8 +4115,11 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 					}
 					else
 					{
+						new Float:flAttackRange = GetProfileFloat(sSlenderProfile, "attack_range", flAttackRange);
+						new Float:flAttackBeginRange = GetProfileFloat(sSlenderProfile, "attack_begin_range", flAttackRange);
+					
 						GetClientAbsOrigin(iTarget, g_flSlenderGoalPos[iBossIndex]);
-						if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_range"))
+						if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= flAttackBeginRange)
 						{
 							// ENOUGH TALK! HAVE AT YOU!
 							iState = STATE_ATTACK;
@@ -4021,7 +4152,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 			{
 				if (GetGameTime() >= g_flSlenderTimeUntilRecover[iBossIndex])
 				{
-					g_iSlenderHealthUntilStun[iBossIndex] = GetProfileNum(g_strSlenderProfile[iBossIndex], "stun_health", 85);
+					g_iSlenderHealthUntilStun[iBossIndex] = GetProfileNum(sSlenderProfile, "stun_health", 85);
 				
 					if (IsValidClient(iTarget))
 					{
@@ -4040,7 +4171,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	
 	if (iState != STATE_STUN)
 	{
-		if (GetProfileNum(g_strSlenderProfile[iBossIndex], "stun_enabled"))
+		if (bStunEnabled)
 		{
 			if (g_iSlenderHealthUntilStun[iBossIndex] <= 0)
 			{
@@ -4055,9 +4186,9 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	decl String:sAnimation[64];
 	new iModel = EntRefToEntIndex(g_iSlenderModel[iBossIndex]);
 	
-	new Float:flPlaybackRateWalk = GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_walk_playbackrate", 1.0);
-	new Float:flPlaybackRateRun = GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_run_playbackrate", 1.0);
-	new Float:flPlaybackRateIdle = GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_idle_playbackrate", 1.0);
+	new Float:flPlaybackRateWalk = GetProfileFloat(sSlenderProfile, "animation_walk_playbackrate", 1.0);
+	new Float:flPlaybackRateRun = GetProfileFloat(sSlenderProfile, "animation_run_playbackrate", 1.0);
+	new Float:flPlaybackRateIdle = GetProfileFloat(sSlenderProfile, "animation_idle_playbackrate", 1.0);
 	
 	if (iOldState != iState)
 	{
@@ -4088,12 +4219,12 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 					if (iState == STATE_WANDER && GetProfileNum(g_strSlenderProfile[iBossIndex], "wander_move", 1))
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_walk", sAnimation, sizeof(sAnimation));
-						SetAnimation(iModel, sAnimation, true, flVelocityRatio * flPlaybackRateWalk);
+						SetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateWalk);
 					}
 					else
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_idle", sAnimation, sizeof(sAnimation));
-						SetAnimation(iModel, sAnimation, true, flPlaybackRateIdle);
+						SetAnimation(iModel, sAnimation, _, flPlaybackRateIdle);
 					}
 				}
 			}
@@ -4119,7 +4250,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				if (iModel && iModel != INVALID_ENT_REFERENCE)
 				{
 					GetProfileString(g_strSlenderProfile[iBossIndex], "animation_walk", sAnimation, sizeof(sAnimation));
-					SetAnimation(iModel, sAnimation, true, flVelocityRatio * flPlaybackRateWalk);
+					SetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateWalk);
 				}
 			}
 			case STATE_CHASE, STATE_ATTACK, STATE_STUN:
@@ -4137,7 +4268,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				if (iState == STATE_ATTACK)
 				{
 					g_bSlenderAttacking[iBossIndex] = true;
-					g_hSlenderMoveTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_delay"), Timer_SlenderAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
+					g_hSlenderMoveTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_delay"), Timer_SlenderChaseBossAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
 					
 					SlenderPerformVoice(iBossIndex, "sound_attackenemy");
 				}
@@ -4170,17 +4301,17 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 					if (iState == STATE_CHASE)
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_run", sAnimation, sizeof(sAnimation));
-						SetAnimation(iModel, sAnimation, true, flVelocityRatio * flPlaybackRateRun);
+						SetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateRun);
 					}
 					else if (iState == STATE_ATTACK)
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_attack", sAnimation, sizeof(sAnimation));
-						SetAnimation(iModel, sAnimation, true, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_attack_playbackrate", 1.0));
+						SetAnimation(iModel, sAnimation, _, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_attack_playbackrate", 1.0));
 					}
 					else if (iState == STATE_STUN)
 					{
 						GetProfileString(g_strSlenderProfile[iBossIndex], "animation_stun", sAnimation, sizeof(sAnimation));
-						SetAnimation(iModel, sAnimation, true, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_stun_playbackrate", 1.0));
+						SetAnimation(iModel, sAnimation, _, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_stun_playbackrate", 1.0));
 					}
 				}
 			}
@@ -4201,7 +4332,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 			// Animation playback speed handling.
 			if (iModel && iModel != INVALID_ENT_REFERENCE)
 			{
-				SetVariantFloat(1.0 * GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_idle_playbackrate", 1.0));
+				SetVariantFloat(1.0 * GetProfileFloat(sSlenderProfile, "animation_idle_playbackrate", 1.0));
 				AcceptEntityInput(iModel, "SetPlaybackRate");
 			}
 		}
@@ -4213,19 +4344,15 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				{
 					if (iState == STATE_WANDER && GetGameTime() >= g_flSlenderNextWanderPos[iBossIndex])
 					{
-						new Float:flMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "wander_time_min", 4.0);
-						new Float:flMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "wander_time_max", 6.5);
+						new Float:flMin = GetProfileFloat(sSlenderProfile, "wander_time_min", 4.0);
+						new Float:flMax = GetProfileFloat(sSlenderProfile, "wander_time_max", 6.5);
 						g_flSlenderNextWanderPos[iBossIndex] = GetGameTime() + GetRandomFloat(flMin, flMax);
-						
-						decl Float:flMins[3], Float:flMaxs[3];
-						GetEntPropVector(slender, Prop_Send, "m_vecMins", flMins);
-						GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flMaxs);
 						
 						decl Float:flBestPos[3];
 						new bool:bBestPos = false;
 						flBestDist = 0.0;
 						
-						if (GetProfileNum(g_strSlenderProfile[iBossIndex], "wander_move", 1))
+						if (GetProfileNum(sSlenderProfile, "wander_move", 1))
 						{
 							for (new Float:flAddAng = 0.0; flAddAng < 360.0; flAddAng += 15.0)
 							{
@@ -4235,10 +4362,17 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 								
 								GetAngleVectors(flBuffer, flBuffer, NULL_VECTOR, NULL_VECTOR);
 								NormalizeVector(flBuffer, flBuffer);
-								ScaleVector(flBuffer, GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_range", 1024.0));
+								ScaleVector(flBuffer, GetProfileFloat(sSlenderProfile, "search_range", 1024.0));
 								AddVectors(flBuffer, flMyPos, flBuffer);
 								
-								new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, flBuffer, flMins, flMaxs, MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, slender);
+								new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, 
+									flBuffer, 
+									flSlenderMins, 
+									flSlenderMaxs, 
+									MASK_NPCSOLID, 
+									TraceRayDontHitPlayersOrEntity, 
+									slender);
+									
 								TR_GetEndPosition(flBuffer, hTrace);
 								CloseHandle(hTrace);
 								
@@ -4296,12 +4430,15 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				}
 				else if (!IsValidClient(iTarget) && !g_bSlenderTargetSoundFoundPos[iBossIndex])
 				{
-					decl Float:flMins[3], Float:flMaxs[3];
-					GetEntPropVector(slender, Prop_Send, "m_vecMins", flMins);
-					GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flMaxs);
-				
 					// See if there's a direct path to the sound.
-					new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, g_flSlenderTargetSoundPos[iBossIndex], flMins, flMaxs, MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, slender);
+					new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, 
+						g_flSlenderTargetSoundPos[iBossIndex], 
+						flSlenderMins, 
+						flSlenderMaxs, 
+						MASK_NPCSOLID,
+						TraceRayDontHitPlayersOrEntity, 
+						slender);
+						
 					new bool:bDidHit = TR_DidHit(hTrace);
 					CloseHandle(hTrace);
 					if (!bDidHit)
@@ -4342,7 +4479,7 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				if (GetGameTime() >= g_flSlenderNextTrackTargetPos[iBossIndex])
 				{
 					// Establish path nodes to our target, for use if we lose him around a corner.
-					g_flSlenderNextTrackTargetPos[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_checkdelay", 0.0);
+					g_flSlenderNextTrackTargetPos[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_checkdelay", 0.0);
 					
 					if (iTarget && iTarget != INVALID_ENT_REFERENCE)
 					{
@@ -4384,31 +4521,40 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				if (iState != STATE_ATTACK && iState != STATE_STUN)
 				{
 					// Path node processing.
-					decl Float:flMins[3], Float:flMaxs[3];
-					GetEntPropVector(slender, Prop_Send, "m_vecMins", flMins);
-					GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flMaxs);
 					GetClientAbsOrigin(iTarget, flBuffer);
 					
-					flMins[2] += 16.0;
+					new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, 
+						flBuffer, 
+						flSlenderMins, 
+						flSlenderMaxs, 
+						MASK_NPCSOLID, 
+						TraceRayDontHitPlayersOrEntity, 
+						slender);
 					
-					new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, flBuffer, flMins, flMaxs, MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, slender);
 					new Float:flFraction = TR_GetFraction(hTrace);
 					new Float:flHitNormal[3];
 					TR_GetPlaneNormal(hTrace, flHitNormal);
 					CloseHandle(hTrace);
 					
 					if (flFraction >= 0.9 ||
-					(flHitNormal[0] >= 0.0 && flHitNormal[0] > 45.0) ||
-					(flHitNormal[0] < 0.0 && flHitNormal[0] < -45.0))
+						(flHitNormal[0] >= 0.0 && flHitNormal[0] > 45.0) ||
+						(flHitNormal[0] < 0.0 && flHitNormal[0] < -45.0))
 					{
 						// Extend our chase duration.
-						g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration", 10.0);
+						g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration", 10.0);
 						GetClientAbsOrigin(iTarget, g_flSlenderGoalPos[iBossIndex]);
 					}
 					else if (SlenderGetPathNodePosition(iBossIndex, 0, g_flSlenderGoalPos[iBossIndex]))
 					{
-						hTrace = TR_TraceHullFilterEx(flMyPos, g_flSlenderGoalPos[iBossIndex], flMins, flMaxs, MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, slender);
-						new iEntity = TR_GetEntityIndex(hTrace);
+						hTrace = TR_TraceHullFilterEx(flMyPos,
+							g_flSlenderGoalPos[iBossIndex], 
+							flSlenderMins, 
+							flSlenderMaxs, 
+							MASK_NPCSOLID, 
+							TraceRayDontHitPlayersOrEntity, 
+							slender);
+						
+						new iHitEntity = TR_GetEntityIndex(hTrace);
 						TR_GetPlaneNormal(hTrace, flHitNormal);
 						CloseHandle(hTrace);
 						GetVectorAngles(flHitNormal, flHitNormal);
@@ -4418,21 +4564,11 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 						new Float:flRatio = flVelocityRatio;
 						if (flRatio < 1.0) flRatio = 1.0;
 						
-						if (flDist < (GetProfileFloat(g_strSlenderProfile[iBossIndex], "chase_nodetolerate", 64.0)) && (!IsValidEntity(iEntity) || ((flHitNormal[0] >= 0.0 && flHitNormal[0] > 45.0) || (flHitNormal[0] < 0.0 && flHitNormal[0] < -45.0))))
+						if (flDist < (GetProfileFloat(sSlenderProfile, "chase_nodetolerate", 64.0)) && 
+							(!IsValidEntity(iHitEntity) || 
+							((flHitNormal[0] >= 0.0 && flHitNormal[0] > 45.0) || (flHitNormal[0] < 0.0 && flHitNormal[0] < -45.0))))
 						{
 							SlenderRemovePathNode(iBossIndex, 0);
-						}
-						else if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= 128.0 && (g_flSlenderGoalPos[iBossIndex][2] - flMyPos[2]) >= (GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_speed", 300.0) * 0.5))
-						{
-							// Force jump!
-							if (GetEntityFlags(slender) & FL_ONGROUND)
-							{
-								if (GetGameTime() >= g_flSlenderNextJump[iBossIndex])
-								{
-									g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_cooldown", 2.0);
-									flMyVelocity[2] += GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_speed", 300.0);
-								}
-							}
 						}
 					}
 					else
@@ -4440,23 +4576,9 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 						// Couldn't find a good path node; abort to alert mode on the next think.
 						g_flSlenderTimeUntilAlert[iBossIndex] = -1.0;
 					}
-					
-					// Something blocking our path? Try jumping.
-					if (GetEntityFlags(slender) & FL_ONGROUND)
-					{
-						if (GetVectorLength(flMyVelocity) <= GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_reqspeed", 40.0))
-						{
-							if (GetGameTime() >= g_flSlenderNextJump[iBossIndex])
-							{
-								g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_cooldown", 2.0);
-								flMyVelocity[2] += GetProfileFloat(g_strSlenderProfile[iBossIndex], "jump_speed", 300.0);
-							}
-						}
-					}
 				}
 			}
 			
-			// Point at our goal, preserving absolute velocity only if we're on the ground.
 			if (iState != STATE_ATTACK && iState != STATE_STUN)
 			{
 				if (iState == STATE_CHASE) flTurnRate *= 2.0;
@@ -4469,32 +4591,10 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 				
 				TeleportEntity(slender, NULL_VECTOR, flBuffer, NULL_VECTOR);
 				
-				if (!(iState == STATE_WANDER && !GetProfileNum(g_strSlenderProfile[iBossIndex], "wander_move", 1)))
-				{
-					// Move to goal.
-					
-					new bool:bOnGround = bool:(GetEntityFlags(slender) & FL_ONGROUND);
-					if (bOnGround)
-					{
-						SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flBuffer);
-						NormalizeVector(flBuffer, flBuffer);
-						ScaleVector(flBuffer, iState == STATE_CHASE ? (flSpeed) : (flWalkSpeed));
-						TeleportEntity(slender, NULL_VECTOR, NULL_VECTOR, flBuffer);
-					}
-					else
-					{
-						SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flBuffer);
-						NormalizeVector(flBuffer, flBuffer);
-						ScaleVector(flBuffer, GetProfileFloat(g_strSlenderProfile[iBossIndex], "airspeed", 50.0));
-						AddVectors(flMyVelocity, flBuffer, flBuffer);
-						TeleportEntity(slender, NULL_VECTOR, NULL_VECTOR, flBuffer);
-					}
-				}
-				
 				// Animation playback speed handling.
 				if (iModel && iModel != INVALID_ENT_REFERENCE)
 				{
-					if (iState == STATE_WANDER && !GetProfileNum(g_strSlenderProfile[iBossIndex], "wander_move", 1))
+					if (iState == STATE_WANDER && !GetProfileNum(sSlenderProfile, "wander_move", 1))
 					{
 						SetVariantFloat(flPlaybackRateIdle);
 						AcceptEntityInput(iModel, "SetPlaybackRate");
@@ -4508,6 +4608,256 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 			}
 		}
 	}
+	
+	// Process our desired velocity.
+	new Float:flDesiredVelocity[3];
+	switch (iState)
+	{
+		case STATE_WANDER:
+		{
+			if (GetProfileNum(sSlenderProfile, "wander_move", 1))
+			{
+				SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flDesiredVelocity);
+				flDesiredVelocity[2] = 0.0;
+				NormalizeVector(flDesiredVelocity, flDesiredVelocity);
+				ScaleVector(flDesiredVelocity, flWalkSpeed);
+			}
+		}
+		case STATE_ALERT:
+		{
+			SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flDesiredVelocity);
+			flDesiredVelocity[2] = 0.0;
+			NormalizeVector(flDesiredVelocity, flDesiredVelocity);
+			ScaleVector(flDesiredVelocity, flWalkSpeed);
+		}
+		case STATE_CHASE:
+		{
+			SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flDesiredVelocity);
+			flDesiredVelocity[2] = 0.0;
+			NormalizeVector(flDesiredVelocity, flDesiredVelocity);
+			ScaleVector(flDesiredVelocity, flSpeed);
+		}
+	}
+	
+	// Check if we're on the ground.
+	
+	decl Float:flTraceEndPos[3];
+	flTraceEndPos[0] = flMyPos[0];
+	flTraceEndPos[1] = flMyPos[1];
+	flTraceEndPos[2] = flMyPos[2] - 1.0;
+	
+	new Handle:hTrace = TR_TraceHullFilterEx(flMyPos, 
+		flTraceEndPos, 
+		flTraceMins, 
+		flTraceMaxs, 
+		MASK_NPCSOLID, 
+		TraceRayDontHitEntity, 
+		slender);
+	
+	new bool:bSlenderOnGround = TR_DidHit(hTrace);
+	CloseHandle(hTrace);
+	
+	/*
+	// DIRTY HACK! Dynamically set the move type to prevent "floating" issue.
+	if (bSlenderOnGround)
+	{
+		SetEntityMoveType(slender, MOVETYPE_FLYGRAVITY);
+	}
+	else
+	{
+		SetEntityMoveType(slender, MOVETYPE_STEP);
+	}
+	*/
+	
+	// Determine speed behavior.
+	if (bSlenderOnGround)
+	{
+		// Don't change the speed.
+	}
+	else
+	{
+		flDesiredVelocity[2] = 0.0;
+		NormalizeVector(flDesiredVelocity, flDesiredVelocity);
+		ScaleVector(flDesiredVelocity, GetProfileFloat(sSlenderProfile, "airspeed", 50.0));
+		
+		flDesiredVelocity[0] += flSlenderVelocity[0];
+		flDesiredVelocity[1] += flSlenderVelocity[1];
+	}
+	
+	new bool:bSlenderTeleportedOnStep = false;
+	
+	// Check our stepsize in case we need to elevate ourselves a step.
+	if (bSlenderOnGround && GetVectorLength(flDesiredVelocity) > 0.0)
+	{
+		new Float:flSlenderStepSize = GetProfileFloat(sSlenderProfile, "stepsize", 18.0);
+		if (flSlenderStepSize > 0.0)
+		{
+			decl Float:flTraceDirection[3], Float:flObstaclePos[3], Float:flObstacleNormal[3];
+			NormalizeVector(flDesiredVelocity, flTraceDirection);
+			AddVectors(flMyPos, flTraceDirection, flTraceEndPos);
+			
+			// Tracehull in front of us to check if there's a very small obstacle blocking our way.
+			hTrace = TR_TraceHullFilterEx(flMyPos, 
+				flTraceEndPos,
+				flSlenderMins,
+				flSlenderMaxs,
+				MASK_NPCSOLID,
+				TraceRayDontHitEntity,
+				slender);
+				
+			new bool:bSlenderHitObstacle = TR_DidHit(hTrace);
+			TR_GetEndPosition(flObstaclePos, hTrace);
+			TR_GetPlaneNormal(hTrace, flObstacleNormal);
+			CloseHandle(hTrace);
+			
+			if (bSlenderHitObstacle &&
+				FloatAbs(flObstacleNormal[2]) == 0.0)
+			{
+				decl Float:flTraceStartPos[3];
+				flTraceStartPos[0] = flObstaclePos[0];
+				flTraceStartPos[1] = flObstaclePos[1];
+				
+				decl Float:flTraceFreePos[3];
+				
+				new Float:flTraceCheckZ = 0.0;
+				
+				// This does a crapload of traces along the wall. Very nasty and expensive to do...
+				while (flTraceCheckZ <= flSlenderStepSize)
+				{
+					flTraceCheckZ += 1.0;
+					flTraceStartPos[2] = flObstaclePos[2] + flTraceCheckZ;
+					
+					AddVectors(flTraceStartPos, flTraceDirection, flTraceEndPos);
+					
+					hTrace = TR_TraceHullFilterEx(flTraceStartPos, 
+						flTraceEndPos,
+						flTraceMins,
+						flTraceMaxs,
+						MASK_NPCSOLID,
+						TraceRayDontHitEntity,
+						slender);
+						
+					bSlenderHitObstacle = TR_DidHit(hTrace);
+					TR_GetEndPosition(flTraceFreePos, hTrace);
+					CloseHandle(hTrace);
+					
+					if (!bSlenderHitObstacle)
+					{
+						// Potential space to step on? Process if we can fit!
+						if (!IsSpaceOccupiedNPC(flTraceFreePos,
+							flSlenderMins,
+							flSlenderMaxs,
+							slender))
+						{
+							// Yes we can! Break the loop and teleport to this pos.
+							bSlenderTeleportedOnStep = true;
+							TeleportEntity(slender, flTraceFreePos, NULL_VECTOR, NULL_VECTOR);
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	decl Float:flMoveVelocity[3];
+	if (bSlenderOnGround)
+	{
+		LerpVectors(flSlenderVelocity, flDesiredVelocity, flMoveVelocity, GetProfileFloat(sSlenderProfile, "speed_accelfactor", 1.0));
+	}
+	else
+	{
+		for (new i = 0; i < 3; i++) flMoveVelocity[i] = flDesiredVelocity[i];
+	}
+	
+	new Float:flSlenderJumpSpeed = GetProfileFloat(sSlenderProfile, "jump_speed", 300.0);
+	new bool:bSlenderShouldJump = false;
+	
+	// Check if we need to jump over a wall or something.
+	if (!bSlenderShouldJump && bSlenderOnGround && !bSlenderTeleportedOnStep && flSlenderJumpSpeed > 0.0 && GetVectorLength(flDesiredVelocity) > 0.0)
+	{
+		new Float:flSlenderJumpHeight = FloatAbs(Pow(-flSlenderJumpSpeed, 2.0) / (2.0 * GetConVarFloat(FindConVar("sv_gravity"))));
+	
+		if (flSlenderJumpHeight > 0.0)
+		{
+			decl Float:flTraceDirection[3], Float:flObstaclePos[3], Float:flObstacleNormal[3];
+			NormalizeVector(flDesiredVelocity, flTraceDirection);
+			AddVectors(flMyPos, flTraceDirection, flTraceEndPos);
+			
+			// Tracehull in front of us to check if there's a very small obstacle blocking our way.
+			hTrace = TR_TraceHullFilterEx(flMyPos, 
+				flTraceEndPos,
+				flSlenderMins,
+				flSlenderMaxs,
+				MASK_NPCSOLID,
+				TraceRayDontHitEntity,
+				slender);
+				
+			new bool:bSlenderHitObstacle = TR_DidHit(hTrace);
+			TR_GetEndPosition(flObstaclePos, hTrace);
+			TR_GetPlaneNormal(hTrace, flObstacleNormal);
+			CloseHandle(hTrace);
+			
+			if (bSlenderHitObstacle)
+			{
+				decl Float:flTraceStartPos[3];
+				flTraceStartPos[0] = flObstaclePos[0];
+				flTraceStartPos[1] = flObstaclePos[1];
+				
+				decl Float:flTraceFreePos[3];
+				
+				new Float:flTraceCheckZ = 0.0;
+				
+				// This does a crapload of traces along the wall. Very nasty and expensive to do...
+				while (flTraceCheckZ <= flSlenderJumpHeight)
+				{
+					flTraceCheckZ += 1.0;
+					flTraceStartPos[2] = flObstaclePos[2] + flTraceCheckZ;
+					
+					AddVectors(flTraceStartPos, flTraceDirection, flTraceEndPos);
+					
+					hTrace = TR_TraceHullFilterEx(flTraceStartPos, 
+						flTraceEndPos,
+						flTraceMins,
+						flTraceMaxs,
+						MASK_NPCSOLID,
+						TraceRayDontHitEntity,
+						slender);
+						
+					bSlenderHitObstacle = TR_DidHit(hTrace);
+					TR_GetEndPosition(flTraceFreePos, hTrace);
+					CloseHandle(hTrace);
+					
+					if (!bSlenderHitObstacle)
+					{
+						// Potential space to step on? Process if we can fit!
+						if (!IsSpaceOccupiedNPC(flTraceFreePos,
+							flSlenderMins,
+							flSlenderMaxs,
+							slender))
+						{
+							// Yes we can! Break the loop and teleport to this pos.
+							bSlenderShouldJump = true;
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	if (bSlenderOnGround && bSlenderShouldJump && GetGameTime() >= g_flSlenderNextJump[iBossIndex])
+	{
+		g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "jump_cooldown", 2.0);
+		flMoveVelocity[2] = flSlenderJumpSpeed;
+	}
+	else 
+	{
+		// We are in no position to defy gravity.
+		flMoveVelocity[2] = flSlenderVelocity[2];
+	}
+	
+	TeleportEntity(slender, NULL_VECTOR, NULL_VECTOR, flMoveVelocity);
 	
 	// Sound handling.
 	if (GetGameTime() >= g_flSlenderNextVoiceSound[iBossIndex])
@@ -4529,21 +4879,15 @@ public Action:Timer_SlenderThink(Handle:timer, any:entref)
 	return Plugin_Continue;
 }
 
-public Action:Timer_SlenderMove(Handle:timer)
+public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 {
-	new iBossIndex = -1;
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		if (g_hSlenderMoveTimer[i] == timer)
-		{
-			iBossIndex = i;
-			break;
-		}
-	}
-
+	new slender = EntRefToEntIndex(entref);
+	if (!slender || slender == INVALID_ENT_REFERENCE) return Plugin_Stop;
+	
+	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
 	if (iBossIndex == -1) return Plugin_Stop;
 	
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	if (timer != g_hSlenderThinkTimer[iBossIndex]) return Plugin_Stop;
 	
 	if (g_iSlenderType[iBossIndex] == 1)
 	{
@@ -4763,7 +5107,7 @@ public Action:Timer_SlenderTeleport(Handle:timer, any:iBossIndex)
 	g_hSlenderTeleportTimer[iBossIndex] = CreateTimer(GetRandomFloat(GetProfileFloat(g_strSlenderProfile[iBossIndex], "think_time_min"), GetProfileFloat(g_strSlenderProfile[iBossIndex], "think_time_max")), Timer_SlenderTeleport, iBossIndex, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-public Action:Timer_SlenderAttack(Handle:timer, any:entref)
+public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 {
 	if (!g_bEnabled) return;
 
@@ -4787,74 +5131,119 @@ public Action:Timer_SlenderAttack(Handle:timer, any:entref)
 	new iDamageType = GetProfileNum(g_strSlenderProfile[iBossIndex], "attack_damagetype");
 	
 	// Damage all players within range.
-	decl Float:flMyEyePos[3], Float:flBuffer[3], Float:flMyEyeAng[3];
-	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyEyePos);
+	decl Float:flMyEyePos[3], Float:flMyEyeAngOffset[3], Float:flMyEyeAng[3];
+	SlenderGetEyePosition(iBossIndex, flMyEyePos);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", flBuffer);
-	AddVectors(flBuffer, flMyEyeAng, flMyEyeAng);
+	GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", flMyEyeAngOffset);
+	AddVectors(flMyEyeAngOffset, flMyEyeAng, flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
-	
-	AddVectors(flMyEyePos, g_flSlenderVisiblePos[iBossIndex], flMyEyePos);
 	
 	decl Float:flViewPunch[3];
 	GetProfileVector(g_strSlenderProfile[iBossIndex], "attack_punchvel", flViewPunch);
 	
-	decl String:sBuffer[PLATFORM_MAX_PATH];
+	decl Float:flTargetDist;
+	decl Handle:hTrace;
+	
+	new Float:flAttackRange = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_range");
+	new Float:flAttackFOV = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
 	
 	new bool:bHit = false;
 	
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerGhostMode[i]) continue;
-		if (!IsPointVisibleToPlayer(i, flMyEyePos, false, false, !bAttackEliminated)) continue;
 		
-		GetClientEyePosition(i, flBuffer);
-		if (GetVectorDistance(flBuffer, flMyEyePos) <= (GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_range") * g_flSlenderAnger[iBossIndex]))
+		if (!bAttackEliminated && g_bPlayerEliminated[i]) continue;
+		
+		decl Float:flTargetPos[3];
+		GetClientEyePosition(i, flTargetPos);
+		
+		hTrace = TR_TraceRayFilterEx(flMyEyePos,
+			flTargetPos,
+			MASK_NPCSOLID,
+			RayType_EndPoint,
+			TraceRayDontHitEntity,
+			slender);
+		
+		new bool:bTraceDidHit = TR_DidHit(hTrace);
+		new iTraceHitEntity = TR_GetEntityIndex(hTrace);
+		CloseHandle(hTrace);
+		
+		if (bTraceDidHit && iTraceHitEntity != i)
 		{
-			SubtractVectors(flBuffer, flMyEyePos, flBuffer);
-			GetVectorAngles(flBuffer, flBuffer);
-			if (FloatAbs(AngleDiff(flBuffer[1], flMyEyeAng[1])) <= (g_flSlenderFOV[iBossIndex] * 0.5))
+			decl Float:flTargetMins[3], Float:flTargetMaxs[3];
+			GetEntPropVector(i, Prop_Send, "m_vecMins", flTargetMins);
+			GetEntPropVector(i, Prop_Send, "m_vecMaxs", flTargetMaxs);
+			GetClientAbsOrigin(i, flTargetPos);
+			for (new i2 = 0; i2 < 3; i2++) flTargetPos[i2] += ((flTargetMins[i2] + flTargetMaxs[i2]) / 2.0);
+			
+			hTrace = TR_TraceRayFilterEx(flMyEyePos,
+				flTargetPos,
+				MASK_NPCSOLID,
+				RayType_EndPoint,
+				TraceRayDontHitEntity,
+				slender);
+				
+			bTraceDidHit = TR_DidHit(hTrace);
+			iTraceHitEntity = TR_GetEntityIndex(hTrace);
+			CloseHandle(hTrace);
+		}
+		
+		if (!bTraceDidHit || iTraceHitEntity == i)
+		{
+			flTargetDist = GetVectorDistance(flTargetPos, flMyEyePos);
+		
+			if (flTargetDist <= flAttackRange)
 			{
-				bHit = true;
+				decl Float:flDirection[3];
+				SubtractVectors(flTargetPos, flMyEyePos, flDirection);
+				GetVectorAngles(flDirection, flDirection);
 				
-				Call_StartForward(fOnClientDamagedByBoss);
-				Call_PushCell(i);
-				Call_PushCell(iBossIndex);
-				Call_PushCell(slender);
-				Call_PushFloat(flDamage);
-				Call_PushCell(iDamageType);
-				Call_Finish();
-				
-				SDKHooks_TakeDamage(i, slender, slender, flDamage, iDamageType);
-				ClientViewPunch(i, flViewPunch);
-				
-				if (SlenderHasAttribute(iBossIndex, "bleed player on hit"))
+				if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV)
 				{
-					new Float:flDuration = SlenderGetAttributeValue(iBossIndex, "bleed player on hit");
-					if (flDuration > 0.0)
+					bHit = true;
+					
+					Call_StartForward(fOnClientDamagedByBoss);
+					Call_PushCell(i);
+					Call_PushCell(iBossIndex);
+					Call_PushCell(slender);
+					Call_PushFloat(flDamage);
+					Call_PushCell(iDamageType);
+					Call_Finish();
+					
+					SDKHooks_TakeDamage(i, slender, slender, flDamage, iDamageType);
+					ClientViewPunch(i, flViewPunch);
+					
+					if (SlenderHasAttribute(iBossIndex, "bleed player on hit"))
 					{
-						TF2_MakeBleed(i, i, flDuration);
+						new Float:flDuration = SlenderGetAttributeValue(iBossIndex, "bleed player on hit");
+						if (flDuration > 0.0)
+						{
+							TF2_MakeBleed(i, i, flDuration);
+						}
 					}
 				}
 			}
 		}
 	}
 	
+	decl String:sSoundPath[PLATFORM_MAX_PATH];
+	
 	if (bHit)
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_hitenemy", sBuffer, sizeof(sBuffer));
-		if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
+		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_hitenemy", sSoundPath, sizeof(sSoundPath));
+		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 	}
 	else
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_missenemy", sBuffer, sizeof(sBuffer));
-		if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
+		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_missenemy", sSoundPath, sizeof(sSoundPath));
+		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 	}
 	
-	g_hSlenderMoveTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_endafter"), Timer_SlenderAttackEnd, entref, TIMER_FLAG_NO_MAPCHANGE);
+	g_hSlenderMoveTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_endafter"), Timer_SlenderChaseBossAttackEnd, entref, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-public Action:Timer_SlenderAttackEnd(Handle:timer, any:entref)
+public Action:Timer_SlenderChaseBossAttackEnd(Handle:timer, any:entref)
 {
 	if (!g_bEnabled) return;
 
@@ -4893,32 +5282,54 @@ public Action:SlenderFindSoundPositions(const Float:flOrigin[3], Float:flDestina
 	
 	if (AngleDiff(flDir[1], flTargetDir[1]) <= 90.0)
 	{
-		decl Float:flMins[3], Float:flMaxs[3];
-		GetProfileVector(g_strSlenderProfile[iBossIndex], "mins", flMins);
-		GetProfileVector(g_strSlenderProfile[iBossIndex], "maxs", flMaxs);
+		decl Float:flSlenderMins[3], Float:flSlenderMaxs[3];
+		GetEntPropVector(iSlender, Prop_Send, "m_vecMins", flSlenderMins);
+		GetEntPropVector(iSlender, Prop_Send, "m_vecMaxs", flSlenderMaxs);
 		
-		decl Float:flStart[3];
-		flStart[0] = flOrigin[0];
-		flStart[1] = flOrigin[1];
-		flStart[2] = flOrigin[2] + flMaxs[2];
+		decl Float:flSlenderOBBCenter[3]; 
+		for (new i = 0; i < 3; i++) flSlenderOBBCenter[i] = ((flSlenderMins[i] + flSlenderMaxs[i]) / 2.0);
 		
-		decl Float:flEnd[3];
-		flStart[0] = flDestination[0];
-		flStart[1] = flDestination[1];
-		flStart[2] = flDestination[2] + flMaxs[2];
+		// Walkable space?
+		decl Float:flTraceStart[3];
+		for (new i = 0; i < 3; i++) flTraceStart[i] = flOrigin[i] + flSlenderOBBCenter[i];
 		
-		new Handle:hTrace = TR_TraceRayFilterEx(flStart, flEnd, MASK_NPCSOLID, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, iSlender);
-		new bool:bDidHit = TR_DidHit(hTrace);
+		decl Float:flTraceEnd[3];
+		for (new i = 0; i < 3; i++) flTraceEnd[i] = flDestination[i] + flSlenderOBBCenter[i];
+		
+		decl Float:flTraceMins[3], Float:flTraceMaxs[3];
+		for (new i = 0; i < 3; i++) 
+		{
+			flTraceMins[i] = flSlenderMins[i];
+			flTraceMaxs[i] = flSlenderMaxs[i];
+		}
+		
+		new Handle:hTrace = TR_TraceHullFilterEx(flTraceStart, 
+			flTraceEnd,
+			flTraceMins,
+			flTraceMaxs,
+			MASK_NPCSOLID,
+			TraceRayDontHitEntity,
+			iSlender);
+		
+		new bool:bIsWalkable = !TR_DidHit(hTrace);
 		CloseHandle(hTrace);
 		
-		if (!bDidHit)
+		if (bIsWalkable)
 		{
+			// Check if it does not require us to drop to the ground.
 			decl Float:flWub[3];
-			for (new i = 0; i < 2; i++) flWub[i] = flDestination[i];
-			flWub[2] -= 320.0;
+			for (new i = 0; i < 3; i++) flWub[i] = flDestination[i];
+			flWub[2] -= 300.0;
 			
-			hTrace = TR_TraceHullFilterEx(flDestination, flWub, flMins, flMaxs, MASK_NPCSOLID, TraceRayDontHitPlayersOrEntity, iSlender);
-			bDidHit = TR_DidHit(hTrace);
+			hTrace = TR_TraceHullFilterEx(flDestination, 
+				flWub,
+				flSlenderMins, 
+				flSlenderMaxs,
+				MASK_NPCSOLID, 
+				TraceRayDontHitPlayersOrEntity, 
+				iSlender);
+				
+			new bool:bDidHit = TR_DidHit(hTrace);
 			CloseHandle(hTrace);
 			
 			if (bDidHit)

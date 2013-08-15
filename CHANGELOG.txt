@@ -1,6 +1,7 @@
 Version 0.1.8a (August 13, 2013):
 - Added "SF2_OnPagesSpawned" forward
 - Reorganized all sections of code in the main scripting file (sf2.sp)
+- Cleaned up the movement code of chasing bosses a bit
 
 Version 0.1.8 (August 6, 2013):
 - Fixed a bug where Proxies could not see RED player outlines in different sections of the map

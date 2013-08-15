@@ -259,6 +259,16 @@ stock Handle:PrepareItemHandle(String:classname[], index, level, quality, String
 	return hItem;
 }
 
+stock LerpVectors(const Float:fA[3], const Float:fB[3], Float:fC[3], Float:t)
+{
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    
+    fC[0] = fA[0] + (fB[0] - fA[0]) * t;
+    fC[1] = fA[1] + (fB[1] - fA[1]) * t;
+    fC[2] = fA[2] + (fB[2] - fA[2]) * t;
+}
+
 stock Float:ApproachAngle(Float:target, Float:value, Float:speed)
 {
 	new Float:delta = AngleDiff(value, target);

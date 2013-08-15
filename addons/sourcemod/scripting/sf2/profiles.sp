@@ -177,7 +177,7 @@ bool:SelectProfile(iBossIndex, const String:strName[], iFlags=0, iCopyMaster=-1)
 	GetProfileVector(g_strSlenderProfile[iBossIndex], "maxs", g_flSlenderMaxs[iBossIndex]);
 	g_iSlenderHealth[iBossIndex] = GetProfileNum(g_strSlenderProfile[iBossIndex], "health", 900);
 	g_iSlenderType[iBossIndex] = GetProfileNum(g_strSlenderProfile[iBossIndex], "type");
-	g_hSlenderMoveTimer[iBossIndex] = CreateTimer(0.01, Timer_SlenderMove, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	g_hSlenderMoveTimer[iBossIndex] = INVALID_HANDLE;
 	g_flSlenderFOV[iBossIndex] = GetProfileFloat(g_strSlenderProfile[iBossIndex], "fov", 90.0);
 	g_flSlenderSpeed[iBossIndex] = GetProfileFloat(g_strSlenderProfile[iBossIndex], "speed");
 	g_flSlenderWalkSpeed[iBossIndex] = GetProfileFloat(g_strSlenderProfile[iBossIndex], "walkspeed");
