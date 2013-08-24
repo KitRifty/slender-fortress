@@ -111,12 +111,14 @@ public Menu_CreateGroup(Handle:menu, MenuAction:action, param1, param2)
 				iGroupIndex = CreatePlayerGroup();
 				if (iGroupIndex != -1)
 				{
+					new iQueuePoints = g_iPlayerQueuePoints[param1];
+				
 					decl String:sGroupName[64];
 					Format(sGroupName, sizeof(sGroupName), "Group %d", iGroupIndex);
 					SetPlayerGroupName(iGroupIndex, sGroupName);
 					ClientSetPlayerGroup(param1, iGroupIndex);
 					SetPlayerGroupLeader(iGroupIndex, param1);
-					SetPlayerGroupQueuePoints(iGroupIndex, g_iPlayerQueuePoints[param1]);
+					SetPlayerGroupQueuePoints(iGroupIndex, iQueuePoints);
 					
 					CPrintToChat(param1, "%T", "SF2 Created Group", param1, sGroupName);
 				}
@@ -1202,6 +1204,8 @@ stock ClientSetPlayerGroup(client, iGroupIndex)
 		SetPlayerGroupInvitedPlayer(iGroupIndex, client, false);
 		SetPlayerGroupInvitedPlayerCount(iGroupIndex, client, 0);
 		SetPlayerGroupInvitedPlayerTime(iGroupIndex, client, 0.0);
+		
+		ClientSetQueuePoints(client, 0);
 		
 		decl String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
 		GetPlayerGroupName(iGroupIndex, sGroupName, sizeof(sGroupName));

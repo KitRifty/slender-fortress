@@ -151,6 +151,7 @@ public Hook_ClientPreThink(client)
 				{
 					new bool:bDanger = false;
 					if (g_flPlayerSeesSlenderMeter[client] > 0.4) bDanger = true;
+					if (GetGameTime() < g_flPlayerDangerBoostTime[client]) bDanger = true;
 					
 					if (!bDanger)
 					{
@@ -166,11 +167,33 @@ public Hook_ClientPreThink(client)
 								iBossTarget = EntRefToEntIndex(g_iSlenderTarget[i]);
 								iState = g_iSlenderState[i];
 								
-								if ((iState == STATE_ALERT || iState == STATE_CHASE || iState == STATE_ATTACK) &&
-									((iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0))
+								if ((iState == STATE_CHASE || iState == STATE_ATTACK || iState == STATE_STUN) &&
+									((iBossTarget && iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0 || PlayerCanSeeSlender(client, i, false)))
 								{
 									bDanger = true;
+									g_flPlayerDangerBoostTime[client] = GetGameTime() + 5.0;
 									break;
+								}
+							}
+						}
+					}
+					
+					if (!bDanger)
+					{
+						decl iState;
+						for (new i = 0; i < MAX_BOSSES; i++)
+						{
+							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
+							
+							if (g_iSlenderType[i] == 2)
+							{
+								if (iState == STATE_ALERT)
+								{
+									if (PlayerCanSeeSlender(client, i))
+									{
+										bDanger = true;
+										g_flPlayerDangerBoostTime[client] = GetGameTime() + 5.0;
+									}
 								}
 							}
 						}
@@ -730,6 +753,8 @@ InitializeClient(client)
 	ClientResetHints(client);
 	ClientResetScare(client);
 	ClientDisableFakeLagCompensation(client);
+	
+	g_flPlayerDangerBoostTime[client] = -1.0;
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeClient(%d)", client);

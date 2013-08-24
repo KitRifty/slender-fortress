@@ -1,3 +1,9 @@
+Version 0.1.9 (Indefinite):
+- Added Stamina meter
+- Hud will now change color depending on how much health you have
+- Fixed a bug where map-defined page music would not stop playing when custom escape music has been defined in the map
+- Removed support for "slender_logic_escape_music", use "sf2_escape_custommusic" instead
+
 Version 0.1.8a (August 13, 2013):
 - Added "SF2_OnPagesSpawned" forward
 - Reorganized all sections of code in the main scripting file (sf2.sp)

@@ -667,7 +667,7 @@
 	"SF2 Group Invite Menu Description"
 	{
 		"#format"	"{1:s},{2:s}"
-		"en"	"You have been invited by {1} to join the\n{2} group.\n \nDo you accept?"
+		"en"	"You have been invited by {1} to join the\n{2} group.\n \nWARNING: By joining a group, all your queue points will\nbe reset to 0! You will only be queued in when your\ngroup is picked.\n \nDo you accept the invitation?"
 	}
 	
 	"SF2 No Group Invite Spam"
@@ -751,7 +751,7 @@
 	"SF2 Create Group Menu Description"
 	{
 		"#format"	"{1:d},{2:d}"
-		"en"	"Creating a group allows you to play together with\nfriends! However, you can only invite {1} player(s)\ninto your group. And for queuing, the entire group\nwill be based on your current queue points amount,\nwhich is {2}.\n \nCreate new group?"
+		"en"	"Creating a group allows you to play together with\nfriends! However, you can only invite {1} player(s)\ninto your group. And for queuing, the entire group's\nqueue points will be set to yours,\nwhich is {2}. However, your personal queue points\nWILL BE RESET TO 0!\n \nCreate new group?"
 	}
 	
 	"SF2 Player New Group Leader"

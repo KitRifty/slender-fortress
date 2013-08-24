@@ -17,7 +17,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.1.8a Beta"
+#define PLUGIN_VERSION "0.1.8b Beta"
 
 public Plugin:myinfo = 
 {
@@ -231,6 +231,11 @@ new g_iPlayerQueuePoints[MAXPLAYERS + 1];
 new bool:g_bPlayerPlaying[MAXPLAYERS + 1];
 new Handle:g_hPlayerOverlayCheck[MAXPLAYERS + 1];
 
+// View shake data.
+new bool:g_bPlayerInViewShake[MAXPLAYERS + 1];
+new g_iPlayerViewShakeMaster[MAXPLAYERS + 1];
+new Float:g_flPlayerViewShakeScale[MAXPLAYERS + 1];
+
 // Anti-camping data.
 new g_iPlayerCampingStrikes[MAXPLAYERS + 1];
 new Handle:g_hPlayerCampingTimer[MAXPLAYERS + 1];
@@ -322,6 +327,8 @@ new bool:g_bBossRound;
 new g_iBossRoundCount;
 new bool:g_bPlayerDidBossRound[MAXPLAYERS + 1];
 new String:g_strBossRoundProfile[64];
+
+new Float:g_flPlayerDangerBoostTime[MAXPLAYERS + 1];
 
 new Handle:g_hRoundMessagesTimer;
 new g_iRoundMessagesNum;
@@ -3884,7 +3891,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		flDist = GetVectorDistance(flTraceStartPos, flTraceEndPos);
 		flPlayerDists[i] = flDist;
 		
-		if (bNear || (bIsVisible && bPlayerInFOV[i]))
+		if ((bNear && iState != STATE_CHASE && iState != STATE_ALERT) || (bIsVisible && bPlayerInFOV[i]))
 		{
 			decl Float:flTargetPos[3];
 			GetClientAbsOrigin(i, flTargetPos);
@@ -4441,6 +4448,15 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 							g_flSlenderGoalPos[iBossIndex][2] = flBestPos[2];
 						}
 					}
+					else if (iState == STATE_ALERT)
+					{
+						if (IsValidClient(iTarget))
+						{
+							g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderLastFoundPlayerPos[iBossIndex][iTarget][0];
+							g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderLastFoundPlayerPos[iBossIndex][iTarget][1];
+							g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderLastFoundPlayerPos[iBossIndex][iTarget][2];
+						}
+					}
 				}
 				else if (!IsValidClient(iTarget) && !g_bSlenderTargetSoundFoundPos[iBossIndex])
 				{
@@ -4757,7 +4773,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					
 					if (!bSlenderHitObstacle)
 					{
-						// Potential space to step on? Process if we can fit!
+						// Potential space to step on? See if we can fit!
 						if (!IsSpaceOccupiedNPC(flTraceFreePos,
 							flSlenderMins,
 							flSlenderMaxs,
