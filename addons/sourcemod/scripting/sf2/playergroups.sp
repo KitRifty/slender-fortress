@@ -1205,6 +1205,7 @@ stock ClientSetPlayerGroup(client, iGroupIndex)
 		SetPlayerGroupInvitedPlayerCount(iGroupIndex, client, 0);
 		SetPlayerGroupInvitedPlayerTime(iGroupIndex, client, 0.0);
 		
+		// Set the player's personal queue points to 0.
 		ClientSetQueuePoints(client, 0);
 		
 		decl String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];

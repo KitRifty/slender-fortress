@@ -8,7 +8,7 @@
 #define SF2_MAX_NAME_LENGTH 32
 
 #define MAX_BOSSES 32
-#define MAX_NODES 64
+#define MAX_NODES -1
 
 // Difficulty modifiers.
 #define DIFFICULTY_EASY 0.75
@@ -24,6 +24,7 @@
 #define MUSICF_DEATH (1 << 4)
 #define MUSICF_CHASE (1 << 5)
 #define MUSICF_CHASEVISIBLE (1 << 6)
+#define MUSICF_ALERT (1 << 7)
 
 // Special round enumerations.
 enum
@@ -64,12 +65,37 @@ enum
 	Difficulty_Max
 };
 
+enum
+{
+	Static_None = 0,
+	Static_Increase,
+	Static_Decrease
+};
+
 // Boss flags.
 #define SFF_SPAWNONCE (1 << 0)
 #define SFF_NOTELEPORT (1 << 1)
 #define SFF_FAKE (1 << 2)
 #define SFF_MARKEDASFAKE (1 << 3)
 #define SFF_ATTACKWAITERS (1 << 4)
+#define SFF_HASSTATICSHAKE (1 << 5)
+#define SFF_STATICONLOOK (1 << 6)
+#define SFF_STATICONRADIUS (1 << 7)
+#define SFF_PROXIES (1 << 8)
+#define SFF_WANDERMOVE (1 << 9)
+#define SFF_HASJUMPSCARE (1 << 10)
+#define SFF_HASSIGHTSOUNDS (1 << 11)
+#define SFF_HASSTATICLOOPLOCALSOUND (1 << 12)
+#define SFF_HASVIEWSHAKE (1 << 13)
+#define SFF_COPIES (1 << 14)
+
+// Interrup conditions.
+#define COND_HEARDSUSPICIOUSSOUND (1 << 0)
+#define COND_HEARDFOOTSTEP (1 << 1)
+#define COND_HEARDFOOTSTEPLOUD (1 << 2)
+#define COND_HEARDWEAPON (1 << 3)
+#define COND_HEARDVOICE (1 << 4)
+#define COND_CHASETARGETINVALIDATED (1 << 5)
 
 
 forward SF2_OnBossAdded(iBossIndex);

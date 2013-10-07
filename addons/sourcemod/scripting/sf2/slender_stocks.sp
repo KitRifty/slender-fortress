@@ -24,7 +24,9 @@ bool:SlenderCanRemove(iBossIndex)
 	if (!g_strSlenderProfile[iBossIndex][0]) return false;
 	if (PeopleCanSeeSlender(iBossIndex, _, false)) return false;
 	
-	switch (g_iSlenderType[iBossIndex])
+	new iTeleportType = GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_type");
+	
+	switch (iTeleportType)
 	{
 		case 0:
 		{
@@ -139,9 +141,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 		case 1:
 		{
 			g_iSlender[iBossIndex] = g_iSlenderModel[iBossIndex];
-			SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
-			
-			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderBlinkBossThink, g_iSlender[iBossIndex], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_hSlenderEntityThink[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderBlinkBossThink, g_iSlender[iBossIndex], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 		}
 		case 2:
 		{
@@ -164,29 +164,38 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			// Reset stats.
 			g_iSlender[iBossIndex] = EntIndexToEntRef(iBoss);
 			g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
-			g_iSlenderTargetSound[iBossIndex] = INVALID_ENT_REFERENCE;
 			g_iSlenderState[iBossIndex] = STATE_IDLE;
 			g_bSlenderAttacking[iBossIndex] = false;
-			g_hSlenderMoveTimer[iBossIndex] = INVALID_HANDLE;
+			g_hSlenderAttackTimer[iBossIndex] = INVALID_HANDLE;
 			g_iSlenderHealthUntilStun[iBossIndex] = GetProfileNum(sProfile, "health_stun", 85);
+			g_flSlenderTargetSoundLastTime[iBossIndex] = -1.0;
+			g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex] = -1.0;
+			g_iSlenderTargetSoundType[iBossIndex] = SoundType_None;
+			g_bSlenderInvestigatingSound[iBossIndex] = false;
 			g_flSlenderLastHeardFootstep[iBossIndex] = GetGameTime();
 			g_flSlenderLastHeardVoice[iBossIndex] = GetGameTime();
 			g_flSlenderLastHeardWeapon[iBossIndex] = GetGameTime();
 			g_flSlenderNextVoiceSound[iBossIndex] = GetGameTime();
 			g_flSlenderNextMoanSound[iBossIndex] = GetGameTime();
-			g_flSlenderNextWanderPos[iBossIndex] = GetGameTime();
+			g_flSlenderNextWanderPos[iBossIndex] = GetGameTime() + 3.0;
 			g_flSlenderTimeUntilKill[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "idle_lifetime", 10.0);
 			g_flSlenderTimeUntilRecover[iBossIndex] = -1.0;
 			g_flSlenderTimeUntilAlert[iBossIndex] = -1.0;
 			g_flSlenderTimeUntilIdle[iBossIndex] = -1.0;
 			g_flSlenderTimeUntilChase[iBossIndex] = -1.0;
+			g_flSlenderTimeUntilNoPersistence[iBossIndex] = -1.0;
 			g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "jump_cooldown", 2.0);
-			g_flSlenderNextTrackTargetPos[iBossIndex] = GetGameTime();
-			g_hSlenderThinkTimer[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderChaseBossThink, EntIndexToEntRef(iBoss), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_flSlenderNextPathTime[iBossIndex] = GetGameTime();
+			g_hSlenderEntityThink[iBossIndex] = CreateTimer(BOSS_THINKRATE, Timer_SlenderChaseBossThink, EntIndexToEntRef(iBoss), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_iSlenderInterruptConditions[iBossIndex] = 0;
+			g_bSlenderChaseDeathPosition[iBossIndex] = false;
 			
 			for (new i = 0; i < 3; i++)
 			{
 				g_flSlenderGoalPos[iBossIndex][i] = 0.0;
+				g_flSlenderTargetSoundTempPos[iBossIndex][i] = 0.0;
+				g_flSlenderTargetSoundMasterPos[iBossIndex][i] = 0.0;
+				g_flSlenderChaseDeathPosition[iBossIndex][i] = 0.0;
 			}
 			
 			for (new i = 1; i <= MaxClients; i++)
@@ -200,7 +209,6 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			}
 			
 			SlenderClearTargetMemory(iBossIndex);
-			SlenderResetSoundData(iBossIndex);
 			
 			if (GetProfileNum(sProfile, "stun_enabled"))
 			{
@@ -216,6 +224,8 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
 		}
 	}
+	
+	SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
 	
 	SlenderSpawnEffects(iBossIndex, EffectEvent_Constant);
 	
@@ -259,72 +269,27 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 
 RemoveSlender(iBossIndex)
 {
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
 	g_iSlender[iBossIndex] = INVALID_ENT_REFERENCE;
-	if (slender > 0 && slender != INVALID_ENT_REFERENCE)
+	
+	if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 	{
 		// Stop all possible looping sounds.
-		ClientStopAllSlenderSounds(slender, g_strSlenderProfile[iBossIndex], "sound_move", SNDCHAN_AUTO);
-		AcceptEntityInput(slender, "Kill");
-	}
-}
-
-SlenderAlertOfPlayerSound(iBossIndex, client, SoundType:iSoundType)
-{
-	new iOldTarget = EntRefToEntIndex(g_iSlenderTargetSound[iBossIndex]);
-	new SoundType:iOldSoundType = g_iSlenderTargetSoundType[iBossIndex];
-	new iNewTarget = INVALID_ENT_REFERENCE;
-	
-	if (!iOldTarget || iOldTarget == INVALID_ENT_REFERENCE || g_bPlayerEliminated[iOldTarget] || !IsPlayerAlive(iOldTarget))
-	{
-		// Heard something. I better go check it out.
-		iNewTarget = client;
-	}
-	else
-	{
-		// I think there's something over there because a lot of sound is being made over there...
-		if (client == iOldTarget)
+		ClientStopAllSlenderSounds(iBoss, g_strSlenderProfile[iBossIndex], "sound_move", SNDCHAN_AUTO);
+		
+		if (g_iSlenderFlags[iBossIndex] & SFF_HASSTATICLOOPLOCALSOUND)
 		{
-			iNewTarget = client;
-		}
-		else
-		{
-			// More noticable than the sound I just heard not too long ago.
-			if (iSoundType >= iOldSoundType)
-			{
-				iNewTarget = client;
-			}
-			// Something else is making the same sound and it's been a while since I last heard anything.
-			else if ((GetGameTime() - g_flSlenderTargetSoundTime[iBossIndex]) >= GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_sound_ignoreweakersounds_duration", 5.0))
-			{
-				iNewTarget = client;
-			}
-		}
-	}
-	
-	if (g_iSlenderState[iBossIndex] != STATE_CHASE && g_iSlenderState[iBossIndex] != STATE_ATTACK)
-	{
-		if (iNewTarget && iNewTarget != INVALID_ENT_REFERENCE)
-		{
-			if (iNewTarget == iOldTarget) g_iSlenderTargetSoundCount[iBossIndex]++;
-			else g_iSlenderTargetSoundCount[iBossIndex] = 1;
+			decl String:sLoopSound[PLATFORM_MAX_PATH];
+			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_static_loop_local", sLoopSound, sizeof(sLoopSound), 1);
 			
-			g_iSlenderTargetSound[iBossIndex] = EntIndexToEntRef(iNewTarget);
-			g_iSlenderTargetSoundType[iBossIndex] = iSoundType;
-			g_flSlenderTargetSoundTime[iBossIndex] = GetGameTime();
-			GetClientAbsOrigin(client, g_flSlenderTargetSoundPos[iBossIndex]);
-			g_bSlenderTargetSoundFoundPos[iBossIndex] = false // new position! Try to find it!
+			if (sLoopSound[0])
+			{
+				StopSound(iBoss, SNDCHAN_STATIC, sLoopSound);
+			}
 		}
+		
+		AcceptEntityInput(iBoss, "Kill");
 	}
-}
-
-stock SlenderResetSoundData(iBossIndex, bool:bResetTime=true)
-{
-	g_iSlenderTargetSound[iBossIndex] = INVALID_ENT_REFERENCE;
-	g_iSlenderTargetSoundType[iBossIndex] = SoundType_None;
-	g_bSlenderTargetSoundFoundPos[iBossIndex] = false;
-	if (bResetTime) g_flSlenderTargetSoundTime[iBossIndex] = -1.0;
-	for (new i = 0; i < 2; i++) g_flSlenderTargetSoundPos[iBossIndex][i] = 0.0;
 }
 
 stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
@@ -381,11 +346,11 @@ stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
 		new Float:flMiddle[3];
 		for (new i = 0; i < 2; i++) flMiddle[i] = (flHisMins[i] + flHisMaxs[i]) / 2.0;
 		
-		decl Float:flEndPOs[3];
-		GetClientAbsOrigin(client, flEndPOs);
-		AddVectors(flHisPos, flMiddle, flEndPOs);
+		decl Float:flEndPos[3];
+		GetClientAbsOrigin(client, flEndPos);
+		AddVectors(flHisPos, flMiddle, flEndPos);
 		
-		hTrace = TR_TraceRayFilterEx(flMyEyePos, flEndPOs, MASK_NPCSOLID, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, iSlender);
+		hTrace = TR_TraceRayFilterEx(flMyEyePos, flEndPos, MASK_NPCSOLID, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, iSlender);
 		bTraceHit = TR_DidHit(hTrace);
 		CloseHandle(hTrace);
 		
@@ -441,138 +406,24 @@ stock bool:SlenderKillsOnNear(iBossIndex)
 	return true;
 }
 
-stock SlenderInsertPathNode(iBossIndex, const Float:pos[3])
-{
-	if (iBossIndex == -1) return;
-	
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return;
-	
-	if (g_hSlenderTargetMemory[iBossIndex] == INVALID_HANDLE) return;
-	
-	new Handle:hLocs = g_hSlenderTargetMemory[iBossIndex];
-	
-	new index = PushArrayCell(hLocs, pos[0]);
-	SetArrayCell(hLocs, index, pos[1], 1);
-	SetArrayCell(hLocs, index, pos[2], 2);
-	
-	new size = GetArraySize(hLocs);
-	if (size > MAX_NODES) RemoveFromArray(hLocs, 0);
-}
-
-stock SlenderRemovePathNode(iBossIndex, index)
-{
-	if (iBossIndex == -1) return;
-	
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return;
-	
-	if (g_hSlenderTargetMemory[iBossIndex] == INVALID_HANDLE) return;
-	
-	RemoveFromArray(g_hSlenderTargetMemory[iBossIndex], index);
-}
-
-SlenderGetBestPathNodeToTarget(iBossIndex)
-{
-	if (iBossIndex == -1) return -1;
-	
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return -1;
-	
-	new iTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
-	if (!iTarget || iTarget == INVALID_ENT_REFERENCE) return -1;
-	
-	new Handle:hLocs = g_hSlenderTargetMemory[iBossIndex];
-	if (hLocs == INVALID_HANDLE) return -1;
-	
-	decl Float:flMyPos[3], Float:flSlenderMins[3], Float:flSlenderMaxs[3], Float:flNodePos[3];
-	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
-	GetEntPropVector(slender, Prop_Send, "m_vecMins", flSlenderMins);
-	GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flSlenderMaxs);
-	
-	new Float:flTraceMins[3], Float:flTraceMaxs[3];
-	for (new i = 0; i < 2; i++)
-	{
-		flTraceMins[i] = flSlenderMins[i];
-		flTraceMaxs[i] = flSlenderMaxs[i];
-	}
-	
-	new iBestIndex = -1;
-	
-	for (new i = 0, iSize = GetArraySize(hLocs); i < iSize; i++)
-	{
-		flNodePos[0] = Float:GetArrayCell(hLocs, i);
-		flNodePos[1] = Float:GetArrayCell(hLocs, i, 1);
-		flNodePos[2] = Float:GetArrayCell(hLocs, i, 2);
-		
-		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-		for (new i2 = 0; i2 < 3; i2++)
-		{
-			flTraceStartPos[i2] = flMyPos[i2] + ((flSlenderMins[i2] + flSlenderMaxs[i2]) / 2.0);
-			flTraceEndPos[i2] = flNodePos[i2] + ((flSlenderMins[i2] + flSlenderMaxs[i2]) / 2.0);
-		}
-		
-		new Handle:hTrace = TR_TraceHullFilterEx(flMyPos,
-			flTraceEndPos, 
-			flTraceMins, 
-			flTraceMaxs, 
-			MASK_NPCSOLID, 
-			TraceRayBossVisibility, 
-			slender);
-			
-		new iHitEntity = TR_GetEntityIndex(hTrace);
-		new bool:bDidHit = TR_DidHit(hTrace);
-		CloseHandle(hTrace);
-		
-		if (!bDidHit || iHitEntity == iTarget)
-		{
-			iBestIndex = i;
-		}
-	}
-	
-	if (iBestIndex > 0)
-	{
-		for (new i = 0; i < iBestIndex - 1; i++)
-		{
-			RemoveFromArray(hLocs, 0);
-		}
-	}
-	
-	return iBestIndex;
-}
-
-bool:SlenderGetPathNodePosition(iBossIndex, index2, Float:buffer[3])
-{
-	if (iBossIndex == -1) return false;
-	
-	new Handle:hLocs = g_hSlenderTargetMemory[iBossIndex];
-	if (hLocs == INVALID_HANDLE) return false;
-	
-	if (index2 >= GetArraySize(hLocs)) return false;
-	
-	buffer[0] = Float:GetArrayCell(hLocs, index2);
-	buffer[1] = Float:GetArrayCell(hLocs, index2, 1);
-	buffer[2] = Float:GetArrayCell(hLocs, index2, 2);
-	
-	return true;
-}
-
 stock SlenderClearTargetMemory(iBossIndex)
 {
 	if (iBossIndex == -1) return;
 	
-	if (g_hSlenderTargetMemory[iBossIndex] == INVALID_HANDLE) return;
+	g_iSlenderCurrentPathNode[iBossIndex] = -1;
+	if (g_hSlenderPath[iBossIndex] == INVALID_HANDLE) return;
 	
-	ClearArray(g_hSlenderTargetMemory[iBossIndex]);
+	ClearArray(g_hSlenderPath[iBossIndex]);
 }
 
 stock bool:SlenderCreateTargetMemory(iBossIndex)
 {
 	if (iBossIndex == -1) return false;
 	
-	if (g_hSlenderTargetMemory[iBossIndex] != INVALID_HANDLE) return true;
+	g_iSlenderCurrentPathNode[iBossIndex] = -1;
+	if (g_hSlenderPath[iBossIndex] != INVALID_HANDLE) return true;
 	
-	g_hSlenderTargetMemory[iBossIndex] = CreateArray(3);
+	g_hSlenderPath[iBossIndex] = CreateArray(3);
 	return true;
 }
 
@@ -580,11 +431,176 @@ stock SlenderRemoveTargetMemory(iBossIndex)
 {
 	if (iBossIndex == -1) return;
 	
-	if (g_hSlenderTargetMemory[iBossIndex] == INVALID_HANDLE) return;
+	g_iSlenderCurrentPathNode[iBossIndex] = -1;
 	
-	new Handle:hLocs = g_hSlenderTargetMemory[iBossIndex];
-	g_hSlenderTargetMemory[iBossIndex] = INVALID_HANDLE;
+	if (g_hSlenderPath[iBossIndex] == INVALID_HANDLE) return;
+	
+	new Handle:hLocs = g_hSlenderPath[iBossIndex];
+	g_hSlenderPath[iBossIndex] = INVALID_HANDLE;
 	CloseHandle(hLocs);
+}
+
+stock SlenderProcessTeleport(iBossIndex)
+{
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	
+	new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]);
+	new bool:bOutOfSight = true;
+	
+	new iAvailablePlayerCount = 0;
+	new iAvailablePlayers = 0;
+	
+	// Get a list of players that I can teleport to.
+	for (new iClient = 1; iClient <= MaxClients; iClient++)
+	{
+		if (!IsClientInGame(iClient) || !IsPlayerAlive(iClient) || g_bPlayerEliminated[iClient]) continue;
+		
+		// Do a sight check.
+		if (g_bPlayerSeesSlender[iClient][iBossIndex]) bOutOfSight = false;
+		
+		new bool:bCanTeleportToPlayer = true;
+		
+		new iMarkedPlayers = 0;
+		
+		// In the case of multiple and spread out players, we have to make sure that
+		// we target players that are left alone and untargeted by any of my
+		// copies, if any.
+		if (iCopyMaster != -1 || g_iSlenderFlags[iBossIndex] & SFF_COPIES)
+		{
+			decl Float:flClientPos[3];
+			GetClientAbsOrigin(iClient, flClientPos);
+			
+			for (new i2 = 0; i2 < MAX_BOSSES; i2++)
+			{
+				if (i2 == iBossIndex || g_iSlenderID[i2] == -1) continue;
+				
+				if (iCopyMaster != -1 && iCopyMaster != i2) continue;
+				
+				if ((iCopyMaster != -1 && i2 == iCopyMaster) || 
+					(SlenderGetFromID(g_iSlenderCopyMaster[i2]) == iBossIndex))
+				{
+					if (EntRefToEntIndex(g_iSlenderTarget[i2]) == iClient)
+					{
+						if (!(iMarkedPlayers & (1 << iClient))) iMarkedPlayers |= (1 << iClient);
+						bCanTeleportToPlayer = false;
+					}
+					else if (iMarkedPlayers & (1 << iClient))
+					{
+						bCanTeleportToPlayer = false;
+					}
+					
+					if (!bCanTeleportToPlayer)
+					{
+						// Mark players that are near this player. This will assume that this player is in a group that is already targeted by my minion(s).
+						for (new iNearClient = 1; iNearClient <= MaxClients; iNearClient++)
+						{
+							if (iNearClient == iClient || !IsClientInGame(iNearClient) || !IsPlayerAlive(iNearClient) || g_bPlayerEliminated[iNearClient]) continue;
+							
+							// Already marked? We'll iterate through him on the next loop.
+							if (iMarkedPlayers & (1 << iNearClient)) continue;
+							
+							decl Float:flNearClientPos[3];
+							GetClientAbsOrigin(iNearClient, flNearClientPos);
+							
+							new Float:flDist = GetVectorDistance(flNearClientPos, flClientPos);
+							
+							decl Float:flTraceStart[3], Float:flTraceEnd[3];
+							GetClientEyePosition(iClient, flTraceStart);
+							GetClientEyePosition(iNearClient, flTraceEnd);
+							
+							// Do a visibility check. Change distance accordingly.
+							new Handle:hTrace = TR_TraceRayFilterEx(flTraceStart
+								flTraceEnd,
+								CONTENTS_SOLID | CONTENTS_MOVEABLE | CONTENTS_MIST,
+								RayType_EndPoint,
+								TraceRayBossVisibility, // Yes. This is not a mistake.
+								iClient);
+								
+							if (TR_DidHit(hTrace))
+							{
+								CloseHandle(hTrace);
+								
+								GetEntityOBBCenterPosition(iNearClient, flTraceEnd);
+								
+								hTrace = TR_TraceRayFilterEx(flTraceStart
+									flTraceEnd,
+									CONTENTS_SOLID | CONTENTS_MOVEABLE | CONTENTS_MIST,
+									RayType_EndPoint,
+									TraceRayBossVisibility, // Yes. This is not a mistake.
+									iClient);
+							}
+							
+							new Float:flGroupDist = 400.0;
+							if (!TR_DidHit(hTrace)) flGroupDist *= 2.5;
+							CloseHandle(hTrace);
+							
+							if (flDist <= flGroupDist)
+							{
+								// Mark 'em. We can't touch him since he's in a group.
+								iMarkedPlayers |= (1 << iNearClient);
+							}
+						}
+						
+						break;
+					}
+				}
+			}
+		}
+		
+		if (bCanTeleportToPlayer)
+		{
+			iAvailablePlayers |= (1 << iClient);
+			iAvailablePlayerCount++;
+		}
+	}
+	
+	if (iAvailablePlayerCount > 0)
+	{
+		new Handle:hTargetList = CreateArray(2);
+		
+		for (new i = 1; i <= MaxClients; i++)
+		{
+			if (iAvailablePlayers & (1 << i))
+			{
+				new Float:flPriority = 0.0;
+				if (TF2_GetPlayerClass(i) == TFClass_Medic) flPriority += 0.25;
+				
+				new iIndex = PushArrayCell(hTargetList, i);
+				SetArrayCell(hTargetList, i, g_iPageMax > 0 ? ((float(g_iPlayerPageCount[i]) / float(g_iPageMax)) + flPriority) : flPriority, 1);
+			}
+		}
+		
+		// Sort the target list first to prioritize players.
+		SortADTArrayCustom(hTargetList, SlenderProcessTeleportTargets);
+		
+		new bool:bTeleported = false;
+		while (!bTeleported && GetArraySize(hTargetList) > 0)
+		{
+			new iTeleportTarget = GetArrayCell(hTargetList, 0);
+			RemoveFromArray(hTargetList, 0);
+			
+			// Target the first.
+			SpawnSlender(iBossIndex, flSlenderTeleportPos);
+			g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iTeleportTarget);
+			bTeleported = true;
+		}
+		
+		CloseHandle(hTargetList);
+		
+		if (!bTeleported)
+		{
+			// Couldn't find a good position.
+			// Disable myself until a good position comes up again.
+			RemoveSlender(iBossIndex);
+		}
+	}
+	else
+	{
+		// What? Everyone's already covered? That's surprising. 
+		// Disable myself for now until a target becomes available.
+		RemoveSlender(iBossIndex);
+	}
 }
 
 bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
@@ -631,14 +647,14 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 		NormalizeVector(tempDir, tempDir);
 		ScaleVector(tempDir, flDist);
 		AddVectors(tempDir, flSlenderPos, tempPos);
-		AddVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
-		AddVectors(flSlenderPos, g_flSlenderVisiblePos[iBossIndex], tempPos2);
+		AddVectors(tempPos, g_flSlenderEyePosOffset[iBossIndex], tempPos);
+		AddVectors(flSlenderPos, g_flSlenderEyePosOffset[iBossIndex], tempPos2);
 		
-		flBuffer[0] = g_flSlenderMins[iBossIndex][0];
-		flBuffer[1] = g_flSlenderMins[iBossIndex][1];
+		flBuffer[0] = g_flSlenderDetectMins[iBossIndex][0];
+		flBuffer[1] = g_flSlenderDetectMins[iBossIndex][1];
 		flBuffer[2] = 0.0;
-		flBuffer2[0] = g_flSlenderMaxs[iBossIndex][0];
-		flBuffer2[1] = g_flSlenderMaxs[iBossIndex][1];
+		flBuffer2[0] = g_flSlenderDetectMaxs[iBossIndex][0];
+		flBuffer2[1] = g_flSlenderDetectMaxs[iBossIndex][1];
 		flBuffer2[2] = 0.0;
 		
 		// Get a good move position.
@@ -653,7 +669,7 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 		CloseHandle(hTrace);
 		
 		// Then calculate from there.
-		hTrace = TR_TraceHullFilterEx(tempPos, tempPos2, g_flSlenderMins[iBossIndex], g_flSlenderMaxs[iBossIndex], MASK_PLAYERSOLID_BRUSHONLY, TraceRayDontHitPlayersOrEntity, slender);
+		hTrace = TR_TraceHullFilterEx(tempPos, tempPos2, g_flSlenderDetectMins[iBossIndex], g_flSlenderDetectMaxs[iBossIndex], MASK_PLAYERSOLID_BRUSHONLY, TraceRayDontHitPlayersOrEntity, slender);
 		TR_GetEndPosition(tempPos, hTrace);
 		TR_GetPlaneNormal(hTrace, flHitNormal);
 		CloseHandle(hTrace);
@@ -680,7 +696,7 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 			|| (flHitNormal[0] < 0.0 && flHitNormal[0] > -45.0)
 			|| !bHit
 			|| TR_PointOutsideWorld(tempPos)
-			|| IsSpaceOccupiedNPC(tempPos, g_flSlenderMins[iBossIndex], g_flSlenderMaxs[iBossIndex], iBestPlayer))
+			|| IsSpaceOccupiedNPC(tempPos, g_flSlenderDetectMins[iBossIndex], g_flSlenderDetectMaxs[iBossIndex], iBestPlayer))
 		{
 			continue;
 		}
@@ -689,11 +705,11 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 		
 		if (!IsPointVisibleToPlayer(iBestPlayer, tempPos, false, false)) continue;
 		
-		AddVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
+		AddVectors(tempPos, g_flSlenderEyePosOffset[iBossIndex], tempPos);
 		
 		if (!IsPointVisibleToPlayer(iBestPlayer, tempPos, false, false)) continue;
 		
-		SubtractVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
+		SubtractVectors(tempPos, g_flSlenderEyePosOffset[iBossIndex], tempPos);
 		
 		//	Insert the vector into our array.
 		index = PushArrayCell(hArray, iID);
@@ -752,6 +768,104 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 	return true;
 }
 
+// This functor ensures that the proposed boss position is not too
+// close to other players that are within the distance defined by
+// flMinSearchDist.
+
+// Returning false on the functor will immediately discard the proposed position.
+
+public bool:SlenderChaseBossPlaceFunctor(iBossIndex, const Float:flActiveAreaCenterPos[3], const Float:flAreaPos[3], Float:flMinSearchDist, Float:flMaxSearchDist, bool:bOriginalResult)
+{
+	if (FloatAbs(flActiveAreaCenterPos[2] - flAreaPos[2]) > 320.0)
+	{
+		return false;
+	}
+	
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i) ||
+			!IsPlayerAlive(i) ||
+			g_bPlayerEliminated[i] ||
+			g_bPlayerEscaped[i]) continue;
+		
+		decl Float:flClientPos[3];
+		GetClientAbsOrigin(i, flClientPos);
+		
+		if (GetVectorDistance(flClientPos, flAreaPos) < flMinSearchDist)
+		{
+			return false;
+		}
+	}
+	
+	return bOriginalResult;
+}
+
+// This is just to calculate the new place, not do time checks.
+// Distance will be determined by the progression of the game and the
+// manually set values determined by flMinSearchDist and flMaxSearchDist,
+// which are float values that are (or should be) defined in the boss's
+// config file.
+
+// The place chosen should be out of (possible) sight of the players,
+// but should be within the AAS radius, the center being flActiveAreaCenterPos.
+// The game will try to find a place that is of flMinSearchDist first, but
+// if it can't, then it will try to find places that are a bit farther.
+
+// If the whole function fails, no place is given and the boss will not
+// be able to spawn.
+
+bool:SlenderChaseBossCalculateNewPlace(iBossIndex, const Float:flActiveAreaCenterPos[3], Float:flMinSearchDist, Float:flMaxSearchDist, Function:iFunctor, Float:flBuffer[3])
+{
+	new Handle:hAreas = NavMesh_GetAreas();
+	if (hAreas == INVALID_HANDLE) return false;
+	
+	new iBestAreaIndex = -1;
+	new Float:flBestAreaDist = -1.0;
+	
+	decl Float:flAreaCenterPos[3];
+	for (new i = 0, iSize = GetArraySize(hAreas); i < iSize; i++)
+	{
+		NavMeshArea_GetCenter(i, flAreaCenterPos);
+		
+		new Float:flDist = GetVectorDistance(flActiveAreaCenterPos, flAreaCenterPos);
+		if (flDist < flMinSearchDist || flDist > flMaxSearchDist) continue;
+		
+		if (IsPointVisibleToAPlayer(flAreaCenterPos, false, false)) continue;
+		
+		decl Float:flTestPos[3];
+		for (new i2 = 0; i2 < 3; i2++) flTestPos[i2] = flAreaCenterPos[i2] + g_flSlenderEyePosOffset[iBossIndex][i2];
+		
+		if (IsPointVisibleToAPlayer(flTestPos, false, false)) continue;
+		
+		if (iFunctor != INVALID_FUNCTION)
+		{
+			new bool:bResult = true;
+			
+			Call_StartFunction(INVALID_HANDLE, iFunctor);
+			Call_PushCell(iBossIndex);
+			Call_PushArray(flActiveAreaCenterPos, 3);
+			Call_PushArray(flAreaCenterPos, 3);
+			Call_PushFloat(flMinSearchDist);
+			Call_PushFloat(flMaxSearchDist);
+			Call_PushCell(bResult);
+			Call_Finish(bResult);
+			
+			if (!bResult) continue;
+		}
+		
+		if (flBestAreaDist < 0.0 || flDist < flBestAreaDist)
+		{
+			iBestAreaIndex = i;
+			flBestAreaDist = flDist;
+		}
+	}
+	
+	if (iBestAreaIndex == -1) return false;
+	
+	NavMeshArea_GetCenter(iBestAreaIndex, flBuffer);
+	return true;
+}
+
 bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=false, bool:bProxy=false, iProxyPlayer=-1, &iBestPlayer=-1)
 {
 	new Float:flPercent = 0.0;
@@ -777,23 +891,10 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				g_bPlayerEliminated[i] || 
 				g_bPlayerEscaped[i]) continue;
 			
-			if (g_iSlenderCopyOfBoss[iBossIndex] != -1 && !bIgnoreCopies)
+			if (SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]) != -1 && !bIgnoreCopies)
 			{
-				// Check if a boss has already spawned for this player.
 				new bool:bwub = false;
-				for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
-				{
-					if (iBoss == iBossIndex || !g_strSlenderProfile[iBoss][0]) continue;
-					
-					if (g_iSlenderSpawnedForPlayer[iBoss] == i)
-					{
-						bwub = true;
-						break;
-					}
-				}
-				
-				if (bwub) continue;
-				
+			
 				// No? Then check if players around him are targeted by a boss already (not me).
 				for (new iBossPlayer = 1; iBossPlayer <= MaxClients; iBossPlayer++)
 				{
@@ -808,9 +909,9 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 					// Get the boss that's targeting this player, if any.
 					for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 					{
-						if (iBossIndex == iBoss || !g_strSlenderProfile[iBoss][0]) continue;
+						if (iBossIndex == iBoss || g_iSlenderID[iBoss] == -1) continue;
 						
-						if (g_iSlenderSpawnedForPlayer[iBoss] == iBossPlayer)
+						if (EntRefToEntIndex(g_iSlenderTarget[iBoss]) == iBossPlayer)
 						{
 							// Are we near this player?
 							if (EntityDistanceFromEntity(iBossPlayer, i) < SF2_BOSS_COPY_SPAWN_MIN_DISTANCE)
@@ -835,7 +936,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 		
 		if (GetArraySize(hArray))
 		{
-			if (g_iSlenderCopyOfBoss[iBossIndex] == -1 ||
+			if (g_iSlenderCopyMaster[iBossIndex] == -1 ||
 				GetProfileNum(g_strSlenderProfile[iBossIndex], "copy_calculatepagecount", 0))
 			{
 				new tempBestPageCount = -1;
@@ -844,16 +945,16 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				for (new i = 0; i < GetArraySize(hTempArray); i++)
 				{
 					new iClient = GetArrayCell(hTempArray, i);
-					if (g_iPlayerFoundPages[iClient] > tempBestPageCount)
+					if (g_iPlayerPageCount[iClient] > tempBestPageCount)
 					{
-						tempBestPageCount = g_iPlayerFoundPages[iClient];
+						tempBestPageCount = g_iPlayerPageCount[iClient];
 					}
 				}
 				
 				for (new i = 0; i < GetArraySize(hTempArray); i++)
 				{
 					new iClient = GetArrayCell(hTempArray, i);
-					if ((float(g_iPlayerFoundPages[iClient]) / float(tempBestPageCount)) < SF2_BOSS_PAGE_CALCULATION)
+					if ((float(g_iPlayerPageCount[iClient]) / float(tempBestPageCount)) < SF2_BOSS_PAGE_CALCULATION)
 					{
 						new index = FindValueInArray(hArray, iClient);
 						if (index != -1) RemoveFromArray(hArray, index);
@@ -968,8 +1069,8 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	{
 		for (new i = 0; i < 3; i++)
 		{
-			flTargetMins[i] = g_flSlenderMins[iBossIndex][i];
-			flTargetMaxs[i] = g_flSlenderMaxs[iBossIndex][i];
+			flTargetMins[i] = g_flSlenderDetectMins[iBossIndex][i];
+			flTargetMaxs[i] = g_flSlenderDetectMaxs[iBossIndex][i];
 		}
 	}
 	else
@@ -1014,7 +1115,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			GetVectorAngles(flHitNormal, flHitNormal);
 			for (new i2 = 0; i2 < 3; i2++) flHitNormal[i2] = AngleNormalize(flHitNormal[i2]);
 			
-			tempPos[2] -= g_flSlenderMaxs[iBossIndex][2];
+			tempPos[2] -= g_flSlenderDetectMaxs[iBossIndex][2];
 			
 			if (TR_PointOutsideWorld(tempPos)
 				|| (IsSpaceOccupiedNPC(tempPos, flTargetMins, flTargetMaxs, EntRefToEntIndex(g_iSlender[iBossIndex])))
@@ -1046,25 +1147,26 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				for (new i2 = 0; i2 < MAX_BOSSES; i2++)
 				{
 					if (i2 == iBossIndex) continue;
+					if (g_iSlenderID[i2] == -1) continue;
 					if (!g_strSlenderProfile[i2][0]) continue;
 					
 					// If I'm a main boss, only check the distance between my copies and me.
-					if (g_iSlenderCopyOfBoss[iBossIndex] == -1)
+					if (g_iSlenderCopyMaster[iBossIndex] == -1)
 					{
-						if (g_iSlenderCopyOfBoss[i2] != iBossIndex) continue;
+						if (g_iSlenderCopyMaster[i2] != iBossIndex) continue;
 					}
 					// If I'm a copy, just check with my other copy friends and my main boss.
 					else
 					{
-						new iMyMaster = g_iSlenderCopyOfBoss[iBossIndex];
-						if (g_iSlenderCopyOfBoss[i2] != iMyMaster || i2 != iMyMaster) continue;
+						new iMyMaster = g_iSlenderCopyMaster[iBossIndex];
+						if (g_iSlenderCopyMaster[i2] != iMyMaster || i2 != iMyMaster) continue;
 					}
 					
 					iSlender = SlenderArrayIndexToEntIndex(i2);
 					if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
 					
 					SlenderGetAbsOrigin(i2, flBuffer);
-					if (GetVectorDistance(flBuffer, tempPos) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_dist_from_me", 800.0))
+					if (GetVectorDistance(flBuffer, tempPos) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_dist_from_other_copies", 800.0))
 					{
 						bTooClose = true;
 						break;
@@ -1078,75 +1180,104 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			
 			new bool:bCheckBlink = bool:GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_use_blink");
 			
-			if (bVisiblePls)
-			{
-				if (!IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
-			}
-			else if (bBeCreepy)
-			{
-				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink) ||
-					!IsPointVisibleToAPlayer(tempPos, false, bCheckBlink) ||
-					!IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink)) continue;
-			}
-			else
-			{
-				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
-			}
+			// Check if my copy master or my fellow copies could see this position.
+			new bool:bDontAddPosition = false;
+			new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]);
 			
-			new bool:bTooVisible = false;
+			decl Float:flCopyCheckPositions[6];
+			for (new i2 = 0; i2 < 3; i2++) flCopyCheckPositions[i2] = tempPos[i2];
+			for (new i2 = 3; i2 < 6; i2++) flCopyCheckPositions[i2] = tempPos[i2 - 3] + g_flSlenderEyePosOffset[iBossIndex][i2 - 3];
 			
-			for (new i2 = 0; i2 < MAX_BOSSES; i2++)
+			for (new i2 = 0; i2 < 2; i2++)
 			{
-				if (i2 == iBossIndex) continue;
-				new iSlender = EntRefToEntIndex(g_iSlender[i2]);
-				if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
+				decl Float:flCopyCheckPos[3];
+				for (new i3 = 0; i3 < 3; i3++) flCopyCheckPos[i3] = flCopyCheckPositions[i3 + (3 * i2)];
 				
-				if (IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink) &&
-					((SlenderGetAbsOrigin(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink)) ||
-					(SlenderGetEyePosition(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink))))
+				// Check the conditions first.
+				if (bVisiblePls)
 				{
-					bTooVisible = true;
-					break;
+					if (!IsPointVisibleToAPlayer(flCopyCheckPos, _, bCheckBlink) &&
+						!IsPointVisibleToPlayer(iBestPlayer, flCopyCheckPos, _, bCheckBlink))
+					{
+						bDontAddPosition = true;
+						break;
+					}
 				}
-			}
-			
-			if (bTooVisible) continue;
-			
-			AddVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
-			
-			if (bVisiblePls)
-			{
-				if (!IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
-			}
-			else if (bBeCreepy)
-			{
-				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink) ||
-					!IsPointVisibleToAPlayer(tempPos, false, bCheckBlink) ||
-					!IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink)) continue;
-			}
-			else
-			{
-				if (IsPointVisibleToAPlayer(tempPos, _, bCheckBlink)) continue;
-			}
-			
-			for (new i2 = 0; i2 < MAX_BOSSES; i2++)
-			{
-				if (i2 == iBossIndex) continue;
-				new iSlender = EntRefToEntIndex(g_iSlender[i2]);
-				if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
+				else if (bBeCreepy)
+				{
+					if (!IsPointVisibleToAPlayer(flCopyCheckPos, _, bCheckBlink) &&
+						IsPointVisibleToAPlayer(flCopyCheckPos, false, bCheckBlink) &&
+						IsPointVisibleToPlayer(iBestPlayer, flCopyCheckPos, false, bCheckBlink))
+					{
+						// Do nothing.
+					}
+					else
+					{
+						continue;
+					}
+				}
+				else
+				{
+					if (IsPointVisibleToAPlayer(flCopyCheckPos, _, bCheckBlink))
+					{
+						bDontAddPosition = true;
+						break;
+					}
+				}
 				
-				if (IsPointVisibleToPlayer(iBestPlayer, tempPos, false, bCheckBlink) &&
-					((SlenderGetAbsOrigin(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink)) ||
-					(SlenderGetEyePosition(i2, flBuffer) && IsPointVisibleToPlayer(iBestPlayer, flBuffer, false, bCheckBlink))))
+				for (new i3 = 0; i3 < MAX_BOSSES; i3++)
 				{
-					bTooVisible = true;
-					break;
+					if (i3 == iBossIndex) continue;
+					if (g_iSlenderID[i3] == -1) continue;
+					
+					new iBoss = EntRefToEntIndex(g_iSlender[i3]);
+					if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
+					
+					if (i3 == iCopyMaster || 
+						(iCopyMaster != -1 && SlenderGetFromID(g_iSlenderCopyMaster[i3]) == iCopyMaster))
+					{
+					}
+					else continue;
+					
+					decl Float:flCopyPos[3];
+					SlenderGetEyePosition(i3, flCopyPos);
+					hTrace = TR_TraceRayFilterEx(flCopyPos,
+						flCopyCheckPos,
+						CONTENTS_SOLID | CONTENTS_MOVEABLE | CONTENTS_MIST,
+						RayType_EndPoint,
+						TraceRayBossVisibility,
+						iBoss);
+					
+					bDontAddPosition = !TR_DidHit(hTrace);
+					CloseHandle(hTrace);
+					
+					if (!bDontAddPosition)
+					{
+						decl Float:flCopyMins[3], Float:flCopyMaxs[3];
+						GetEntPropVector(iBoss, Prop_Data, "m_vecAbsOrigin", flCopyPos);
+						GetEntPropVector(iBoss, Prop_Send, "m_vecMins", flCopyMins);
+						GetEntPropVector(iBoss, Prop_Send, "m_vecMaxs", flCopyMaxs);
+						
+						for (new i4 = 0; i4 < 3; i4++) flCopyPos[i4] += ((flCopyMins[i4] + flCopyMaxs[i4]) / 2.0);
+						
+						hTrace = TR_TraceRayFilterEx(flCopyPos,
+							flCopyCheckPos,
+							CONTENTS_SOLID | CONTENTS_MOVEABLE | CONTENTS_MIST,
+							RayType_EndPoint,
+							TraceRayBossVisibility,
+							iBoss);
+						
+						bDontAddPosition = !TR_DidHit(hTrace);
+						CloseHandle(hTrace);
+					}
+					
+					if (bDontAddPosition) break;
 				}
+				
+				if (bDontAddPosition) break;
 			}
 			
-			if (bTooVisible) continue;
-			
-			SubtractVectors(tempPos, g_flSlenderVisiblePos[iBossIndex], tempPos);
+			if (bDontAddPosition) continue;
 			
 			// Insert the vector into our array. Choose which one, first.
 			// We're just using hArray as a variable to store the correct array, not the array itself. All arrays will be closed at the end.
@@ -1322,7 +1453,7 @@ stock bool:PlayerCanSeeSlender(client, iBossIndex, bool:bCheckFOV=true, bool:bCh
 	{
 		decl Float:myPos[3];
 		SlenderGetAbsOrigin(iBossIndex, myPos);
-		AddVectors(myPos, g_flSlenderVisiblePos[iBossIndex], myPos);
+		AddVectors(myPos, g_flSlenderEyePosOffset[iBossIndex], myPos);
 		return IsPointVisibleToPlayer(client, myPos, bCheckFOV, bCheckBlink, bCheckEliminated);
 	}
 	
@@ -1351,7 +1482,7 @@ stock bool:PeopleCanSeeSlender(iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink
 	{
 		decl Float:myPos[3];
 		SlenderGetAbsOrigin(iBossIndex, myPos);
-		AddVectors(myPos, g_flSlenderVisiblePos[iBossIndex], myPos);
+		AddVectors(myPos, g_flSlenderEyePosOffset[iBossIndex], myPos);
 		return IsPointVisibleToAPlayer(myPos, bCheckFOV, bCheckBlink);
 	}
 	

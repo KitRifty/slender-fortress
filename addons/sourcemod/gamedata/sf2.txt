@@ -10,11 +10,19 @@
 				"linux"		"323"
 				"mac"		"323"
 			}
+			
 			"ShouldTransmit"
 			{
 				"windows"	"18"
 				"linux"	"19"
 				"mac"	"19"
+			}
+			
+			"CBaseCombatCharacter_IsAreaTraversable"
+			{
+				"windows"	"315"
+				"linux"	"316"
+				"mac"	"316"
 			}
 		}
 	}

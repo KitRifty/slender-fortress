@@ -2,6 +2,7 @@ Version 0.1.9 (Indefinite):
 - Added Stamina meter
 - Hud will now change color depending on how much health you have
 - Fixed a bug where map-defined page music would not stop playing when custom escape music has been defined in the map
+- Fixed a bug where effects of certain Mediguns would linger after spawn/weapon change
 - Removed support for "slender_logic_escape_music", use "sf2_escape_custommusic" instead
 
 Version 0.1.8a (August 13, 2013):

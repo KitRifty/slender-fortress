@@ -161,6 +161,16 @@ stock Float:EntityDistanceFromEntity(ent1, ent2)
 	return GetVectorDistance(flMyPos, flHisPos);
 }
 
+stock GetEntityOBBCenterPosition(ent, Float:flBuffer)
+{
+	decl Float:flPos[3], Float:flMins[3], Float:flMaxs[3];
+	GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
+	GetEntPropVector(ent, Prop_Send, "m_vecMins", flMins);
+	GetEntPropVector(ent, Prop_Send, "m_vecMaxs", flMaxs);
+	
+	for (new i = 0; i < 3; i++) flBuffer[i] = flPos[i] + ((flMins[i] + flMaxs[i]) / 2.0);
+}
+
 stock bool:IsEntityClassname(iEnt, const String:classname[], bool:bCaseSensitive=true)
 {
 	if (!IsValidEntity(iEnt)) return false;

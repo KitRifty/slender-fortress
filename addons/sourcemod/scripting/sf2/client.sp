@@ -4,20 +4,20 @@
 #define _sf2_client_included
 
 #define GHOST_MODEL ""
-#define BLACK_OVERLAY "overlays/slender/black_final"
+#define BLACK_OVERLAY "slender/camera/cameraoverlay"
 
 #define SF2_FLASHLIGHT_WIDTH 512.0 // How wide the player's Flashlight should be in world units.
 #define SF2_FLASHLIGHT_LENGTH 1024.0 // How far the player's Flashlight can reach in world units.
-#define SF2_FLASHLIGHT_BRIGHTNESS 3 // Intensity of the players' Flashlight.
+#define SF2_FLASHLIGHT_BRIGHTNESS 0 // Intensity of the players' Flashlight.
 #define SF2_FLASHLIGHT_DRAIN_RATE 0.65 // How long (in seconds) each bar on the player's Flashlight meter lasts.
 #define SF2_FLASHLIGHT_RECHARGE_RATE 0.68 // How long (in seconds) it takes each bar on the player's Flashlight meter to recharge.
 #define SF2_FLASHLIGHT_FLICKERAT 0.25 // The percentage of the Flashlight battery where the Flashlight will start to blink.
 #define SF2_FLASHLIGHT_ENABLEAT 0.3 // The percentage of the Flashlight battery where the Flashlight will be able to be used again (if the player shortens out the Flashlight from excessive use).
 #define SF2_FLASHLIGHT_COOLDOWN 0.4 // How much time players have to wait before being able to switch their flashlight on again after turning it off.
 
-#define SF2_ULTRAVISION_WIDTH 1024.0
-#define SF2_ULTRAVISION_LENGTH 1024.0
-#define SF2_ULTRAVISION_BRIGHTNESS 0 // Intensity of Ultravision.
+#define SF2_ULTRAVISION_WIDTH 800.0
+#define SF2_ULTRAVISION_LENGTH 800.0
+#define SF2_ULTRAVISION_BRIGHTNESS -4 // Intensity of Ultravision.
 #define SF2_ULTRAVISION_CONE 180.0
 
 #define SF2_PLAYER_BREATH_COOLDOWN_MIN 0.8
@@ -84,6 +84,7 @@ public Hook_ClientPreThink(client)
 	}
 	
 	ClientProcessVisibility(client);
+	ClientProcessStaticShake(client);
 	ClientProcessFlashlight(client);
 	ClientProcessGlow(client);
 	
@@ -97,25 +98,65 @@ public Hook_ClientPreThink(client)
 		// Many thanks to whomever created it in the first place.
 		if (IsPlayerAlive(client))
 		{
-			if (GetConVarBool(g_cvPlayerViewbobEnabled))
+			if (g_bPlayerViewbobEnabled)
 			{
 				new Float:flPunchVel[3];
 			
-				if (!GetConVarBool(g_cvPlayerViewBobSprintEnabled) || !ClientSprintIsValid(client))
+				if (!g_bPlayerViewbobSprintEnabled || !ClientSprintIsValid(client))
 				{
-					decl Float:flVelocity[3];
-					GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", flVelocity);
-					new Float:flSpeed = GetVectorLength(flVelocity);
-				
-					new Float:flPunchIdle[3];
-					flPunchIdle[0] = Sine(GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_X / 400.0;
-					flPunchIdle[1] = Sine(2.0 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Y / 400.0;
-					flPunchIdle[2] = Sine(1.6 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Z / 400.0;
-					
-					AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+					if (GetEntityFlags(client) & FL_ONGROUND)
+					{
+						decl Float:flVelocity[3];
+						GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", flVelocity);
+						new Float:flSpeed = GetVectorLength(flVelocity);
+						
+						new Float:flPunchIdle[3];
+						
+						if (flSpeed > 0.0)
+						{
+							if (flSpeed >= 60.0)
+							{
+								flPunchIdle[0] = Sine(GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_X / 400.0;
+								flPunchIdle[1] = Sine(2.0 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Y / 400.0;
+								flPunchIdle[2] = Sine(1.6 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Z / 400.0;
+								
+								AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+							}
+							
+							// Calculate roll.
+							decl Float:flForward[3], Float:flVelocityDirection[3];
+							GetClientEyeAngles(client, flForward);
+							GetVectorAngles(flVelocity, flVelocityDirection);
+							
+							new Float:flYawDiff = AngleDiff(flForward[1], flVelocityDirection[1]);
+							if (FloatAbs(flYawDiff) > 90.0) flYawDiff = AngleDiff(flForward[1] + 180.0, flVelocityDirection[1]) * -1.0;
+							
+							new Float:flWalkSpeed = ClientGetDefaultWalkSpeed(client);
+							new Float:flRollScalar = flSpeed / flWalkSpeed;
+							if (flRollScalar > 1.0) flRollScalar = 1.0;
+							
+							new Float:flRollScale = (flYawDiff / 90.0) * 0.25 * flRollScalar;
+							flPunchIdle[0] = 0.0;
+							flPunchIdle[1] = 0.0;
+							flPunchIdle[2] = flRollScale * -1.0;
+							
+							AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+						}
+						
+						/*
+						if (flSpeed < 60.0) 
+						{
+							flPunchIdle[0] = FloatAbs(Cosine(GetGameTime() * 1.25) * 0.047);
+							flPunchIdle[1] = Sine(GetGameTime() * 1.25) * 0.075;
+							flPunchIdle[2] = 0.0;
+							
+							AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+						}
+						*/
+					}
 				}
 				
-				if (GetConVarBool(g_cvPlayerViewBobHurtEnabled))
+				if (g_bPlayerViewbobHurtEnabled)
 				{
 					// Shake screen the more the player is hurt.
 					new Float:flHealth = float(GetEntProp(client, Prop_Send, "m_iHealth"));
@@ -150,8 +191,6 @@ public Hook_ClientPreThink(client)
 				if (_:GameRules_GetRoundState() == 4)
 				{
 					new bool:bDanger = false;
-					if (g_flPlayerSeesSlenderMeter[client] > 0.4) bDanger = true;
-					if (GetGameTime() < g_flPlayerDangerBoostTime[client]) bDanger = true;
 					
 					if (!bDanger)
 					{
@@ -170,13 +209,24 @@ public Hook_ClientPreThink(client)
 								if ((iState == STATE_CHASE || iState == STATE_ATTACK || iState == STATE_STUN) &&
 									((iBossTarget && iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0 || PlayerCanSeeSlender(client, i, false)))
 								{
+									if (!g_strPlayerChaseMusic[client][0]) continue;
+								
 									bDanger = true;
 									g_flPlayerDangerBoostTime[client] = GetGameTime() + 5.0;
+									
+									// Induce client stress levels.
+									new Float:flUnComfortZoneDist = 512.0;
+									new Float:flStressScalar = (flUnComfortZoneDist / SlenderGetDistanceFromPlayer(i, client));
+									ClientAddStress(client, 0.025 * flStressScalar);
+									
 									break;
 								}
 							}
 						}
 					}
+					
+					if (g_flPlayerStaticAmount[client] > 0.4) bDanger = true;
+					if (GetGameTime() < g_flPlayerDangerBoostTime[client]) bDanger = true;
 					
 					if (!bDanger)
 					{
@@ -209,7 +259,7 @@ public Hook_ClientPreThink(client)
 						{
 							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
 							
-							if ((flCurTime - g_flPlayerLastScareFromBoss[client][i]) <= flScareSprintDuration)
+							if ((flCurTime - g_flPlayerScareLastTime[client][i]) <= flScareSprintDuration)
 							{
 								bDanger = true;
 								break;
@@ -319,6 +369,18 @@ public Hook_ClientPreThink(client)
 		}
 	}
 	
+	// Calculate player stress levels.
+	if (GetGameTime() >= g_flPlayerStressNextUpdateTime[client])
+	{
+		//new Float:flPagePercent = g_iPageMax != 0 ? float(g_iPageCount) / float(g_iPageMax) : 0.0;
+		//new Float:flPageCountPercent = g_iPageMax != 0? float(g_iPlayerPageCount[client]) / float(g_iPageMax) : 0.0;
+		
+		g_flPlayerStressNextUpdateTime[client] = GetGameTime() + 0.33;
+		ClientAddStress(client, -0.01);
+		
+		SendDebugMessageToPlayer(client, DEBUG_PLAYER_STRESS, 1, "g_flPlayerStress[%d]: %0.1f", client, g_flPlayerStress[client]);
+	}
+	
 	static Handle:hFlames = INVALID_HANDLE;
 	if (hFlames == INVALID_HANDLE) hFlames = CreateArray(2);
 	
@@ -390,11 +452,22 @@ public Hook_ClientPreThink(client)
 	}
 	
 	// Process screen shake, if enabled.
-	if (GetConVarBool(g_cvPlayerShakeEnabled))
+	if (g_bPlayerShakeEnabled)
 	{
+		new bool:bDoShake = false;
+		
 		if (IsPlayerAlive(client))
 		{
-			new Float:flPercent = g_flPlayerSeesSlenderMeter[client];
+			new iStaticMaster = SlenderGetFromID(g_iPlayerStaticMaster[client]);
+			if (iStaticMaster != -1 && g_iSlenderFlags[iStaticMaster] & SFF_HASVIEWSHAKE)
+			{
+				bDoShake = true;
+			}
+		}
+		
+		if (bDoShake)
+		{
+			new Float:flPercent = g_flPlayerStaticAmount[client];
 			
 			new Float:flAmplitudeMax = GetConVarFloat(g_cvPlayerShakeAmplitudeMax);
 			new Float:flAmplitude = flAmplitudeMax * flPercent;
@@ -601,16 +674,16 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 				if (g_bPlayerProxy[attacker])
 				{
 					new iMaxHealth = SDKCall(g_hSDKGetMaxHealth, victim);
-					new iMaster = g_iPlayerProxyMaster[attacker];
+					new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[attacker]);
 					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
 					{
 						if (damagecustom == TF_CUSTOM_TAUNT_GRAND_SLAM ||
-						damagecustom == TF_CUSTOM_TAUNT_FENCING ||
-						damagecustom == TF_CUSTOM_TAUNT_ARROW_STAB ||
-						damagecustom == TF_CUSTOM_TAUNT_GRENADE ||
-						damagecustom == TF_CUSTOM_TAUNT_BARBARIAN_SWING ||
-						damagecustom == TF_CUSTOM_TAUNT_ENGINEER_ARM ||
-						damagecustom == TF_CUSTOM_TAUNT_ARMAGEDDON)
+							damagecustom == TF_CUSTOM_TAUNT_FENCING ||
+							damagecustom == TF_CUSTOM_TAUNT_ARROW_STAB ||
+							damagecustom == TF_CUSTOM_TAUNT_GRENADE ||
+							damagecustom == TF_CUSTOM_TAUNT_BARBARIAN_SWING ||
+							damagecustom == TF_CUSTOM_TAUNT_ENGINEER_ARM ||
+							damagecustom == TF_CUSTOM_TAUNT_ARMAGEDDON)
 						{
 							if (damage >= float(iMaxHealth)) damage = float(iMaxHealth) * 0.5;
 							else damage = 0.0;
@@ -634,7 +707,7 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 				}
 				else if (g_bPlayerProxy[victim])
 				{
-					new iMaster = g_iPlayerProxyMaster[victim];
+					new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[victim]);
 					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
 					{
 						g_iPlayerProxyControl[attacker] += GetProfileNum(g_strSlenderProfile[iMaster], "proxies_controlgain_hitbyenemy");
@@ -690,6 +763,33 @@ public Action:Hook_TEFireBullets(const String:te_name[], const Players[], numCli
 	return Plugin_Continue;
 }
 
+ClientResetStatic(client)
+{
+	g_iPlayerStaticMaster[client] = -1;
+	g_hPlayerStaticTimer[client] = INVALID_HANDLE;
+	g_flPlayerStaticIncreaseRate[client] = 0.0;
+	g_flPlayerStaticDecreaseRate[client] = 0.0;
+	g_hPlayerLastStaticTimer[client] = INVALID_HANDLE;
+	g_flPlayerLastStaticTime[client] = 0.0;
+	g_flPlayerLastStaticVolume[client] = 0.0;
+	g_bPlayerInStaticShake[client] = false;
+	g_iPlayerStaticShakeMaster[client] = -1;
+	g_flPlayerStaticShakeMinVolume[client] = 0.0;
+	g_flPlayerStaticShakeMaxVolume[client] = 0.0;
+	g_flPlayerStaticAmount[client] = 0.0;
+	
+	if (IsClientInGame(client))
+	{
+		if (g_strPlayerStaticSound[client][0]) StopSound(client, SNDCHAN_STATIC, g_strPlayerStaticSound[client]);
+		if (g_strPlayerLastStaticSound[client][0]) StopSound(client, SNDCHAN_STATIC, g_strPlayerLastStaticSound[client]);
+		if (g_strPlayerStaticShakeSound[client][0]) StopSound(client, SNDCHAN_STATIC, g_strPlayerStaticShakeSound[client]);
+	}
+	
+	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
+	strcopy(g_strPlayerLastStaticSound[client], sizeof(g_strPlayerLastStaticSound[]), "");
+	strcopy(g_strPlayerStaticShakeSound[client], sizeof(g_strPlayerStaticShakeSound[]), "");
+}
+
 InitializeClient(client)
 {
 #if defined DEBUG
@@ -717,22 +817,11 @@ InitializeClient(client)
 	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
 #endif
 	
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		g_bPlayerStatic[client][i] = false;
-		g_flPlayerStaticLastTime[client][i] = 0.0;
-		
-		if (g_strSlenderProfile[i][0])
-		{
-			ClientStopAllSlenderSounds(client, g_strSlenderProfile[i], "sound_static", SNDCHAN_STATIC);
-			ClientStopAllSlenderSounds(client, g_strSlenderProfile[i], "sound_20dollars", SNDCHAN_STATIC);
-		}
-	}
 	
-	g_iPlayerFoundPages[client] = 0;
 	
-	StopSound(client, SNDCHAN_STATIC, TWENTYDOLLARS_SOUND);
+	g_iPlayerPageCount[client] = 0;
 	
+	ClientResetStatic(client);
 	ClientResetSlenderStats(client);
 	ClientResetFlashlight(client);
 	ClientResetCampingStats(client);
@@ -744,6 +833,7 @@ InitializeClient(client)
 	ClientMusicReset(client);
 	ClientChaseMusicReset(client);
 	ClientChaseMusicSeeReset(client);
+	ClientAlertMusicReset(client);
 	ClientResetGlow(client);
 	ClientResetPvP(client);
 	ClientResetProxy(client);
@@ -799,6 +889,7 @@ ClientEscape(client)
 	if (!g_bPlayerEscaped[client])
 	{
 		ClientResetBreathing(client);
+		ClientDeactivateFlashlight(client);
 		
 		decl String:sName[MAX_NAME_LENGTH];
 		g_bPlayerEscaped[client] = true;
@@ -1036,6 +1127,8 @@ public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
 		EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
 		ClientDeactivateFlashlight(client);
 		
+		ClientAddStress(client, 0.2);
+		
 		Call_StartForward(fOnClientBreakFlashlight);
 		Call_PushCell(client);
 		Call_Finish();
@@ -1134,6 +1227,15 @@ ClientActivateFlashlight(client)
 		g_iPlayerFlashlightEntAng[client] = EntIndexToEntRef(ent);
 	}
 	
+	if (g_bPlayerFlashlightProjected[client])
+	{
+		new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
+		if (!(iEffects & (1 << 2)))
+		{
+			SetEntProp(client, Prop_Send, "m_fEffects", iEffects | (1 << 2));
+		}
+	}
+	
 	ClientDeactivateUltravision(client);
 	
 	Call_StartForward(fOnClientActivateFlashlight);
@@ -1165,6 +1267,15 @@ ClientDeactivateFlashlight(client)
 	if (IsClientInGame(client))
 	{
 		g_hPlayerFlashlightTimer[client] = CreateTimer(SF2_FLASHLIGHT_RECHARGE_RATE, Timer_RechargeFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	
+		if (g_bPlayerFlashlightProjected[client])
+		{
+			new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
+			if (iEffects & (1 << 2))
+			{
+				SetEntProp(client, Prop_Send, "m_fEffects", iEffects &= ~(1 << 2));
+			}
+		}
 	}
 	else
 	{
@@ -1227,16 +1338,28 @@ ClientActivateUltravision(client)
 	TeleportEntity(ent, flPos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
 	DispatchKeyValue(ent, "rendercolor", "0 200 255");
 	
-	/*
-	if (g_bPlayerGhostMode[client] || g_bPlayerProxy[client]) SetVariantFloat(SF2_ULTRAVISION_WIDTH * 2.0);
-	else SetVariantFloat(SF2_ULTRAVISION_WIDTH);
-	*/
-	SetVariantFloat(SF2_ULTRAVISION_WIDTH);
+	if (g_bPlayerEliminated[client])
+	{
+		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusBlue));
+	}
+	else
+	{
+		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusRed));
+	}
+	
 	AcceptEntityInput(ent, "spotlight_radius");
 	
-	SetVariantFloat(SF2_ULTRAVISION_LENGTH);
+	if (g_bPlayerEliminated[client])
+	{
+		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusBlue));
+	}
+	else
+	{
+		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusRed));
+	}
+	
 	AcceptEntityInput(ent, "distance");
-	SetVariantInt(-10); // Start dark, then fade in via timer.
+	SetVariantInt(-15); // Start dark, then fade in via timer.
 	AcceptEntityInput(ent, "brightness");
 	
 	// Convert WU to inches.
@@ -1270,7 +1393,7 @@ public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
 	if (!ent || ent == INVALID_ENT_REFERENCE) return Plugin_Stop;
 	
 	new iBrightness = GetEntProp(ent, Prop_Send, "m_Exponent");
-	if (iBrightness >= SF2_ULTRAVISION_BRIGHTNESS) return Plugin_Stop;
+	if (iBrightness >= GetConVarInt(g_cvUltravisionBrightness)) return Plugin_Stop;
 	
 	iBrightness++;
 	SetVariantInt(iBrightness);
@@ -1362,6 +1485,173 @@ stock Float:ClientGetDefaultSprintSpeed(client)
 	return flReturn;
 }
 
+// Static shaking should only affect the x, y portion of the player's view, not roll.
+// This is purely for cosmetic effect.
+
+ClientProcessStaticShake(client)
+{
+	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
+	
+	new bool:bOldStaticShake = g_bPlayerInStaticShake[client];
+	new iOldStaticShakeMaster = SlenderGetFromID(g_iPlayerStaticShakeMaster[client]);
+	new iNewStaticShakeMaster = -1;
+	new Float:flNewStaticShakeMasterAnger = -1.0;
+	
+	new Float:flOldPunchAng[3], Float:flOldPunchAngVel[3];
+	GetEntDataVector(client, g_offsPlayerPunchAngle, flOldPunchAng);
+	GetEntDataVector(client, g_offsPlayerPunchAngleVel, flOldPunchAngVel);
+	
+	new Float:flNewPunchAng[3], Float:flNewPunchAngVel[3];
+	
+	for (new i = 0; i < 3; i++)
+	{
+		flNewPunchAng[i] = flOldPunchAng[i];
+		flNewPunchAngVel[i] = flOldPunchAngVel[i];
+	}
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		if (g_iSlenderID[i] == -1) continue;
+		
+		if (g_iPlayerStaticMode[client][i] != Static_Increase) continue;
+		if (!(g_iSlenderFlags[i] & SFF_HASSTATICSHAKE)) continue;
+		
+		if (g_flSlenderAnger[i] > flNewStaticShakeMasterAnger)
+		{
+			new iMaster = SlenderGetFromID(g_iSlenderCopyMaster[i]);
+			if (iMaster == -1) iMaster = i;
+			
+			iNewStaticShakeMaster = iMaster;
+			flNewStaticShakeMasterAnger = g_flSlenderAnger[iMaster];
+		}
+	}
+	
+	if (iNewStaticShakeMaster != -1)
+	{
+		g_iPlayerStaticShakeMaster[client] = g_iSlenderID[iNewStaticShakeMaster];
+		
+		if (iNewStaticShakeMaster != iOldStaticShakeMaster)
+		{
+			if (g_strPlayerStaticShakeSound[client][0])
+			{
+				StopSound(client, SNDCHAN_STATIC, g_strPlayerStaticShakeSound[client]);
+			}
+			
+			g_flPlayerStaticShakeMinVolume[client] = GetProfileFloat(g_strSlenderProfile[iNewStaticShakeMaster], "sound_static_shake_local_volume_min", 0.0);
+			g_flPlayerStaticShakeMaxVolume[client] = GetProfileFloat(g_strSlenderProfile[iNewStaticShakeMaster], "sound_static_shake_local_volume_max", 1.0);
+			
+			decl String:sStaticSound[PLATFORM_MAX_PATH];
+			GetRandomStringFromProfile(g_strSlenderProfile[iNewStaticShakeMaster], "sound_static_shake_local", sStaticSound, sizeof(sStaticSound));
+			if (sStaticSound[0])
+			{
+				strcopy(g_strPlayerStaticShakeSound[client], sizeof(g_strPlayerStaticShakeSound[]), sStaticSound);
+			}
+			else
+			{
+				strcopy(g_strPlayerStaticShakeSound[client], sizeof(g_strPlayerStaticShakeSound[]), "");
+			}
+		}
+	}
+	
+	if (g_bPlayerInStaticShake[client])
+	{
+		if (g_flPlayerStaticAmount[client] <= 0.0)
+		{
+			g_bPlayerInStaticShake[client] = false;
+		}
+	}
+	else
+	{
+		if (iNewStaticShakeMaster != -1)
+		{
+			g_bPlayerInStaticShake[client] = true;
+		}
+	}
+	
+	if (g_bPlayerInStaticShake[client] && !bOldStaticShake)
+	{	
+		for (new i = 0; i < 2; i++)
+		{
+			flNewPunchAng[i] = 0.0;
+			flNewPunchAngVel[i] = 0.0;
+		}
+		
+		SetEntDataVector(client, g_offsPlayerPunchAngle, flNewPunchAng, true);
+		SetEntDataVector(client, g_offsPlayerPunchAngleVel, flNewPunchAngVel, true);
+	}
+	else if (!g_bPlayerInStaticShake[client] && bOldStaticShake)
+	{
+		for (new i = 0; i < 2; i++)
+		{
+			flNewPunchAng[i] = 0.0;
+			flNewPunchAngVel[i] = 0.0;
+		}
+	
+		g_iPlayerStaticShakeMaster[client] = -1;
+		
+		if (g_strPlayerStaticShakeSound[client][0])
+		{
+			StopSound(client, SNDCHAN_STATIC, g_strPlayerStaticShakeSound[client]);
+		}
+		
+		strcopy(g_strPlayerStaticShakeSound[client], sizeof(g_strPlayerStaticShakeSound[]), "");
+		
+		g_flPlayerStaticShakeMinVolume[client] = 0.0;
+		g_flPlayerStaticShakeMaxVolume[client] = 0.0;
+		
+		SetEntDataVector(client, g_offsPlayerPunchAngle, flNewPunchAng, true);
+		SetEntDataVector(client, g_offsPlayerPunchAngleVel, flNewPunchAngVel, true);
+	}
+	
+	if (g_bPlayerInStaticShake[client])
+	{
+		if (g_strPlayerStaticShakeSound[client][0])
+		{
+			new Float:flVolume = g_flPlayerStaticAmount[client];
+			if (GetRandomFloat(0.0, 1.0) <= 0.35)
+			{
+				flVolume = 0.0;
+			}
+			else
+			{
+				if (flVolume < g_flPlayerStaticShakeMinVolume[client])
+				{
+					flVolume = g_flPlayerStaticShakeMinVolume[client];
+				}
+				
+				if (flVolume > g_flPlayerStaticShakeMaxVolume[client])
+				{
+					flVolume = g_flPlayerStaticShakeMaxVolume[client];
+				}
+			}
+			
+			EmitSoundToClient(client, g_strPlayerStaticShakeSound[client], _, SNDCHAN_STATIC, SNDLEVEL_NONE, SND_CHANGEVOL | SND_STOP, flVolume);
+		}
+		
+		// Spazz our view all over the place.
+		for (new i = 0; i < 2; i++) flNewPunchAng[i] = AngleNormalize(GetRandomFloat(0.0, 360.0));
+		NormalizeVector(flNewPunchAng, flNewPunchAng);
+		
+		new Float:flAngVelocityScalar = 5.0 * g_flPlayerStaticAmount[client];
+		if (flAngVelocityScalar < 1.0) flAngVelocityScalar = 1.0;
+		ScaleVector(flNewPunchAng, flAngVelocityScalar);
+		
+		if (!IsFakeClient(client))
+		{
+			// Latency compensation.
+			new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
+			new Float:flLatencyCalcDiff = 85.0 * Pow(flLatency, 2.0);
+			
+			for (new i = 0; i < 2; i++) flNewPunchAng[i] += (flNewPunchAng[i] * flLatencyCalcDiff);
+		}
+		
+		for (new i = 0; i < 2; i++) flNewPunchAngVel[i] = 0.0;
+		
+		SetEntDataVector(client, g_offsPlayerPunchAngle, flNewPunchAng, true);
+		SetEntDataVector(client, g_offsPlayerPunchAngleVel, flNewPunchAngVel, true);
+	}
+}
+
 ClientProcessVisibility(client)
 {
 	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
@@ -1369,30 +1659,39 @@ ClientProcessVisibility(client)
 	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	
 	new bool:bWasSeeingSlender[MAX_BOSSES];
-	new bool:bWasStatic[MAX_BOSSES];
+	new iOldStaticMode[MAX_BOSSES];
 	
 	decl Float:flSlenderPos[3];
+	decl Float:flSlenderEyePos[3];
+	decl Float:flSlenderOBBCenterPos[3];
+	
+	decl Float:flMyPos[3];
+	GetClientAbsOrigin(client, flMyPos);
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
+		bWasSeeingSlender[i] = g_bPlayerSeesSlender[client][i];
+		iOldStaticMode[i] = g_iPlayerStaticMode[client][i];
+		g_bPlayerSeesSlender[client][i] = false;
+		g_iPlayerStaticMode[client][i] = Static_None;
+		
+		if (g_iSlenderID[i] == -1) continue;
+		
 		strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[i]);
 		if (!sProfile[0]) continue;
 		
-		bWasSeeingSlender[i] = g_bPlayerSeesSlender[client][i];
-		bWasStatic[i] = g_bPlayerStatic[client][i];
-		g_bPlayerSeesSlender[client][i] = false;
-		g_bPlayerStatic[client][i] = false;
+		new iBoss = EntRefToEntIndex(g_iSlender[i]);
 		
-		new slender = EntRefToEntIndex(g_iSlender[i]);
-		
-		new Float:endPos[3];
-		decl Float:myPos[3];
-		GetClientAbsOrigin(client, myPos);
-		
-		if (slender && slender != INVALID_ENT_REFERENCE)
+		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
-			SlenderGetAbsOrigin(i, endPos);
-			AddVectors(endPos, g_flSlenderVisiblePos[i], endPos);
+			SlenderGetAbsOrigin(i, flSlenderPos);
+			SlenderGetEyePosition(i, flSlenderEyePos);
+			
+			decl Float:flSlenderMins[3], Float:flSlenderMaxs[3];
+			GetEntPropVector(iBoss, Prop_Send, "m_vecMins", flSlenderMins);
+			GetEntPropVector(iBoss, Prop_Send, "m_vecMaxs", flSlenderMaxs);
+			
+			for (new i2 = 0; i2 < 3; i2++) flSlenderOBBCenterPos[i2] = flSlenderPos[i2] + ((flSlenderMins[i2] + flSlenderMaxs[i2]) / 2.0);
 		}
 		
 		if (g_bPlayerGhostMode[client])
@@ -1400,63 +1699,109 @@ ClientProcessVisibility(client)
 		}
 		else if (!g_bPlayerDeathCam[client])
 		{
-			if (slender && slender != INVALID_ENT_REFERENCE)
+			if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 			{
-				SlenderGetAbsOrigin(i, flSlenderPos);
+				new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[i]);
 				
-				g_bPlayerSeesSlender[client][i] = IsPointVisibleToPlayer(client, endPos, _, SlenderUsesBlink(i));
-				
-				if ((GetGameTime() - g_flPlayerSeesSlenderLastTime[client][i]) > GetProfileFloat(sProfile, "static_look_grace_time", 1.0) || 
-					(bWasStatic[i] && g_flPlayerSeesSlenderMeter[client] > 0.1))
+				if (!IsPointVisibleToPlayer(client, flSlenderEyePos, true, SlenderUsesBlink(i)))
 				{
-					if (GetProfileNum(sProfile, "static_on_look") && g_bPlayerSeesSlender[client][i]) 
+					g_bPlayerSeesSlender[client][i] = IsPointVisibleToPlayer(client, flSlenderOBBCenterPos, true, SlenderUsesBlink(i));
+				}
+				else
+				{
+					g_bPlayerSeesSlender[client][i] = true;
+				}
+				
+				if ((GetGameTime() - g_flPlayerSeesSlenderLastTime[client][i]) > GetProfileFloat(sProfile, "static_on_look_gracetime", 1.0) ||
+					(iOldStaticMode[i] == Static_Increase && g_flPlayerStaticAmount[client] > 0.1))
+				{
+					if ((g_iSlenderFlags[i] & SFF_STATICONLOOK) && 
+						g_bPlayerSeesSlender[client][i])
 					{
-						g_bPlayerStatic[client][i] = true;
+						if (iCopyMaster != -1)
+						{
+							g_iPlayerStaticMode[client][iCopyMaster] = Static_Increase;
+						}
+						else
+						{
+							g_iPlayerStaticMode[client][i] = Static_Increase;
+						}
 					}
-					else if (GetProfileNum(sProfile, "static_on_radius") && GetVectorDistance(myPos, flSlenderPos) <= GetProfileFloat(sProfile, "static_radius") && IsPointVisibleToPlayer(client, endPos, false, false)) 
+					else if ((g_iSlenderFlags[i] & SFF_STATICONRADIUS) && 
+						GetVectorDistance(flMyPos, flSlenderPos) <= g_flSlenderStaticRadius[i])
 					{
-						g_bPlayerStatic[client][i] = true;
+						new bool:bNoObstacles = IsPointVisibleToPlayer(client, flSlenderEyePos, false, false);
+						if (!bNoObstacles) bNoObstacles = IsPointVisibleToPlayer(client, flSlenderOBBCenterPos, false, false);
+						
+						if (bNoObstacles)
+						{
+							if (iCopyMaster != -1)
+							{
+								g_iPlayerStaticMode[client][iCopyMaster] = Static_Increase;
+							}
+							else
+							{
+								g_iPlayerStaticMode[client][i] = Static_Increase;
+							}
+						}
 					}
 				}
 				
-				// Determine player kill conditions.
-				if (g_flPlayerSeesSlenderMeter[client] >= 1.0 ||
-				(GetVectorDistance(myPos, flSlenderPos) <= GetProfileFloat(sProfile, "kill_radius") && (SlenderKillsOnNear(i) && IsPointVisibleToPlayer(client, endPos, false, SlenderUsesBlink(i)))))
+				// Process death cam sequence conditions
+				if (SlenderKillsOnNear(i))
 				{
-					g_flSlenderLastKill[i] = GetGameTime();
-					SubtractVectors(endPos, g_flSlenderVisiblePos[i], endPos);
-					
-					if (g_flPlayerSeesSlenderMeter[client] >= 1.0)
+					if (g_flPlayerStaticAmount[client] >= 1.0 ||
+						GetVectorDistance(flMyPos, flSlenderPos) <= g_flSlenderInstaKillRange[i])
 					{
-						ClientStartDeathCam(client, g_iPlayerStaticMaster[client], endPos);
-					}
-					else
-					{
-						ClientStartDeathCam(client, i, endPos);
+						new bool:bKillPlayer = true;
+						if (g_flPlayerStaticAmount[client] < 1.0)
+						{
+							bKillPlayer = IsPointVisibleToPlayer(client, flSlenderEyePos, false, SlenderUsesBlink(i));
+						}
+						
+						if (!bKillPlayer) bKillPlayer = IsPointVisibleToPlayer(client, flSlenderOBBCenterPos, false, SlenderUsesBlink(i));
+						
+						if (bKillPlayer)
+						{
+							g_flSlenderLastKill[i] = GetGameTime();
+							
+							if (g_flPlayerStaticAmount[client] >= 1.0)
+							{
+								ClientStartDeathCam(client, SlenderGetFromID(g_iPlayerStaticMaster[client]), flSlenderPos);
+							}
+							else
+							{
+								ClientStartDeathCam(client, i, flSlenderPos);
+							}
+						}
 					}
 				}
 			}
 		}
-		else
-		{
-			g_bPlayerStatic[client][i] = true;
-		}
 		
+		new iMaster = SlenderGetFromID(g_iSlenderCopyMaster[i]);
+		if (iMaster == -1) iMaster = i;
+		
+		// Boss visiblity.
 		if (g_bPlayerSeesSlender[client][i] && !bWasSeeingSlender[i])
 		{
-			g_flPlayerSeesSlenderLastTime[client][i] = GetGameTime();
+			g_flPlayerSeesSlenderLastTime[client][iMaster] = GetGameTime();
 			
-			if ((GetGameTime() - g_flPlayerSeesSlenderLastTime2[client][i]) > GetProfileFloat(sProfile, "scare_cooldown"))
+			if (GetGameTime() >= g_flPlayerScareNextTime[client][iMaster])
 			{
-				if (GetVectorDistance(myPos, endPos) <= GetProfileFloat(sProfile, "scare_radius"))
+				if (GetVectorDistance(flMyPos, flSlenderPos) <= g_flSlenderScareRadius[i])
 				{
-					ClientPerformScare(client, i);
+					ClientPerformScare(client, iMaster);
 					
-					if (SlenderHasAttribute(i, "ignite player on scare"))
+					if (SlenderHasAttribute(iMaster, "ignite player on scare"))
 					{
-						new Float:flValue = SlenderGetAttributeValue(i, "ignite player on scare");
+						new Float:flValue = SlenderGetAttributeValue(iMaster, "ignite player on scare");
 						if (flValue > 0.0) TF2_IgnitePlayer(client, client);
 					}
+				}
+				else
+				{
+					g_flPlayerScareNextTime[client][iMaster] = GetGameTime() + GetProfileFloat(sProfile, "scare_cooldown");
 				}
 			}
 			
@@ -1476,66 +1821,264 @@ ClientProcessVisibility(client)
 		}
 		else if (!g_bPlayerSeesSlender[client][i] && bWasSeeingSlender[i])
 		{
-			g_flPlayerSeesSlenderLastTime2[client][i] = GetGameTime();
+			g_flPlayerScareLastTime[client][iMaster] = GetGameTime();
 			
 			Call_StartForward(fOnClientLooksAwayFromBoss);
 			Call_PushCell(client);
 			Call_PushCell(i);
 			Call_Finish();
 		}
+		
+		if (g_bPlayerSeesSlender[client][i])
+		{
+			if (GetGameTime() >= g_flPlayerSightSoundNextTime[client][iMaster])
+			{
+				ClientPerformSightSound(client, i);
+			}
+		}
+		
+		if (g_iPlayerStaticMode[client][i] == Static_Increase &&
+			iOldStaticMode[i] != Static_Increase)
+		{
+			if (g_iSlenderFlags[i] & SFF_HASSTATICLOOPLOCALSOUND)
+			{
+				decl String:sLoopSound[PLATFORM_MAX_PATH];
+				GetRandomStringFromProfile(sProfile, "sound_static_loop_local", sLoopSound, sizeof(sLoopSound), 1);
+				
+				if (sLoopSound[0])
+				{
+					EmitSoundToClient(client, sLoopSound, iBoss, SNDCHAN_STATIC, GetProfileNum(sProfile, "sound_static_loop_local_level", SNDLEVEL_NORMAL), SND_CHANGEVOL, 1.0);
+					ClientAddStress(client, 0.03);
+				}
+				else
+				{
+					LogError("Warning! Boss %s supports static loop local sounds, but was given a blank sound path!", sProfile);
+				}
+			}
+		}
+		else if (g_iPlayerStaticMode[client][i] != Static_Increase &&
+			iOldStaticMode[i] == Static_Increase)
+		{
+			if (g_iSlenderFlags[i] & SFF_HASSTATICLOOPLOCALSOUND)
+			{
+				if (iBoss && iBoss != INVALID_ENT_REFERENCE)
+				{
+					decl String:sLoopSound[PLATFORM_MAX_PATH];
+					GetRandomStringFromProfile(sProfile, "sound_static_loop_local", sLoopSound, sizeof(sLoopSound), 1);
+					
+					if (sLoopSound[0])
+					{
+						EmitSoundToClient(client, sLoopSound, iBoss, SNDCHAN_STATIC, _, SND_CHANGEVOL | SND_STOP, 0.0);
+					}
+				}
+			}
+		}
 	}
 	
 	// Initialize static timers.
-	new iBossLastStatic = g_iPlayerStaticMaster[client];
-	new iBossNewStatic = iBossLastStatic;
+	new iBossLastStatic = SlenderGetFromID(g_iPlayerStaticMaster[client]);
+	new iBossNewStatic = -1;
+	if (iBossLastStatic != -1 && g_iPlayerStaticMode[client][iBossLastStatic] == Static_Increase)
+	{
+		iBossNewStatic = iBossLastStatic;
+	}
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		// Determine new static rates.
-		if (!g_bPlayerStatic[client][i]) continue;
+		new iStaticMode = g_iPlayerStaticMode[client][i];
 		
-		if (iBossLastStatic < 0 || !g_strSlenderProfile[iBossLastStatic][0] || !g_bPlayerStatic[client][iBossLastStatic] || g_flSlenderAnger[iBossLastStatic] < g_flSlenderAnger[i])
+		// Determine new static rates.
+		if (iStaticMode != Static_Increase) continue;
+		
+		if (iBossLastStatic == -1 || 
+			g_iPlayerStaticMode[client][iBossLastStatic] != Static_Increase || 
+			g_flSlenderAnger[i] > g_flSlenderAnger[iBossLastStatic])
 		{
 			iBossNewStatic = i;
 		}
 	}
 	
-	g_iPlayerStaticMaster[client] = iBossNewStatic;
-	
 	if (iBossNewStatic != -1)
 	{
-		new Float:flStaticIncreaseRate = GetProfileFloat(g_strSlenderProfile[iBossNewStatic], "static_rate");
-		new Float:flStaticDecreaseRate = GetProfileFloat(g_strSlenderProfile[iBossNewStatic], "static_rate_decay");
-	
-		decl String:sBuffer[PLATFORM_MAX_PATH];
-		GetRandomStringFromProfile(g_strSlenderProfile[iBossNewStatic], "sound_static", sBuffer, sizeof(sBuffer), 1);
-		if (sBuffer[0])
+		new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossNewStatic]);
+		if (iCopyMaster != -1)
 		{
-			strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), sBuffer);
+			iBossNewStatic = iCopyMaster;
+			g_iPlayerStaticMaster[client] = g_iSlenderID[iCopyMaster];
 		}
-		
-		if (g_bPlayerStatic[client][iBossNewStatic] && (!bWasStatic[iBossNewStatic]))
+		else
 		{
-			new Float:flStaticRate = flStaticIncreaseRate / (g_flRoundDifficultyModifier * g_flSlenderAnger[iBossNewStatic]);
-			g_hPlayerStaticTimer[client][iBossNewStatic] = CreateTimer(flStaticRate, Timer_PlayerSeesSlenderIncrease, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-			TriggerTimer(g_hPlayerStaticTimer[client][iBossNewStatic], true);
-		}
-		else if (!g_bPlayerStatic[client][iBossNewStatic] && (bWasStatic[iBossNewStatic]))
-		{
-			new Float:flStaticRate = flStaticDecreaseRate * g_flSlenderAnger[iBossNewStatic];
-			g_hPlayerStaticTimer[client][iBossNewStatic] = CreateTimer(flStaticRate, Timer_PlayerSeesSlenderDecay, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-			TriggerTimer(g_hPlayerStaticTimer[client][iBossNewStatic], true);
-		}
-		
-		if (iBossLastStatic != -1 && iBossLastStatic != iBossNewStatic)
-		{
-			// Cross-fade out the static sounds from the old boss.
-			g_flPlayerStaticLastMeter[client][iBossLastStatic] = g_flPlayerSeesSlenderMeter[client];
-			g_flPlayerStaticLastTime[client][iBossLastStatic] = GetGameTime();
-			g_hPlayerStaticTimer[client][iBossLastStatic] = CreateTimer(0.05, Timer_PlayerFadeOutSoundForSlender, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-			TriggerTimer(g_hPlayerStaticTimer[client][iBossLastStatic], true);
+			g_iPlayerStaticMaster[client] = g_iSlenderID[iBossNewStatic];
 		}
 	}
+	else
+	{
+		g_iPlayerStaticMaster[client] = -1;
+	}
+	
+	if (iBossNewStatic != iBossLastStatic)
+	{
+		if (!StrEqual(g_strPlayerLastStaticSound[client], g_strPlayerStaticSound[client], false))
+		{
+			// Stop last-last static sound entirely.
+			if (g_strPlayerLastStaticSound[client][0])
+			{
+				StopSound(client, SNDCHAN_STATIC, g_strPlayerLastStaticSound[client]);
+			}
+		}
+		
+		// Move everything down towards the last arrays.
+		if (g_strPlayerStaticSound[client][0])
+		{
+			strcopy(g_strPlayerLastStaticSound[client], sizeof(g_strPlayerLastStaticSound[]), g_strPlayerStaticSound[client]);
+		}
+		
+		if (iBossNewStatic == -1)
+		{
+			// No one is the static master.
+			g_hPlayerStaticTimer[client] = CreateTimer(g_flPlayerStaticDecreaseRate[client], 
+				Timer_ClientDecreaseStatic, 
+				GetClientUserId(client), 
+				TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+				
+			TriggerTimer(g_hPlayerStaticTimer[client], true);
+		}
+		else
+		{
+			strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
+			
+			new String:sStaticSound[PLATFORM_MAX_PATH];
+			GetRandomStringFromProfile(g_strSlenderProfile[iBossNewStatic], "sound_static", sStaticSound, sizeof(sStaticSound), 1);
+			
+			if (sStaticSound[0]) 
+			{
+				strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), sStaticSound);
+			}
+			
+			// Cross-fade out the static sounds.
+			g_flPlayerLastStaticVolume[client] = g_flPlayerStaticAmount[client];
+			g_flPlayerLastStaticTime[client] = GetGameTime();
+			
+			g_hPlayerLastStaticTimer[client] = CreateTimer(0.05, 
+				Timer_ClientFadeOutLastStaticSound, 
+				GetClientUserId(client), 
+				TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			
+			TriggerTimer(g_hPlayerLastStaticTimer[client], true);
+			
+			// Start up our own static timer.
+			new Float:flStaticIncreaseRate = GetProfileFloat(g_strSlenderProfile[iBossNewStatic], "static_rate") / g_flRoundDifficultyModifier;
+			new Float:flStaticDecreaseRate = GetProfileFloat(g_strSlenderProfile[iBossNewStatic], "static_rate_decay");
+			
+			g_flPlayerStaticIncreaseRate[client] = flStaticIncreaseRate;
+			g_flPlayerStaticDecreaseRate[client] = flStaticDecreaseRate;
+			
+			g_hPlayerStaticTimer[client] = CreateTimer(flStaticIncreaseRate, 
+				Timer_ClientIncreaseStatic, 
+				GetClientUserId(client), 
+				TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			
+			TriggerTimer(g_hPlayerStaticTimer[client], true);
+		}
+	}
+}
+
+public Action:Timer_ClientIncreaseStatic(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerStaticTimer[client]) return Plugin_Stop;
+	
+	g_flPlayerStaticAmount[client] += 0.05;
+	if (g_flPlayerStaticAmount[client] > 1.0) g_flPlayerStaticAmount[client] = 1.0;
+	
+	if (g_strPlayerStaticSound[client][0])
+	{
+		EmitSoundToClient(client, g_strPlayerStaticSound[client], _, SNDCHAN_STATIC, SNDLEVEL_NONE, SND_CHANGEVOL, g_flPlayerStaticAmount[client]);
+		
+		if (g_flPlayerStaticAmount[client] >= 0.5) ClientAddStress(client, 0.03);
+		else
+		{
+			ClientAddStress(client, 0.02);
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Timer_ClientDecreaseStatic(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerStaticTimer[client]) return Plugin_Stop;
+	
+	g_flPlayerStaticAmount[client] -= 0.05;
+	if (g_flPlayerStaticAmount[client] < 0.0) g_flPlayerStaticAmount[client] = 0.0;
+	
+	if (g_strPlayerLastStaticSound[client][0])
+	{
+		new Float:flVolume = g_flPlayerStaticAmount[client];
+		if (flVolume > 0.0)
+		{
+			EmitSoundToClient(client, g_strPlayerLastStaticSound[client], _, SNDCHAN_STATIC, SNDLEVEL_NONE, SND_CHANGEVOL, flVolume);
+		}
+	}
+	
+	if (g_flPlayerStaticAmount[client] <= 0.0)
+	{
+		// I've done my job; no point to keep on doing it.
+		StopSound(client, SNDCHAN_STATIC, g_strPlayerLastStaticSound[client]);
+		g_hPlayerStaticTimer[client] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Timer_ClientFadeOutLastStaticSound(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerLastStaticTimer[client]) return Plugin_Stop;
+	
+	if (StrEqual(g_strPlayerLastStaticSound[client], g_strPlayerStaticSound[client], false)) 
+	{
+		// Wait, the player's current static sound is the same one we're stopping. Abort!
+		g_hPlayerLastStaticTimer[client] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	if (g_strPlayerLastStaticSound[client][0])
+	{
+		new Float:flDiff = (GetGameTime() - g_flPlayerLastStaticTime[client]) / 1.0;
+		if (flDiff > 1.0) flDiff = 1.0;
+		
+		new Float:flVolume = g_flPlayerLastStaticVolume[client] - flDiff;
+		if (flVolume < 0.0) flVolume = 0.0;
+		
+		if (flVolume <= 0.0)
+		{
+			// I've done my job; no point to keep on doing it.
+			StopSound(client, SNDCHAN_STATIC, g_strPlayerLastStaticSound[client]);
+			g_hPlayerLastStaticTimer[client] = INVALID_HANDLE;
+			return Plugin_Stop;
+		}
+		else
+		{
+			EmitSoundToClient(client, g_strPlayerLastStaticSound[client], _, SNDCHAN_STATIC, SNDLEVEL_NONE, SND_CHANGEVOL, flVolume);
+		}
+	}
+	else
+	{
+		// I've done my job; no point to keep on doing it.
+		g_hPlayerLastStaticTimer[client] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
 }
 
 stock ClientResetFlashlight(client)
@@ -1965,7 +2508,7 @@ ClientResetProxy(client, bool:bResetFull=true)
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetProxy(%d)", client);
 #endif
 
-	new iOldMaster = g_iPlayerProxyMaster[client];
+	new iOldMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
 	new String:sOldProfileName[64];
 	if (iOldMaster >= 0)
 	{
@@ -2052,7 +2595,7 @@ public Action:Timer_ClientForceProxy(Handle:timer, any:userid)
 			{
 				if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 				if (!g_bPlayerProxy[iClient]) continue;
-				if (g_iPlayerProxyMaster[iClient] != iBossIndex) continue;
+				if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) != iBossIndex) continue;
 				
 				iNumProxies++;
 			}
@@ -2126,7 +2669,7 @@ public Menu_ProxyAsk(Handle:menu, MenuAction:action, param1, param2)
 					{
 						if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 						if (!g_bPlayerProxy[iClient]) continue;
-						if (g_iPlayerProxyMaster[iClient] != iBossIndex) continue;
+						if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) != iBossIndex) continue;
 						
 						iNumProxies++;
 					}
@@ -2166,8 +2709,8 @@ public Action:Timer_ClientProxyAvailable(Handle:timer, any:userid)
 
 ClientEnableProxy(client, iBossIndex)
 {
-	if (!g_strSlenderProfile[iBossIndex][0]) return;
-	if (!GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies")) return;
+	if (g_iSlenderID[iBossIndex] == -1) return;
+	if (!(g_iSlenderFlags[iBossIndex] & SFF_PROXIES)) return;
 	if (g_bPlayerProxy[client]) return;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
@@ -2182,7 +2725,7 @@ ClientEnableProxy(client, iBossIndex)
 	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
 	
 	g_bPlayerProxy[client] = true;
-	g_iPlayerProxyMaster[client] = iBossIndex;
+	g_iPlayerProxyMaster[client] = g_iSlenderID[iBossIndex];
 	g_iPlayerProxyControl[client] = 100;
 	g_flPlayerProxyControlRate[client] = GetProfileFloat(sProfile, "proxies_controldrainrate");
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
@@ -2202,7 +2745,6 @@ ClientEnableProxy(client, iBossIndex)
 		if (iClassCount)
 		{
 			TF2_SetPlayerClass(client, TF2_GetClass(sAllowedClassesList[0]), _, false);
-			TF2_RegeneratePlayer(client);
 			
 			new iMaxHealth = GetEntProp(client, Prop_Send, "m_iHealth");
 			TF2_RegeneratePlayer(client);
@@ -2216,6 +2758,8 @@ ClientEnableProxy(client, iBossIndex)
 	EmitSoundToClient(client, "weapons/teleporter_send.wav", _, SNDCHAN_STATIC);
 	
 	ClientActivateUltravision(client);
+	
+	CreateTimer(0.33, Timer_ApplyCustomModel, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 	
 	Call_StartForward(fOnClientSpawnedAsProxy);
 	Call_PushCell(client);
@@ -2263,8 +2807,12 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 	
 	g_bPlayerHasProxyGlow[client] = true;
 	
-	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
+	new String:sBuffer[PLATFORM_MAX_PATH];
+	GetEntPropString(client, Prop_Send, "m_iszCustomModel", sBuffer, sizeof(sBuffer));
+	if (!sBuffer[0])
+	{
+		GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
+	}
 	
 	if (!sBuffer[0]) return false;
 	
@@ -2685,25 +3233,103 @@ ClientGhostModeNextTarget(client)
 
 ClientPerformScare(client, iBossIndex)
 {
-	g_flPlayerLastScareFromBoss[client][iBossIndex] = GetGameTime();
-	
-	decl String:buffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_scare_player", buffer, sizeof(buffer));
-	if (buffer[0])
+	if (g_iSlenderID[iBossIndex] == -1)
 	{
-		EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+		LogError("Could not perform scare on client %d: boss does not exist!", client);
+		return;
 	}
 	
-	// Deprecated.
-	/*
-	if (GetConVarBool(g_cvLegacyMode))
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	
+	g_flPlayerScareLastTime[client][iBossIndex] = GetGameTime();
+	g_flPlayerScareNextTime[client][iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "scare_cooldown");
+	
+	// See how much Sanity should be drained from a scare.
+	new Float:flStaticAmount = GetProfileFloat(sProfile, "scare_static_amount", 0.0);
+	g_flPlayerStaticAmount[client] += flStaticAmount;
+	if (g_flPlayerStaticAmount[client] > 1.0) g_flPlayerStaticAmount[client] = 1.0;
+	
+	decl String:sScareSound[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(sProfile, "sound_scare_player", sScareSound, sizeof(sScareSound));
+	
+	if (sScareSound[0])
 	{
+		EmitSoundToClient(client, sScareSound, _, MUSIC_CHAN, SNDLEVEL_NONE);
+		
+		if (g_iSlenderFlags[iBossIndex] & SFF_HASSIGHTSOUNDS)
+		{
+			new Float:flCooldownMin = GetProfileFloat(sProfile, "sound_sight_cooldown_min", 8.0);
+			new Float:flCooldownMax = GetProfileFloat(sProfile, "sound_sight_cooldown_max", 14.0);
+			
+			g_flPlayerSightSoundNextTime[client][iBossIndex] = GetGameTime() + GetRandomFloat(flCooldownMin, flCooldownMax);
+		}
+		
+		if (g_flPlayerStress[client] > 0.4)
+		{
+			ClientAddStress(client, 0.4);
+		}
+		else
+		{
+			ClientAddStress(client, 0.66);
+		}
 	}
 	else
 	{
-		TF2_AddCondition(client, TFCond_SpeedBuffAlly, 3.0);
+		if (g_flPlayerStress[client] > 0.4)
+		{
+			ClientAddStress(client, 0.3);
+		}
+		else
+		{
+			ClientAddStress(client, 0.45);
+		}
 	}
-	*/
+}
+
+ClientPerformSightSound(client, iBossIndex)
+{
+	if (g_iSlenderID[iBossIndex] == -1)
+	{
+		LogError("Could not perform sight sound on client %d: boss does not exist!", client);
+		return;
+	}
+	
+	if (!(g_iSlenderFlags[iBossIndex] & SFF_HASSIGHTSOUNDS)) return;
+	
+	new iMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]);
+	if (iMaster == -1) iMaster = iBossIndex;
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
+	
+	decl String:sSightSound[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(sProfile, "sound_sight", sSightSound, sizeof(sSightSound));
+	
+	if (sSightSound[0])
+	{
+		EmitSoundToClient(client, sSightSound, _, MUSIC_CHAN, SNDLEVEL_NONE);
+		
+		new Float:flCooldownMin = GetProfileFloat(sProfile, "sound_sight_cooldown_min", 8.0);
+		new Float:flCooldownMax = GetProfileFloat(sProfile, "sound_sight_cooldown_max", 14.0);
+		
+		g_flPlayerSightSoundNextTime[client][iMaster] = GetGameTime() + GetRandomFloat(flCooldownMin, flCooldownMax);
+		
+		decl Float:flBossPos[3], Float:flMyPos[3];
+		new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+		GetClientAbsOrigin(client, flMyPos);
+		GetEntPropVector(iBoss, Prop_Data, "m_vecAbsOrigin", flBossPos);
+		new Float:flDistUnComfortZone = 400.0;
+		new Float:flBossDist = GetVectorDistance(flMyPos, flBossPos);
+		
+		new Float:flStressScalar = 1.0 + (flDistUnComfortZone / flBossDist);
+		
+		ClientAddStress(client, 0.1 * flStressScalar);
+	}
+	else
+	{
+		LogError("Warning! %s supports sight sounds, but was given a blank sound!", sProfile);
+	}
 }
 
 ClientResetScare(client)
@@ -2714,7 +3340,8 @@ ClientResetScare(client)
 
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		g_flPlayerLastScareFromBoss[client][i] = -1.0;
+		g_flPlayerScareNextTime[client][i] = -1.0;
+		g_flPlayerScareLastTime[client][i] = -1.0;
 	}
 	
 #if defined DEBUG
@@ -2765,9 +3392,12 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 		// Only do something if the player is NOT stuck.
 		new Float:flDistFromLastPosition = GetVectorDistance(g_flPlayerCampingLastPosition[client], flPos);
 		new Float:flDistFromClosestBoss = 9999999.0;
+		new iClosestBoss = -1;
 		
 		for (new i = 0; i < MAX_BOSSES; i++)
 		{
+			if (g_iSlenderID[i] == -1) continue;
+			
 			new iSlender = EntRefToEntIndex(g_iSlender[i]);
 			if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
 			
@@ -2777,6 +3407,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 			new Float:flDist = GetVectorDistance(flSlenderPos, flPos);
 			if (flDist < flDistFromClosestBoss)
 			{
+				iClosestBoss = i;
 				flDistFromClosestBoss = flDist;
 			}
 		}
@@ -2784,8 +3415,8 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 		if (GetConVarBool(g_cvCampingEnabled) && 
 			!g_bRoundGrace && 
 			!IsSpaceOccupied(flPos, flMins, flMaxs, client) && 
-			g_flPlayerSeesSlenderMeter[client] <= GetConVarFloat(g_cvCampingNoStrikeSanity) && 
-			flDistFromClosestBoss >= GetConVarFloat(g_cvCampingNoStrikeBossDistance) &&
+			g_flPlayerStaticAmount[client] <= GetConVarFloat(g_cvCampingNoStrikeSanity) && 
+			(iClosestBoss == -1 || flDistFromClosestBoss >= GetConVarFloat(g_cvCampingNoStrikeBossDistance)) &&
 			flDistFromLastPosition <= GetConVarFloat(g_cvCampingMinDistance))
 		{
 			g_iPlayerCampingStrikes[client]++;
@@ -3003,8 +3634,15 @@ stock Float:GetClientBlinkRate(client)
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (g_bPlayerSeesSlender[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_look_rate_multiply", 1.0);
-		else if (g_bPlayerStatic[client][i]) flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_static_rate_multiply", 1.0);
+		if (g_bPlayerSeesSlender[client][i]) 
+		{
+			flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_look_rate_multiply", 1.0);
+		}
+		
+		else if (g_iPlayerStaticMode[client][i] == Static_Increase)
+		{
+			flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_static_rate_multiply", 1.0);
+		}
 	}
 	
 	if (TF2_GetPlayerClass(client) == TFClass_Sniper) flValue *= 1.4;
@@ -3041,12 +3679,23 @@ stock Float:GetClientBlinkRate(client)
 //	SCREEN OVERLAY FUNCTIONS
 //	==========================================================
 
+ClientAddStress(client, Float:flStressAmount)
+{
+	g_flPlayerStress[client] += flStressAmount;
+	if (g_flPlayerStress[client] < 0.0) g_flPlayerStress[client] = 0.0;
+	if (g_flPlayerStress[client] > 1.0) g_flPlayerStress[client] = 1.0;
+	
+	//PrintCenterText(client, "g_flPlayerStress[%d] = %f", client, g_flPlayerStress[client]);
+	
+	SlenderOnClientStressUpdate(client);
+}
+
 stock ClientResetOverlay(client)
 {
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetOverlay(%d)", client);
 #endif
-
+	
 	g_hPlayerOverlayCheck[client] = INVALID_HANDLE;
 	ClientCommand(client, "r_screenoverlay \"\"");
 	
@@ -3073,7 +3722,6 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	}
 	else if (g_bRoundWarmup || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !g_bPlayerGhostMode[client])
 	{
-		//ClientCommand(client, "r_screenoverlay \"\"");
 		return Plugin_Continue;
 	}
 	else
@@ -3095,6 +3743,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 	new iOldMusicFlags = g_iPlayerMusicFlags[client];
 	new iChasingBoss = -1;
 	new iChasingSeeBoss = -1;
+	new iAlertBoss = -1;
 	
 	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) 
 	{
@@ -3109,8 +3758,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
 		{
 			GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-			if (StrEqual(sName, "sf2_escape_custommusic", false) ||
-				StrEqual(sName, "slender_logic_escape_music", false))
+			if (StrEqual(sName, "sf2_escape_custommusic", false))
 			{
 				bPlayMusicOnEscape = false;
 				break;
@@ -3157,13 +3805,20 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		if (iPageRange != 2) ClientRemoveMusicFlag(client, MUSICF_PAGES25PERCENT);
 		if (iPageRange != 3) ClientRemoveMusicFlag(client, MUSICF_PAGES50PERCENT);
 		if (iPageRange != 4) ClientRemoveMusicFlag(client, MUSICF_PAGES75PERCENT);
-		else if (g_iPageCount == g_iPageMax && g_bRoundMustEscape && !bPlayMusicOnEscape) ClientRemoveMusicFlag(client, MUSICF_PAGES75PERCENT);
 		
-		// Holy crap, are we getting chased by something? Let's check.
+		if (g_iPageCount == g_iPageMax && g_bRoundMustEscape && !bPlayMusicOnEscape) 
+		{
+			ClientRemoveMusicFlag(client, MUSICF_PAGES75PERCENT);
+			g_iPlayerPageMusicMaster[client] = INVALID_ENT_REFERENCE;
+		}
+		
 		new iOldChasingBoss = g_iPlayerChaseMusicMaster[client];
 		new iOldChasingSeeBoss = g_iPlayerChaseMusicSeeMaster[client];
+		new iOldAlertBoss = g_iPlayerAlertMusicMaster[client];
+		
 		new Float:flAnger = -1.0;
 		new Float:flSeeAnger = -1.0;
+		new Float:flAlertAnger = -1.0;
 		
 		decl Float:flBuffer[3], Float:flBuffer2[3], Float:flBuffer3[3];
 		for (new i = 0; i < MAX_BOSSES; i++)
@@ -3172,15 +3827,22 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 			if (g_iSlenderType[i] != 2) continue;
 			if (SlenderArrayIndexToEntIndex(i) == INVALID_ENT_REFERENCE) continue;
 			
+			GetClientAbsOrigin(client, flBuffer);
+			SlenderGetAbsOrigin(i, flBuffer3);
+			
 			new iTarget = EntRefToEntIndex(g_iSlenderTarget[i]);
 			if (iTarget != -1)
 			{
-				GetClientAbsOrigin(client, flBuffer);
 				GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flBuffer2);
-				SlenderGetAbsOrigin(i, flBuffer3);
 				
-				if ((g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK || g_iSlenderState[i] == STATE_STUN) && !(g_iSlenderFlags[i] & SFF_MARKEDASFAKE) && (iTarget == client || GetVectorDistance(flBuffer, flBuffer2) <= 850.0 || GetVectorDistance(flBuffer, flBuffer3) <= 512.0))
+				if ((g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK || g_iSlenderState[i] == STATE_STUN) &&
+					!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE) && 
+					(iTarget == client || GetVectorDistance(flBuffer, flBuffer2) <= 850.0 || GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0))
 				{
+					decl String:sPath[PLATFORM_MAX_PATH];
+					GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sPath, sizeof(sPath), 1);
+					if (!sPath[0]) continue;
+				
 					if (g_flSlenderAnger[i] > flAnger)
 					{
 						flAnger = g_flSlenderAnger[i];
@@ -3194,6 +3856,25 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 						{
 							flSeeAnger = g_flSlenderAnger[i];
 							iChasingSeeBoss = i;
+						}
+					}
+				}
+			}
+			
+			if (g_iSlenderState[i] == STATE_ALERT)
+			{
+				decl String:sPath[PLATFORM_MAX_PATH];
+				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sPath, sizeof(sPath), 1);
+				if (!sPath[0]) continue;
+			
+				if (!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE))
+				{
+					if (GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0)
+					{
+						if (g_flSlenderAnger[i] > flAlertAnger)
+						{
+							flAlertAnger = g_flSlenderAnger[i];
+							iAlertBoss = i;
 						}
 					}
 				}
@@ -3223,6 +3904,18 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 				ClientRemoveMusicFlag(client, MUSICF_CHASEVISIBLE);
 			}
 		}
+		
+		if (iAlertBoss != iOldAlertBoss)
+		{
+			if (iAlertBoss != -1)
+			{
+				ClientAddMusicFlag(client, MUSICF_ALERT);
+			}
+			else
+			{
+				ClientRemoveMusicFlag(client, MUSICF_ALERT);
+			}
+		}
 	}
 	
 	if (IsValidClient(client))
@@ -3231,6 +3924,8 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		new bool:bChase = ClientHasMusicFlag(client, MUSICF_CHASE);
 		new bool:bWasChaseSee = ClientHasMusicFlag2(iOldMusicFlags, MUSICF_CHASEVISIBLE);
 		new bool:bChaseSee = ClientHasMusicFlag(client, MUSICF_CHASEVISIBLE);
+		new bool:bAlert = ClientHasMusicFlag(client, MUSICF_ALERT);
+		new bool:bWasAlert = ClientHasMusicFlag2(iOldMusicFlags, MUSICF_ALERT);
 		
 		// Custom system.
 		if (GetArraySize(g_hPageMusicRanges) > 0) 
@@ -3256,7 +3951,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 						}
 						else
 						{
-							ClientMusicStart(client, sPath, _, MUSIC_PAGE_VOLUME, bChase);
+							ClientMusicStart(client, sPath, _, MUSIC_PAGE_VOLUME, bChase || bAlert);
 						}
 						
 						if (iOldPageMusicMaster && iOldPageMusicMaster != INVALID_ENT_REFERENCE)
@@ -3290,7 +3985,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		}
 		else if ((bInitialize || !ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES1PERCENT)) && ClientHasMusicFlag(client, MUSICF_PAGES1PERCENT))
 		{
-			ClientMusicStart(client, MUSIC_GOTPAGES1_SOUND, _, MUSIC_PAGE_VOLUME, bChase);
+			ClientMusicStart(client, MUSIC_GOTPAGES1_SOUND, _, MUSIC_PAGE_VOLUME, bChase || bAlert);
 		}
 		
 		if ((bInitialize || ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES25PERCENT)) && !ClientHasMusicFlag(client, MUSICF_PAGES25PERCENT))
@@ -3299,7 +3994,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		}
 		else if ((bInitialize || !ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES25PERCENT)) && ClientHasMusicFlag(client, MUSICF_PAGES25PERCENT))
 		{
-			ClientMusicStart(client, MUSIC_GOTPAGES2_SOUND, _, MUSIC_PAGE_VOLUME, bChase);
+			ClientMusicStart(client, MUSIC_GOTPAGES2_SOUND, _, MUSIC_PAGE_VOLUME, bChase || bAlert);
 		}
 		
 		if ((bInitialize || ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES50PERCENT)) && !ClientHasMusicFlag(client, MUSICF_PAGES50PERCENT))
@@ -3308,7 +4003,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		}
 		else if ((bInitialize || !ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES50PERCENT)) && ClientHasMusicFlag(client, MUSICF_PAGES50PERCENT))
 		{
-			ClientMusicStart(client, MUSIC_GOTPAGES3_SOUND, _, MUSIC_PAGE_VOLUME, bChase);
+			ClientMusicStart(client, MUSIC_GOTPAGES3_SOUND, _, MUSIC_PAGE_VOLUME, bChase || bAlert);
 		}
 		
 		if ((bInitialize || ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES75PERCENT)) && !ClientHasMusicFlag(client, MUSICF_PAGES75PERCENT))
@@ -3317,7 +4012,23 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		}
 		else if ((bInitialize || !ClientHasMusicFlag2(iOldMusicFlags, MUSICF_PAGES75PERCENT)) && ClientHasMusicFlag(client, MUSICF_PAGES75PERCENT))
 		{
-			ClientMusicStart(client, MUSIC_GOTPAGES4_SOUND, _, MUSIC_PAGE_VOLUME, bChase);
+			ClientMusicStart(client, MUSIC_GOTPAGES4_SOUND, _, MUSIC_PAGE_VOLUME, bChase || bAlert);
+		}
+		
+		new iMainMusicState = 0;
+		
+		if (bAlert != bWasAlert || iAlertBoss != g_iPlayerAlertMusicMaster[client])
+		{
+			if (bAlert && !bChase)
+			{
+				ClientAlertMusicStart(client, iAlertBoss);
+				if (!bWasAlert) iMainMusicState = -1;
+			}
+			else
+			{
+				ClientAlertMusicStop(client, g_iPlayerAlertMusicMaster[client]);
+				if (!bChase && bWasAlert) iMainMusicState = 1;
+			}
 		}
 		
 		if (bChase != bWasChase || iChasingBoss != g_iPlayerChaseMusicMaster[client])
@@ -3325,12 +4036,31 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 			if (bChase)
 			{
 				ClientMusicChaseStart(client, iChasingBoss);
-				if (!bWasChase) ClientMusicStop(client);
+				
+				if (!bWasChase)
+				{
+					iMainMusicState = -1;
+					
+					if (bAlert)
+					{
+						ClientAlertMusicStop(client, g_iPlayerAlertMusicMaster[client]);
+					}
+				}
 			}
 			else
 			{
 				ClientMusicChaseStop(client, g_iPlayerChaseMusicMaster[client]);
-				if (bWasChase) ClientMusicStart(client, g_strPlayerMusic[client]);
+				if (bWasChase)
+				{
+					if (bAlert)
+					{
+						ClientAlertMusicStart(client, iAlertBoss);
+					}
+					else
+					{
+						iMainMusicState = 1;
+					}
+				}
 			}
 		}
 		
@@ -3343,6 +4073,42 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 			else
 			{
 				ClientMusicChaseSeeStop(client, g_iPlayerChaseMusicSeeMaster[client]);
+			}
+		}
+		
+		if (iMainMusicState == 1)
+		{
+			ClientMusicStart(client, g_strPlayerMusic[client], _, MUSIC_PAGE_VOLUME, bChase || bAlert);
+		}
+		else if (iMainMusicState == -1)
+		{
+			ClientMusicStop(client);
+		}
+		
+		if (bChase || bAlert)
+		{
+			new iBossToUse = -1;
+			if (bChase)
+			{
+				iBossToUse = iChasingBoss;
+			}
+			else
+			{
+				iBossToUse = iAlertBoss;
+			}
+			
+			if (iBossToUse != -1)
+			{
+				// We got some alert/chase music going on! The player's excitement will no doubt go up!
+				// Excitement, though, really depends on how close the boss is in relation to the
+				// player.
+				
+				new Float:flBossDist = SlenderGetDistanceFromPlayer(iBossToUse, client);
+				new Float:flScalar = flBossDist / 700.0
+				if (flScalar > 1.0) flScalar = 1.0;
+				new Float:flStressAdd = 0.1 * (1.0 - flScalar);
+				
+				ClientAddStress(client, flStressAdd);
 			}
 		}
 	}
@@ -3396,6 +4162,69 @@ stock ClientMusicStop(client)
 	TriggerTimer(g_hPlayerMusicTimer[client], true);
 }
 
+stock ClientAlertMusicReset(client)
+{
+	new String:sOldMusic[PLATFORM_MAX_PATH];
+	strcopy(sOldMusic, sizeof(sOldMusic), g_strPlayerAlertMusic[client]);
+	strcopy(g_strPlayerAlertMusic[client], sizeof(g_strPlayerAlertMusic[]), "");
+	if (IsClientInGame(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+	
+	g_iPlayerAlertMusicMaster[client] = -1;
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		g_hPlayerAlertMusicTimer[client][i] = INVALID_HANDLE;
+		g_flPlayerAlertMusicVolumes[client][i] = 0.0;
+		
+		if (g_strSlenderProfile[i][0])
+		{
+			if (IsClientInGame(client))
+			{
+				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sOldMusic, sizeof(sOldMusic), 1);
+				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+			}
+		}
+	}
+}
+
+stock ClientAlertMusicStart(client, iBossIndex)
+{
+	if (!IsClientInGame(client)) return;
+	
+	new iOldMaster = g_iPlayerAlertMusicMaster[client];
+	if (iOldMaster == iBossIndex) return;
+	
+	new String:sBuffer[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_alert_music", sBuffer, sizeof(sBuffer), 1);
+	
+	if (!sBuffer[0]) return;
+	
+	g_iPlayerAlertMusicMaster[client] = iBossIndex;
+	strcopy(g_strPlayerAlertMusic[client], sizeof(g_strPlayerAlertMusic[]), sBuffer);
+	g_hPlayerAlertMusicTimer[client][iBossIndex] = CreateTimer(0.01, Timer_PlayerFadeInAlertMusic, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hPlayerAlertMusicTimer[client][iBossIndex], true);
+	
+	if (iOldMaster != -1)
+	{
+		ClientAlertMusicStop(client, iOldMaster);
+	}
+}
+
+stock ClientAlertMusicStop(client, iBossIndex)
+{
+	if (!IsClientInGame(client)) return;
+	if (iBossIndex == -1) return;
+	
+	if (iBossIndex == g_iPlayerAlertMusicMaster[client])
+	{
+		g_iPlayerAlertMusicMaster[client] = -1;
+		strcopy(g_strPlayerAlertMusic[client], sizeof(g_strPlayerAlertMusic[]), "");
+	}
+	
+	g_hPlayerAlertMusicTimer[client][iBossIndex] = CreateTimer(0.01, Timer_PlayerFadeOutAlertMusic, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hPlayerAlertMusicTimer[client][iBossIndex], true);
+}
+
 stock ClientChaseMusicReset(client)
 {
 	new String:sOldMusic[PLATFORM_MAX_PATH];
@@ -3414,7 +4243,7 @@ stock ClientChaseMusicReset(client)
 		{
 			if (IsClientInGame(client))
 			{
-				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase", sOldMusic, sizeof(sOldMusic), 1);
+				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 			}
 		}
@@ -3429,7 +4258,8 @@ stock ClientMusicChaseStart(client, iBossIndex)
 	if (iOldMaster == iBossIndex) return;
 	
 	new String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase_music", sBuffer, sizeof(sBuffer), 1);
+	
 	if (!sBuffer[0]) return;
 	
 	g_iPlayerChaseMusicMaster[client] = iBossIndex;
@@ -3562,6 +4392,77 @@ public Action:Timer_PlayerFadeOutMusic(Handle:timer, any:userid)
 	return Plugin_Continue;
 }
 
+public Action:Timer_PlayerFadeInAlertMusic(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+
+	new iBossIndex = -1;
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		if (g_hPlayerAlertMusicTimer[client][i] == timer)
+		{
+			iBossIndex = i;
+			break;
+		}
+	}
+	
+	if (iBossIndex == -1) return Plugin_Stop;
+	
+	g_flPlayerAlertMusicVolumes[client][iBossIndex] += 0.07;
+	if (g_flPlayerAlertMusicVolumes[client][iBossIndex] > 1.0) g_flPlayerAlertMusicVolumes[client][iBossIndex] = 1.0;
+
+	if (g_strPlayerAlertMusic[client][0]) EmitSoundToClient(client, g_strPlayerAlertMusic[client], _, MUSIC_CHAN, _, SND_CHANGEVOL, g_flPlayerAlertMusicVolumes[client][iBossIndex]);
+	
+	if (g_flPlayerAlertMusicVolumes[client][iBossIndex] >= 1.0)
+	{
+		g_hPlayerAlertMusicTimer[client][iBossIndex] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Timer_PlayerFadeOutAlertMusic(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+
+	new iBossIndex = -1;
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		if (g_hPlayerAlertMusicTimer[client][i] == timer)
+		{
+			iBossIndex = i;
+			break;
+		}
+	}
+	
+	if (iBossIndex == -1) return Plugin_Stop;
+	
+	decl String:sBuffer[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_alert_music", sBuffer, sizeof(sBuffer), 1);
+
+	if (StrEqual(sBuffer, g_strPlayerAlertMusic[client], false))
+	{
+		g_hPlayerAlertMusicTimer[client][iBossIndex] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	g_flPlayerAlertMusicVolumes[client][iBossIndex] -= 0.07;
+	if (g_flPlayerAlertMusicVolumes[client][iBossIndex] < 0.0) g_flPlayerAlertMusicVolumes[client][iBossIndex] = 0.0;
+
+	if (sBuffer[0]) EmitSoundToClient(client, sBuffer, _, MUSIC_CHAN, _, SND_CHANGEVOL, g_flPlayerAlertMusicVolumes[client][iBossIndex]);
+	
+	if (g_flPlayerAlertMusicVolumes[client][iBossIndex] <= 0.0)
+	{
+		g_hPlayerAlertMusicTimer[client][iBossIndex] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
 public Action:Timer_PlayerFadeInChaseMusic(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
@@ -3642,7 +4543,7 @@ public Action:Timer_PlayerFadeOutChaseMusic(Handle:timer, any:userid)
 	if (iBossIndex == -1) return Plugin_Stop;
 	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase_music", sBuffer, sizeof(sBuffer), 1);
 
 	if (StrEqual(sBuffer, g_strPlayerChaseMusic[client], false))
 	{
@@ -3763,7 +4664,7 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 	{
 		if (i == client || !IsClientInGame(i)) continue;
 		
-		if (bReset || g_bRoundEnded)
+		if (bReset || g_bRoundEnded || GetConVarBool(g_cvAllChat))
 		{
 			SetListenOverride(client, i, Listen_Default);
 			continue;
@@ -3901,18 +4802,15 @@ stock ClientResetSlenderStats(client)
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetSlenderStats(%d)", client);
 #endif
-
-	g_iPlayerStaticMaster[client] = -1;
-	g_flPlayerSeesSlenderMeter[client] = 0.0;
+	
+	g_flPlayerStress[client] = 0.0;
+	g_flPlayerStressNextUpdateTime[client] = -1.0;
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		g_bPlayerSeesSlender[client][i] = false;
 		g_flPlayerSeesSlenderLastTime[client][i] = -1.0;
-		g_flPlayerSeesSlenderLastTime2[client][i] = -1.0;
-		g_hPlayerStaticTimer[client][i] = INVALID_HANDLE;
-		g_flPlayerStaticLastMeter[client][i] = 0.0;
-		g_flPlayerStaticLastTime[client][i] = -1.0;
+		g_flPlayerSightSoundNextTime[client][i] = -1.0;
 	}
 	
 #if defined DEBUG
@@ -3934,7 +4832,7 @@ ClientSaveCookies(client)
 	
 	// Save and reset our queue points.
 	decl String:s[64];
-	Format(s, sizeof(s), "%d ; %d ; %d ; %d ; %d", g_iPlayerQueuePoints[client], g_bPlayerShowHints[client], g_iPlayerMuteMode[client], g_bPlayerFlashlightProjected[client], g_bPlayerWantsTheP[client]);
+	Format(s, sizeof(s), "%d ; %d ; %d ; 0 ; %d", g_iPlayerQueuePoints[client], g_bPlayerShowHints[client], g_iPlayerMuteMode[client], g_bPlayerWantsTheP[client]);
 	SetClientCookie(client, g_hCookie, s);
 }
 
@@ -3977,9 +4875,11 @@ stock ClientViewPunch(client, const Float:angleOffset[3])
 	
 	if (!IsFakeClient(client))
 	{
+		// Latency compensation.
 		new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
-		new Float:flCalcDiff = (((1.0 / 2500.0) * Pow(flLatency, 2.0)) + ((3.0 / 50.0) * flLatency) + 2.0);
-		ScaleVector(flOffset, flCalcDiff);
+		new Float:flLatencyCalcDiff = 60.0 * Pow(flLatency, 2.0);
+		
+		for (new i = 0; i < 3; i++) flOffset[i] += (flOffset[i] * flLatencyCalcDiff);
 	}
 	
 	decl Float:flAngleVel[3];
@@ -4043,91 +4943,30 @@ stock TF2_GetClassName(TFClassType:iClass, String:sBuffer[], sBufferLen)
 	}
 }
 
+#define EF_DIMLIGHT (1 << 2)
+
 stock ClientSDKFlashlightTurnOn(client)
 {
-	if (g_hSDKPlayerFlashlightTurnOn == INVALID_HANDLE) return;
 	if (!IsValidClient(client)) return;
 	
-	SDKCall(g_hSDKPlayerFlashlightTurnOn, client);
+	new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
+	if (iEffects & EF_DIMLIGHT) return;
+
+	iEffects |= EF_DIMLIGHT;
+	
+	SetEntProp(client, Prop_Send, "m_fEffects", iEffects);
 }
 
 stock ClientSDKFlashlightTurnOff(client)
 {
-	if (g_hSDKPlayerFlashlightTurnOff == INVALID_HANDLE) return;
 	if (!IsValidClient(client)) return;
 	
-	SDKCall(g_hSDKPlayerFlashlightTurnOff, client);
-}
+	new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
+	if (!(iEffects & EF_DIMLIGHT)) return;
 
-#define SF2_PLAYER_LC_EYEANGLES 90.0
-#define SF2_PLAYER_LC_ABSPOSITION 1.25
-#define SF2_PLAYER_LC_MAXLATENCY 0.0
-
-stock bool:GetClientPredictedEyeAngles(client, Float:buffer[3])
-{
-	if (!IsValidClient(client)) return false;
+	iEffects &= ~EF_DIMLIGHT;
 	
-	GetClientEyeAngles(client, buffer);
-	if (IsFakeClient(client)) return true;
-	
-	new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
-	new Float:flMaxLatency = SF2_PLAYER_LC_MAXLATENCY;
-	if (flMaxLatency >= 0.0 && flLatency > flMaxLatency) flLatency = flMaxLatency;
-	
-	for (new i = 0; i < 3; i++) 
-	{
-		buffer[i] += (g_flPlayerEyeAngleVelocity[client][i] * flLatency * SF2_PLAYER_LC_EYEANGLES);
-		buffer[i] = AngleNormalize(buffer[i]);
-	}
-	
-	return true;
-}
-
-stock bool:GetClientPredictedEyePosition(client, Float:buffer[3])
-{
-	if (!IsValidClient(client)) return false;
-	
-	decl Float:flViewOffset[3];
-	flViewOffset[0] = GetEntPropFloat(client, Prop_Send, "m_vecViewOffset[0]");
-	flViewOffset[1] = GetEntPropFloat(client, Prop_Send, "m_vecViewOffset[1]");
-	flViewOffset[2] = GetEntPropFloat(client, Prop_Send, "m_vecViewOffset[2]");
-	GetClientPredictedAbsOrigin(client, buffer);
-	AddVectors(buffer, flViewOffset, buffer);
-	
-	return true;
-}
-
-stock bool:GetClientPredictedAbsOrigin(client, Float:buffer[3])
-{
-	if (!IsValidClient(client)) return false;
-	
-	decl Float:startPos[3];
-	GetClientAbsOrigin(client, startPos);
-	if (IsFakeClient(client)) 
-	{
-		for (new i = 0; i < 3; i++) buffer[i] = startPos[i];
-		return true;
-	}
-	
-	decl Float:flVelocity[3], Float:flMins[3], Float:flMaxs[3], Float:endPos[3];
-	GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", flVelocity);
-	GetEntPropVector(client, Prop_Send, "m_vecMins", flMins);
-	GetEntPropVector(client, Prop_Send, "m_vecMaxs", flMaxs);
-	
-	new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
-	new Float:flMaxLatency = SF2_PLAYER_LC_MAXLATENCY;
-	if (flMaxLatency >= 0.0 && flLatency > flMaxLatency) flLatency = flMaxLatency;
-	
-	for (new i = 0; i < 3; i++) 
-	{
-		endPos[i] = startPos[i] + (flVelocity[i] * flLatency * SF2_PLAYER_LC_ABSPOSITION);
-	}
-	
-	new Handle:hTrace = TR_TraceHullFilterEx(startPos, endPos, flMins, flMaxs, MASK_PLAYERSOLID, TraceRayDontHitPlayersOrEntity, client);
-	TR_GetEndPosition(buffer, hTrace);
-	CloseHandle(hTrace);
-	
-	return true;
+	SetEntProp(client, Prop_Send, "m_fEffects", iEffects);
 }
 
 stock bool:IsPointVisibleToAPlayer(const Float:pos[3], bool:bCheckFOV=true, bool:bCheckBlink=false)
@@ -4150,16 +4989,19 @@ stock bool:IsPointVisibleToPlayer(client, const Float:pos[3], bool:bCheckFOV=tru
 	if (bCheckBlink && g_bPlayerBlink[client]) return false;
 	
 	decl Float:eyePos[3];
-	GetClientPredictedEyePosition(client, eyePos);
+	GetClientEyePosition(client, eyePos);
 	
+	// Check fog, if we can.
 	if (g_offsPlayerFogCtrl != -1 && g_offsFogCtrlEnable != -1 && g_offsFogCtrlEnd != -1)
 	{
-		// Check fog.
 		new iFogEntity = GetEntDataEnt2(client, g_offsPlayerFogCtrl);
 		if (IsValidEdict(iFogEntity))
 		{
 			if (GetEntData(iFogEntity, g_offsFogCtrlEnable) &&
-			GetVectorDistance(eyePos, pos) >= GetEntDataFloat(iFogEntity, g_offsFogCtrlEnd)) return false;
+				GetVectorDistance(eyePos, pos) >= GetEntDataFloat(iFogEntity, g_offsFogCtrlEnd)) 
+			{
+				return false;
+			}
 		}
 	}
 	
@@ -4172,7 +5014,7 @@ stock bool:IsPointVisibleToPlayer(client, const Float:pos[3], bool:bCheckFOV=tru
 	if (bCheckFOV)
 	{
 		decl Float:eyeAng[3], Float:reqVisibleAng[3];
-		GetClientPredictedEyeAngles(client, eyeAng);
+		GetClientEyeAngles(client, eyeAng);
 		
 		new Float:flFOV = float(g_iPlayerDesiredFOV[client]);
 		SubtractVectors(pos, eyePos, reqVisibleAng);
@@ -4230,60 +5072,6 @@ public UTIL_ScreenFade(client, duration, time, flags, r, g, b, a)
 stock bool:IsValidClient(client)
 {
 	return bool:(client > 0 && client <= MaxClients && IsClientInGame(client));
-}
-
-stock ClientSpawnSoundEffect(const Float:flOrigin[3], Float:flScale, iEntity=-1)
-{
-	/*
-	static iModelIndex = -1;
-	
-	if (iModelIndex == -1) iModelIndex = PrecacheModel("materials/particle/particle_ring_wave_additive.vmt");
-	if (iModelIndex == -1) return;
-	
-	decl clients[MAXPLAYERS + 1];
-	new numClients;
-	
-	new Float:flHearRadius = 512.0 * flScale;
-	
-	if (IsValidClient(iEntity))
-	{
-		if (TF2_GetPlayerClass(iEntity) == TFClass_Spy) flHearRadius *= 0.65;
-	}
-	
-	decl Float:flStartPos[3];
-	decl Float:flTempDist;
-	
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i]) continue;
-		if (i == iEntity) continue;
-		
-		GetClientEyePosition(i, flStartPos);
-		flTempDist = GetVectorDistance(flStartPos, flOrigin);
-		
-		if (!GetEntProp(i, Prop_Send, "m_bDucked")) continue;
-		
-		if (TF2_GetPlayerClass(i) == TFClass_Spy) flTempDist *= 0.75;
-		
-		if (flTempDist <= flHearRadius)
-		{
-			clients[numClients] = i;
-			numClients++;
-		}
-	}
-	
-	if (numClients)
-	{
-		//TE_SetupBeamRingPoint(flOrigin, 10.0, 8000.0, iBeamSprite, iHaloSprite, 0, 60, 0.5, 2.5, 0.0, { 255, 255, 255, 255 }, 10, FBEAM_FADEOUT);
-		//TE_SetupTFParticleEffect(iParticle, flOrigin, flOrigin);
-		
-		new iBrightness = RoundFloat(200.0 * flScale);
-		if (iBrightness > 255) iBrightness = 255;
-		
-		TE_SetupGlowSprite(flOrigin, iModelIndex, 0.75 * flScale, 5.0 * flScale, iBrightness);
-		TE_Send(clients, numClients);
-	}
-	*/
 }
 
 public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
@@ -4498,43 +5286,50 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 					}
 				}
 			}
-			
-			if (g_bPlayerProxy[client] && g_iPlayerProxyMaster[client] != -1)
+		}
+	}
+}
+
+public Action:Timer_ApplyCustomModel(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return;
+	
+	new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
+	
+	if (g_bPlayerProxy[client] && iMaster != -1)
+	{
+		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
+		
+		// Set custom model, if any.
+		decl String:sBuffer[PLATFORM_MAX_PATH];
+		decl String:sSectionName[64];
+		
+		decl String:sClassName[64];
+		TF2_GetClassName(TF2_GetPlayerClass(client), sClassName, sizeof(sClassName));
+		
+		Format(sSectionName, sizeof(sSectionName), "mod_proxy_%s", sClassName);
+		if ((GetRandomStringFromProfile(sProfile, sSectionName, sBuffer, sizeof(sBuffer)) && sBuffer[0]) ||
+			(GetRandomStringFromProfile(sProfile, "mod_proxy_all", sBuffer, sizeof(sBuffer)) && sBuffer[0]))
+		{
+			SetVariantString(sBuffer);
+			AcceptEntityInput(client, "SetCustomModel");
+			SetEntProp(client, Prop_Send, "m_bUseClassAnimations", true);
+		}
+		
+		if (IsPlayerAlive(client))
+		{
+			// Play any sounds, if any.
+			if (GetRandomStringFromProfile(sProfile, "sound_proxy_spawn", sBuffer, sizeof(sBuffer)) && sBuffer[0])
 			{
-				new iMaster = g_iPlayerProxyMaster[client];
-				if (g_strSlenderProfile[iMaster][0]) 
-				{
-					decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-					strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
-					
-					// Set custom model, if any.
-					decl String:sBuffer[PLATFORM_MAX_PATH];
-					decl String:sSectionName[64];
-					
-					decl String:sClassName[64];
-					TF2_GetClassName(TF2_GetPlayerClass(client), sClassName, sizeof(sClassName));
-					
-					Format(sSectionName, sizeof(sSectionName), "mod_proxy_%s", sClassName);
-					if ((GetRandomStringFromProfile(sProfile, sSectionName, sBuffer, sizeof(sBuffer)) && sBuffer[0]) ||
-						(GetRandomStringFromProfile(sProfile, "mod_proxy_all", sBuffer, sizeof(sBuffer)) && sBuffer[0]))
-					{
-						SetVariantString(sBuffer);
-						AcceptEntityInput(client, "SetCustomModel");
-						SetEntProp(client, Prop_Send, "m_bUseClassAnimations", true);
-					}
-					
-					// Play any sounds, if any.
-					if (GetRandomStringFromProfile(sProfile, "sound_proxy_spawn", sBuffer, sizeof(sBuffer)) && sBuffer[0])
-					{
-						new iChannel = GetProfileNum(sProfile, "sound_proxy_spawn_channel", SNDCHAN_AUTO);
-						new iLevel = GetProfileNum(sProfile, "sound_proxy_spawn_level", SNDLEVEL_NORMAL);
-						new iFlags = GetProfileNum(sProfile, "sound_proxy_spawn_flags", SND_NOFLAGS);
-						new Float:flVolume = GetProfileFloat(sProfile, "sound_proxy_spawn_volume", SNDVOL_NORMAL);
-						new iPitch = GetProfileNum(sProfile, "sound_proxy_spawn_pitch", SNDPITCH_NORMAL);
-						
-						EmitSoundToAll(sBuffer, client, iChannel, iLevel, iFlags, flVolume, iPitch);
-					}
-				}
+				new iChannel = GetProfileNum(sProfile, "sound_proxy_spawn_channel", SNDCHAN_AUTO);
+				new iLevel = GetProfileNum(sProfile, "sound_proxy_spawn_level", SNDLEVEL_NORMAL);
+				new iFlags = GetProfileNum(sProfile, "sound_proxy_spawn_flags", SND_NOFLAGS);
+				new Float:flVolume = GetProfileFloat(sProfile, "sound_proxy_spawn_volume", SNDVOL_NORMAL);
+				new iPitch = GetProfileNum(sProfile, "sound_proxy_spawn_pitch", SNDPITCH_NORMAL);
+				
+				EmitSoundToAll(sBuffer, client, iChannel, iLevel, iFlags, flVolume, iPitch);
 			}
 		}
 	}

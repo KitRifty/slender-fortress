@@ -138,7 +138,7 @@ public AdminMenu_PlayerForceProxyBoss(Handle:menu, MenuAction:action, param1, pa
 			else
 			{
 				if (!bool:GetProfileNum(g_strSlenderProfile[iIndex], "proxies", 0) ||
-					g_iSlenderCopyOfBoss[iIndex] != -1)
+					g_iSlenderCopyMaster[iIndex] != -1)
 				{
 					CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Not Allowed To Have Proxies", param1);
 				}
@@ -474,9 +474,9 @@ static AddBossTargetsToMenu(Handle:hMenu)
 		if (!sBuffer[0]) strcopy(sBuffer, sizeof(sBuffer), g_strSlenderProfile[i]);
 		
 		Format(sDisplay, sizeof(sDisplay), "%d - %s", i, sBuffer);
-		if (g_iSlenderCopyOfBoss[i] != -1)
+		if (g_iSlenderCopyMaster[i] != -1)
 		{
-			Format(sBuffer, sizeof(sBuffer), " (copy of boss %d)", g_iSlenderCopyOfBoss[i]);
+			Format(sBuffer, sizeof(sBuffer), " (copy of boss %d)", g_iSlenderCopyMaster[i]);
 			StrCat(sDisplay, sizeof(sDisplay), sBuffer);
 		}
 		
