@@ -1,9 +1,35 @@
-Version 0.1.9 (Indefinite):
+Version 0.1.9 (October 20, 2013):
 - Added Stamina meter
 - Hud will now change color depending on how much health you have
 - Fixed a bug where map-defined page music would not stop playing when custom escape music has been defined in the map
 - Fixed a bug where effects of certain Mediguns would linger after spawn/weapon change
 - Removed support for "slender_logic_escape_music", use "sf2_escape_custommusic" instead
+- Chasing bosses now use Valve's Navmesh system for navigation (ONLY!)
+- Slender Man is now a chasing boss
+- Revised jump code of chasing bosses
+- Added boss attribute "always look at target", (0 / 1)
+- Added boss attribute "reduced speed on look", which is a multiplier to the boss's speed
+- Added boss attribute "reduced walk speed on look", which is a multiplier to the boss's walk speed
+- Added boss keyvalue "acceleration", default is 150.0
+- Changed boss keyvalue "sound_chase" to "sound_chase_music"
+- Added boss keyvalue "sound_alert_music"
+- Added boss keyvalue "teleport_type", which determines teleportation behavior
+	- Only values 0 and 2 are accepted (default is 0)
+		- 0 = teleport when no player is looking at the boss, regardless of obstructions
+			- Exception: only if no players are within static radius, defined by "static_radius"
+		- 1 = teleport only when behind an obstruction, out of any player's possible range of sight
+- Added boss keyvalue "teleport_target_rest_period", which determines rest period duration of target (default is 15.0)
+	- Rest period = amount of time boss will not teleport DIRECTLY to the player
+- Added boss keyvalue "teleport_target_persistency_period", which determines how long the boss can stick to one target for teleporting (default is 9.0)
+- Added boss keyvalues "teleport_target_stress_min" and "teleport_target_stress_max" (default values are 0.2 and 0.9, respectively)
+	- Goal stress level calculated between "teleport_target_stress_min" and "teleport_target_stress_max", taking into account boss anger and difficulty
+	- If current teleport target exceeds goal stress level, boss will stop teleporting to player and put player in rest period
+- Added "persistency" to chase bosses, which is how long the boss will constantly calculate a path to chase target (in other words, how long boss will immediately know of player's position)
+- Added boss keyvalue "search_chase_persistency_time_init", which determines initial persistency duration when put into chase mode
+- Added boss keyvalue "search_chase_persistency_time_add_newtarget", which is how much time is added to persistency once a new target is given
+- Added boss keyvalue "search_chase_persistency_time_add_visible_min", which is how much time is added per 0.1 seconds when the boss sees the player
+- Added boss keyvalue "search_chase_persistency_time_add_visible_max", which is how much time is added per 0.1 seconds when the boss sees the player
+- Added boss keyvalue "search_chase_persistency_time_add_attack", which is how much time is added when the boss does an attack
 
 Version 0.1.8a (August 13, 2013):
 - Added "SF2_OnPagesSpawned" forward
