@@ -4,7 +4,7 @@
 #define _sf2_client_included
 
 #define GHOST_MODEL ""
-#define BLACK_OVERLAY "slender/camera/cameraoverlay"
+#define BLACK_OVERLAY "overlays/slender/newcamerahud"
 
 #define SF2_FLASHLIGHT_WIDTH 512.0 // How wide the player's Flashlight should be in world units.
 #define SF2_FLASHLIGHT_LENGTH 1024.0 // How far the player's Flashlight can reach in world units.
@@ -62,6 +62,7 @@ static String:g_strPlayerLagCompensationWeapons[][] =
 #define SF2_PLAYER_VIEWBOB_SCALE_Y 0.0
 #define SF2_PLAYER_VIEWBOB_SCALE_Z 0.0
 
+
 public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, Handle:hParams)
 {
 	if (!g_bEnabled || IsFakeClient(this)) return MRES_Ignored;
@@ -74,106 +75,11 @@ public Hook_ClientPreThink(client)
 {
 	if (!g_bEnabled) return;
 	
-	// One of the worst ways to calculate eye angular velocity!
-	decl Float:newAng[3];
-	GetClientEyeAngles(client, newAng);
-	for (new i = 0; i < 3; i++)
-	{
-		g_flPlayerEyeAngleVelocity[client][i] = -AngleDiff(newAng[i], g_flPlayerLastEyeAngles[client][i]);
-		g_flPlayerLastEyeAngles[client][i] = newAng[i];
-	}
-	
+	ClientProcessViewAngles(client);
 	ClientProcessVisibility(client);
 	ClientProcessStaticShake(client);
 	ClientProcessFlashlight(client);
 	ClientProcessGlow(client);
-	
-	if ((!g_bPlayerEliminated[client] || g_bPlayerProxy[client]) && 
-		!g_bPlayerEscaped[client] &&
-		!g_bRoundEnded && 
-		!g_bRoundWarmup)
-	{
-		// Process view bobbing, if enabled.
-		// This code is based on the code in this page: https://developer.valvesoftware.com/wiki/Camera_Bob
-		// Many thanks to whomever created it in the first place.
-		if (IsPlayerAlive(client))
-		{
-			if (g_bPlayerViewbobEnabled)
-			{
-				new Float:flPunchVel[3];
-			
-				if (!g_bPlayerViewbobSprintEnabled || !ClientSprintIsValid(client))
-				{
-					if (GetEntityFlags(client) & FL_ONGROUND)
-					{
-						decl Float:flVelocity[3];
-						GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", flVelocity);
-						new Float:flSpeed = GetVectorLength(flVelocity);
-						
-						new Float:flPunchIdle[3];
-						
-						if (flSpeed > 0.0)
-						{
-							if (flSpeed >= 60.0)
-							{
-								flPunchIdle[0] = Sine(GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_X / 400.0;
-								flPunchIdle[1] = Sine(2.0 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Y / 400.0;
-								flPunchIdle[2] = Sine(1.6 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Z / 400.0;
-								
-								AddVectors(flPunchVel, flPunchIdle, flPunchVel);
-							}
-							
-							// Calculate roll.
-							decl Float:flForward[3], Float:flVelocityDirection[3];
-							GetClientEyeAngles(client, flForward);
-							GetVectorAngles(flVelocity, flVelocityDirection);
-							
-							new Float:flYawDiff = AngleDiff(flForward[1], flVelocityDirection[1]);
-							if (FloatAbs(flYawDiff) > 90.0) flYawDiff = AngleDiff(flForward[1] + 180.0, flVelocityDirection[1]) * -1.0;
-							
-							new Float:flWalkSpeed = ClientGetDefaultWalkSpeed(client);
-							new Float:flRollScalar = flSpeed / flWalkSpeed;
-							if (flRollScalar > 1.0) flRollScalar = 1.0;
-							
-							new Float:flRollScale = (flYawDiff / 90.0) * 0.25 * flRollScalar;
-							flPunchIdle[0] = 0.0;
-							flPunchIdle[1] = 0.0;
-							flPunchIdle[2] = flRollScale * -1.0;
-							
-							AddVectors(flPunchVel, flPunchIdle, flPunchVel);
-						}
-						
-						/*
-						if (flSpeed < 60.0) 
-						{
-							flPunchIdle[0] = FloatAbs(Cosine(GetGameTime() * 1.25) * 0.047);
-							flPunchIdle[1] = Sine(GetGameTime() * 1.25) * 0.075;
-							flPunchIdle[2] = 0.0;
-							
-							AddVectors(flPunchVel, flPunchIdle, flPunchVel);
-						}
-						*/
-					}
-				}
-				
-				if (g_bPlayerViewbobHurtEnabled)
-				{
-					// Shake screen the more the player is hurt.
-					new Float:flHealth = float(GetEntProp(client, Prop_Send, "m_iHealth"));
-					new Float:flMaxHealth = float(SDKCall(g_hSDKGetMaxHealth, client));
-					
-					decl Float:flPunchVelHurt[3];
-					flPunchVelHurt[0] = Sine(1.22 * GetGameTime()) * 48.5 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
-					flPunchVelHurt[1] = Sine(2.12 * GetGameTime()) * 80.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
-					flPunchVelHurt[2] = Sine(0.5 * GetGameTime()) * 36.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
-					
-					AddVectors(flPunchVel, flPunchVelHurt, flPunchVel);
-				}
-				
-				ClientViewPunch(client, flPunchVel);
-			}
-		}
-	}
 	
 	if (g_bPlayerGhostMode[client])
 	{
@@ -184,11 +90,14 @@ public Hook_ClientPreThink(client)
 	{
 		if (!g_bRoundEnded && !g_bRoundWarmup && !g_bPlayerEscaped[client])
 		{
+			new iRoundState = _:GameRules_GetRoundState();
+		
+			// No double jumping for players in play.
+			SetEntProp(client, Prop_Send, "m_iAirDash", -1);
+		
 			if (!g_bPlayerProxy[client])
 			{
-				SetEntProp(client, Prop_Send, "m_iAirDash", -1);
-				
-				if (_:GameRules_GetRoundState() == 4)
+				if (iRoundState == 4)
 				{
 					new bool:bDanger = false;
 					
@@ -348,9 +257,7 @@ public Hook_ClientPreThink(client)
 				{
 					case TFClass_Scout:
 					{
-						SetEntProp(client, Prop_Send, "m_iAirDash", -1);
-						
-						if (_:GameRules_GetRoundState() == 4)
+						if (iRoundState == 4)
 						{
 							if (bSpeedup) SetEntPropFloat(client, Prop_Send, "m_flMaxspeed", 405.0);
 							else SetEntPropFloat(client, Prop_Send, "m_flMaxspeed", 300.0);
@@ -358,7 +265,7 @@ public Hook_ClientPreThink(client)
 					}
 					case TFClass_Medic:
 					{
-						if (_:GameRules_GetRoundState() == 4)
+						if (iRoundState == 4)
 						{
 							if (bSpeedup) SetEntPropFloat(client, Prop_Send, "m_flMaxspeed", 385.0);
 							else SetEntPropFloat(client, Prop_Send, "m_flMaxspeed", 300.0);
@@ -403,7 +310,8 @@ public Hook_ClientPreThink(client)
 		CloseHandle(hCopy);
 	}
 	
-	
+	/*
+	// Moved this section of code to OnGameFrame().
 	if (g_bRoundWarmup || IsClientInPvP(client))
 	{
 		// BOOOOX!
@@ -450,6 +358,7 @@ public Hook_ClientPreThink(client)
 			}
 		}
 	}
+	*/
 	
 	// Process screen shake, if enabled.
 	if (g_bPlayerShakeEnabled)
@@ -479,6 +388,8 @@ public Hook_ClientPreThink(client)
 		}
 	}
 	
+	/*
+	// Moved this section of code to OnGameFrame().
 	if (IsClientInPvP(client))
 	{
 		for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
@@ -488,7 +399,7 @@ public Hook_ClientPreThink(client)
 			{
 				new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
 				new bool:bMine = false;
-			
+				
 				new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
 				if (iOwnerEntity == client)
 				{
@@ -511,8 +422,7 @@ public Hook_ClientPreThink(client)
 			}
 		}
 	}
-	
-	ClientUpdateMusicSystem(client);
+	*/
 }
 
 public Action:Hook_ClientSetTransmit(client, other)
@@ -830,10 +740,11 @@ InitializeClient(client)
 	ClientResetJumpScare(client);
 	ClientUpdateListeningFlags(client);
 	ClientUpdateMusicSystem(client);
-	ClientMusicReset(client);
 	ClientChaseMusicReset(client);
 	ClientChaseMusicSeeReset(client);
 	ClientAlertMusicReset(client);
+	Client20DollarsMusicReset(client);
+	ClientMusicReset(client);
 	ClientResetGlow(client);
 	ClientResetPvP(client);
 	ClientResetProxy(client);
@@ -1979,6 +1890,95 @@ ClientProcessVisibility(client)
 				TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 			
 			TriggerTimer(g_hPlayerStaticTimer[client], true);
+		}
+	}
+}
+
+ClientProcessViewAngles(client)
+{
+	if ((!g_bPlayerEliminated[client] || g_bPlayerProxy[client]) && 
+		!g_bPlayerEscaped[client])
+	{
+		// Process view bobbing, if enabled.
+		// This code is based on the code in this page: https://developer.valvesoftware.com/wiki/Camera_Bob
+		// Many thanks to whomever created it in the first place.
+		
+		if (IsPlayerAlive(client))
+		{
+			if (g_bPlayerViewbobEnabled)
+			{
+				new Float:flPunchVel[3];
+			
+				if (!g_bPlayerViewbobSprintEnabled || !ClientSprintIsValid(client))
+				{
+					if (GetEntityFlags(client) & FL_ONGROUND)
+					{
+						decl Float:flVelocity[3];
+						GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", flVelocity);
+						new Float:flSpeed = GetVectorLength(flVelocity);
+						
+						new Float:flPunchIdle[3];
+						
+						if (flSpeed > 0.0)
+						{
+							if (flSpeed >= 60.0)
+							{
+								flPunchIdle[0] = Sine(GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_X / 400.0;
+								flPunchIdle[1] = Sine(2.0 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Y / 400.0;
+								flPunchIdle[2] = Sine(1.6 * GetGameTime() * SF2_PLAYER_VIEWBOB_TIMER) * flSpeed * SF2_PLAYER_VIEWBOB_SCALE_Z / 400.0;
+								
+								AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+							}
+							
+							// Calculate roll.
+							decl Float:flForward[3], Float:flVelocityDirection[3];
+							GetClientEyeAngles(client, flForward);
+							GetVectorAngles(flVelocity, flVelocityDirection);
+							
+							new Float:flYawDiff = AngleDiff(flForward[1], flVelocityDirection[1]);
+							if (FloatAbs(flYawDiff) > 90.0) flYawDiff = AngleDiff(flForward[1] + 180.0, flVelocityDirection[1]) * -1.0;
+							
+							new Float:flWalkSpeed = ClientGetDefaultWalkSpeed(client);
+							new Float:flRollScalar = flSpeed / flWalkSpeed;
+							if (flRollScalar > 1.0) flRollScalar = 1.0;
+							
+							new Float:flRollScale = (flYawDiff / 90.0) * 0.25 * flRollScalar;
+							flPunchIdle[0] = 0.0;
+							flPunchIdle[1] = 0.0;
+							flPunchIdle[2] = flRollScale * -1.0;
+							
+							AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+						}
+						
+						/*
+						if (flSpeed < 60.0) 
+						{
+							flPunchIdle[0] = FloatAbs(Cosine(GetGameTime() * 1.25) * 0.047);
+							flPunchIdle[1] = Sine(GetGameTime() * 1.25) * 0.075;
+							flPunchIdle[2] = 0.0;
+							
+							AddVectors(flPunchVel, flPunchIdle, flPunchVel);
+						}
+						*/
+					}
+				}
+				
+				if (g_bPlayerViewbobHurtEnabled)
+				{
+					// Shake screen the more the player is hurt.
+					new Float:flHealth = float(GetEntProp(client, Prop_Send, "m_iHealth"));
+					new Float:flMaxHealth = float(SDKCall(g_hSDKGetMaxHealth, client));
+					
+					decl Float:flPunchVelHurt[3];
+					flPunchVelHurt[0] = Sine(1.22 * GetGameTime()) * 48.5 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+					flPunchVelHurt[1] = Sine(2.12 * GetGameTime()) * 80.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+					flPunchVelHurt[2] = Sine(0.5 * GetGameTime()) * 36.0 * ((flMaxHealth - flHealth) / (flMaxHealth * 0.75)) / flMaxHealth;
+					
+					AddVectors(flPunchVel, flPunchVelHurt, flPunchVel);
+				}
+				
+				ClientViewPunch(client, flPunchVel);
+			}
 		}
 	}
 }
@@ -3139,11 +3139,14 @@ ClientEnableGhostMode(client)
 	
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
+	if (!(iFlags & FSOLID_CUSTOMBOXTEST)) iFlags |= FSOLID_CUSTOMBOXTEST;
 	if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
 	if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
 	
 	SetEntProp(client, Prop_Send, "m_usSolidFlags", iFlags);
-	SetEntProp(client, Prop_Data, "m_CollisionGroup", COLLISION_GROUP_DEBRIS);
+	SetEntProp(client, Prop_Send, "m_CollisionGroup", 11); // COLLISION_GROUP_WEAPON
+	SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", -1);
+	SetEntPropEnt(client, Prop_Send, "m_hLastWeapon", -1);
 	
 	if (strlen(GHOST_MODEL) > 0)
 	{
@@ -3180,11 +3183,12 @@ ClientDisableGhostMode(client)
 	
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
+	if (iFlags & FSOLID_CUSTOMBOXTEST) iFlags &= ~FSOLID_CUSTOMBOXTEST;
 	if (iFlags & FSOLID_NOT_SOLID) iFlags &= ~FSOLID_NOT_SOLID;
 	if (iFlags & FSOLID_TRIGGER) iFlags &= ~FSOLID_TRIGGER;
 	
 	SetEntProp(client, Prop_Send, "m_usSolidFlags", iFlags);
-	SetEntProp(client, Prop_Data, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
+	SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
 	
 	SetVariantString("");
 	AcceptEntityInput(client, "SetCustomModel");
@@ -3744,6 +3748,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 	new iChasingBoss = -1;
 	new iChasingSeeBoss = -1;
 	new iAlertBoss = -1;
+	new i20DollarsBoss = -1;
 	
 	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) 
 	{
@@ -3815,66 +3820,95 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		new iOldChasingBoss = g_iPlayerChaseMusicMaster[client];
 		new iOldChasingSeeBoss = g_iPlayerChaseMusicSeeMaster[client];
 		new iOldAlertBoss = g_iPlayerAlertMusicMaster[client];
+		new iOld20DollarsBoss = g_iPlayer20DollarsMusicMaster[client];
 		
 		new Float:flAnger = -1.0;
 		new Float:flSeeAnger = -1.0;
 		new Float:flAlertAnger = -1.0;
+		new Float:fl20DollarsAnger = -1.0;
 		
 		decl Float:flBuffer[3], Float:flBuffer2[3], Float:flBuffer3[3];
 		for (new i = 0; i < MAX_BOSSES; i++)
 		{
 			if (!g_strSlenderProfile[i][0]) continue;
-			if (g_iSlenderType[i] != 2) continue;
 			if (SlenderArrayIndexToEntIndex(i) == INVALID_ENT_REFERENCE) continue;
 			
-			GetClientAbsOrigin(client, flBuffer);
-			SlenderGetAbsOrigin(i, flBuffer3);
+			new iBossType = g_iSlenderType[i];
 			
-			new iTarget = EntRefToEntIndex(g_iSlenderTarget[i]);
-			if (iTarget != -1)
+			switch (iBossType)
 			{
-				GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flBuffer2);
-				
-				if ((g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK || g_iSlenderState[i] == STATE_STUN) &&
-					!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE) && 
-					(iTarget == client || GetVectorDistance(flBuffer, flBuffer2) <= 850.0 || GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0))
+				case 2:
 				{
-					decl String:sPath[PLATFORM_MAX_PATH];
-					GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sPath, sizeof(sPath), 1);
-					if (!sPath[0]) continue;
-				
-					if (g_flSlenderAnger[i] > flAnger)
-					{
-						flAnger = g_flSlenderAnger[i];
-						iChasingBoss = i;
-					}
+					GetClientAbsOrigin(client, flBuffer);
+					SlenderGetAbsOrigin(i, flBuffer3);
 					
-					if ((g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK) &&
-						PlayerCanSeeSlender(client, i, false))
+					new iTarget = EntRefToEntIndex(g_iSlenderTarget[i]);
+					if (iTarget != -1)
 					{
-						if (iOldChasingSeeBoss == -1 || !PlayerCanSeeSlender(client, iOldChasingSeeBoss, false) || (g_flSlenderAnger[i] > flSeeAnger))
+						GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flBuffer2);
+						
+						if ((g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK || g_iSlenderState[i] == STATE_STUN) &&
+							!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE) && 
+							(iTarget == client || GetVectorDistance(flBuffer, flBuffer2) <= 850.0 || GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0))
 						{
-							flSeeAnger = g_flSlenderAnger[i];
-							iChasingSeeBoss = i;
+							decl String:sPath[PLATFORM_MAX_PATH];
+							GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sPath, sizeof(sPath), 1);
+							if (sPath[0])
+							{
+								if (g_flSlenderAnger[i] > flAnger)
+								{
+									flAnger = g_flSlenderAnger[i];
+									iChasingBoss = i;
+								}
+							}
+							
+							if ((g_iSlenderState[i] == STATE_CHASE || g_iSlenderState[i] == STATE_ATTACK) &&
+								PlayerCanSeeSlender(client, i, false))
+							{
+								if (iOldChasingSeeBoss == -1 || !PlayerCanSeeSlender(client, iOldChasingSeeBoss, false) || (g_flSlenderAnger[i] > flSeeAnger))
+								{
+									GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_visible", sPath, sizeof(sPath), 1);
+									
+									if (sPath[0])
+									{
+										flSeeAnger = g_flSlenderAnger[i];
+										iChasingSeeBoss = i;
+									}
+								}
+								
+								if (g_b20Dollars)
+								{
+									if (iOld20DollarsBoss == -1 || !PlayerCanSeeSlender(client, iOld20DollarsBoss, false) || (g_flSlenderAnger[i] > fl20DollarsAnger))
+									{
+										GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_20dollars_music", sPath, sizeof(sPath), 1);
+										
+										if (sPath[0])
+										{
+											fl20DollarsAnger = g_flSlenderAnger[i];
+											i20DollarsBoss = i;
+										}
+									}
+								}
+							}
 						}
 					}
-				}
-			}
-			
-			if (g_iSlenderState[i] == STATE_ALERT)
-			{
-				decl String:sPath[PLATFORM_MAX_PATH];
-				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sPath, sizeof(sPath), 1);
-				if (!sPath[0]) continue;
-			
-				if (!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE))
-				{
-					if (GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0)
+					
+					if (g_iSlenderState[i] == STATE_ALERT)
 					{
-						if (g_flSlenderAnger[i] > flAlertAnger)
+						decl String:sPath[PLATFORM_MAX_PATH];
+						GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sPath, sizeof(sPath), 1);
+						if (!sPath[0]) continue;
+					
+						if (!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE))
 						{
-							flAlertAnger = g_flSlenderAnger[i];
-							iAlertBoss = i;
+							if (GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0)
+							{
+								if (g_flSlenderAnger[i] > flAlertAnger)
+								{
+									flAlertAnger = g_flSlenderAnger[i];
+									iAlertBoss = i;
+								}
+							}
 						}
 					}
 				}
@@ -3916,6 +3950,18 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 				ClientRemoveMusicFlag(client, MUSICF_ALERT);
 			}
 		}
+		
+		if (i20DollarsBoss != iOld20DollarsBoss)
+		{
+			if (i20DollarsBoss != -1)
+			{
+				ClientAddMusicFlag(client, MUSICF_20DOLLARS);
+			}
+			else
+			{
+				ClientRemoveMusicFlag(client, MUSICF_20DOLLARS);
+			}
+		}
 	}
 	
 	if (IsValidClient(client))
@@ -3926,6 +3972,8 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		new bool:bChaseSee = ClientHasMusicFlag(client, MUSICF_CHASEVISIBLE);
 		new bool:bAlert = ClientHasMusicFlag(client, MUSICF_ALERT);
 		new bool:bWasAlert = ClientHasMusicFlag2(iOldMusicFlags, MUSICF_ALERT);
+		new bool:b20Dollars = ClientHasMusicFlag(client, MUSICF_20DOLLARS);
+		new bool:bWas20Dollars = ClientHasMusicFlag2(iOldMusicFlags, MUSICF_20DOLLARS);
 		
 		// Custom system.
 		if (GetArraySize(g_hPageMusicRanges) > 0) 
@@ -4076,6 +4124,18 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 			}
 		}
 		
+		if (b20Dollars != bWas20Dollars || i20DollarsBoss != g_iPlayer20DollarsMusicMaster[client])
+		{
+			if (b20Dollars)
+			{
+				Client20DollarsMusicStart(client, i20DollarsBoss);
+			}
+			else
+			{
+				Client20DollarsMusicStop(client, g_iPlayer20DollarsMusicMaster[client]);
+			}
+		}
+		
 		if (iMainMusicState == 1)
 		{
 			ClientMusicStart(client, g_strPlayerMusic[client], _, MUSIC_PAGE_VOLUME, bChase || bAlert);
@@ -4160,6 +4220,69 @@ stock ClientMusicStop(client)
 {
 	g_hPlayerMusicTimer[client] = CreateTimer(0.01, Timer_PlayerFadeOutMusic, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	TriggerTimer(g_hPlayerMusicTimer[client], true);
+}
+
+stock Client20DollarsMusicReset(client)
+{
+	new String:sOldMusic[PLATFORM_MAX_PATH];
+	strcopy(sOldMusic, sizeof(sOldMusic), g_strPlayer20DollarsMusic[client]);
+	strcopy(g_strPlayer20DollarsMusic[client], sizeof(g_strPlayer20DollarsMusic[]), "");
+	if (IsClientInGame(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+	
+	g_iPlayer20DollarsMusicMaster[client] = -1;
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		g_hPlayer20DollarsMusicTimer[client][i] = INVALID_HANDLE;
+		g_flPlayer20DollarsMusicVolumes[client][i] = 0.0;
+		
+		if (g_strSlenderProfile[i][0])
+		{
+			if (IsClientInGame(client))
+			{
+				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_20dollars_music", sOldMusic, sizeof(sOldMusic), 1);
+				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+			}
+		}
+	}
+}
+
+stock Client20DollarsMusicStart(client, iBossIndex)
+{
+	if (!IsClientInGame(client)) return;
+	
+	new iOldMaster = g_iPlayer20DollarsMusicMaster[client];
+	if (iOldMaster == iBossIndex) return;
+	
+	new String:sBuffer[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_20dollars_music", sBuffer, sizeof(sBuffer), 1);
+	
+	if (!sBuffer[0]) return;
+	
+	g_iPlayer20DollarsMusicMaster[client] = iBossIndex;
+	strcopy(g_strPlayer20DollarsMusic[client], sizeof(g_strPlayer20DollarsMusic[]), sBuffer);
+	g_hPlayer20DollarsMusicTimer[client][iBossIndex] = CreateTimer(0.01, Timer_PlayerFadeIn20DollarsMusic, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hPlayer20DollarsMusicTimer[client][iBossIndex], true);
+	
+	if (iOldMaster != -1)
+	{
+		ClientAlertMusicStop(client, iOldMaster);
+	}
+}
+
+stock Client20DollarsMusicStop(client, iBossIndex)
+{
+	if (!IsClientInGame(client)) return;
+	if (iBossIndex == -1) return;
+	
+	if (iBossIndex == g_iPlayer20DollarsMusicMaster[client])
+	{
+		g_iPlayer20DollarsMusicMaster[client] = -1;
+		strcopy(g_strPlayer20DollarsMusic[client], sizeof(g_strPlayer20DollarsMusic[]), "");
+	}
+	
+	g_hPlayer20DollarsMusicTimer[client][iBossIndex] = CreateTimer(0.01, Timer_PlayerFadeOut20DollarsMusic, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hPlayer20DollarsMusicTimer[client][iBossIndex], true);
 }
 
 stock ClientAlertMusicReset(client)
@@ -4386,6 +4509,77 @@ public Action:Timer_PlayerFadeOutMusic(Handle:timer, any:userid)
 	if (g_flPlayerMusicVolume[client] <= 0.0)
 	{
 		g_hPlayerMusicTimer[client] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Timer_PlayerFadeIn20DollarsMusic(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+
+	new iBossIndex = -1;
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		if (g_hPlayer20DollarsMusicTimer[client][i] == timer)
+		{
+			iBossIndex = i;
+			break;
+		}
+	}
+	
+	if (iBossIndex == -1) return Plugin_Stop;
+	
+	g_flPlayer20DollarsMusicVolumes[client][iBossIndex] += 0.07;
+	if (g_flPlayer20DollarsMusicVolumes[client][iBossIndex] > 1.0) g_flPlayer20DollarsMusicVolumes[client][iBossIndex] = 1.0;
+
+	if (g_strPlayer20DollarsMusic[client][0]) EmitSoundToClient(client, g_strPlayer20DollarsMusic[client], _, MUSIC_CHAN, _, SND_CHANGEVOL, g_flPlayer20DollarsMusicVolumes[client][iBossIndex]);
+	
+	if (g_flPlayer20DollarsMusicVolumes[client][iBossIndex] >= 1.0)
+	{
+		g_hPlayer20DollarsMusicTimer[client][iBossIndex] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Timer_PlayerFadeOut20DollarsMusic(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+
+	new iBossIndex = -1;
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		if (g_hPlayer20DollarsMusicTimer[client][i] == timer)
+		{
+			iBossIndex = i;
+			break;
+		}
+	}
+	
+	if (iBossIndex == -1) return Plugin_Stop;
+	
+	decl String:sBuffer[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_20dollars_music", sBuffer, sizeof(sBuffer), 1);
+
+	if (StrEqual(sBuffer, g_strPlayer20DollarsMusic[client], false))
+	{
+		g_hPlayer20DollarsMusicTimer[client][iBossIndex] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
+	
+	g_flPlayer20DollarsMusicVolumes[client][iBossIndex] -= 0.07;
+	if (g_flPlayer20DollarsMusicVolumes[client][iBossIndex] < 0.0) g_flPlayer20DollarsMusicVolumes[client][iBossIndex] = 0.0;
+
+	if (sBuffer[0]) EmitSoundToClient(client, sBuffer, _, MUSIC_CHAN, _, SND_CHANGEVOL, g_flPlayer20DollarsMusicVolumes[client][iBossIndex]);
+	
+	if (g_flPlayer20DollarsMusicVolumes[client][iBossIndex] <= 0.0)
+	{
+		g_hPlayer20DollarsMusicTimer[client][iBossIndex] = INVALID_HANDLE;
 		return Plugin_Stop;
 	}
 	
@@ -5074,6 +5268,35 @@ stock bool:IsValidClient(client)
 	return bool:(client > 0 && client <= MaxClients && IsClientInGame(client));
 }
 
+// Removes wearables such as botkillers from weapons.
+stock TF2_RemoveWeaponSlotAndWearables(client, iSlot)
+{
+	new iWeapon = GetPlayerWeaponSlot(client, iSlot);
+	if (!IsValidEntity(iWeapon)) return;
+	
+	new iWearable = INVALID_ENT_REFERENCE;
+	while ((iWearable = FindEntityByClassname(iWearable, "tf_wearable")) != -1)
+	{
+		new iWeaponAssociated = GetEntPropEnt(iWearable, Prop_Send, "m_hWeaponAssociatedWith");
+		if (iWeaponAssociated == iWeapon)
+		{
+			AcceptEntityInput(iWearable, "Kill");
+		}
+	}
+	
+	iWearable = INVALID_ENT_REFERENCE;
+	while ((iWearable = FindEntityByClassname(iWearable, "tf_wearable_vm")) != -1)
+	{
+		new iWeaponAssociated = GetEntPropEnt(iWearable, Prop_Send, "m_hWeaponAssociatedWith");
+		if (iWeaponAssociated == iWeapon)
+		{
+			AcceptEntityInput(iWearable, "Kill");
+		}
+	}
+	
+	TF2_RemoveWeaponSlot(client, iSlot);
+}
+
 public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
@@ -5112,12 +5335,10 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			
 			if (bRemoveWeapons)
 			{
-				ClientSwitchToWeaponSlot(client, TFWeaponSlot_Melee);
-				
 				for (new i = 0; i <= 5; i++)
 				{
 					if (i == TFWeaponSlot_Melee) continue;
-					TF2_RemoveWeaponSlot(client, i);
+					TF2_RemoveWeaponSlotAndWearables(client, i);
 				}
 				
 				new ent = -1;
@@ -5137,6 +5358,8 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 						AcceptEntityInput(ent, "Kill");
 					}
 				}
+				
+				ClientSwitchToWeaponSlot(client, TFWeaponSlot_Melee);
 			}
 			
 			if (bRestrictWeapons)
@@ -5158,7 +5381,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 							if (IsWeaponRestricted(iPlayerClass, GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex")))
 							{
 								hItem = INVALID_HANDLE;
-								TF2_RemoveWeaponSlot(client, iSlot);
+								TF2_RemoveWeaponSlotAndWearables(client, iSlot);
 								
 								switch (iSlot)
 								{

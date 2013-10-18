@@ -3,15 +3,30 @@ Version 0.1.9 (October 20, 2013):
 - Hud will now change color depending on how much health you have
 - Fixed a bug where map-defined page music would not stop playing when custom escape music has been defined in the map
 - Fixed a bug where effects of certain Mediguns would linger after spawn/weapon change
+- Fixed a bug where Botkiller items would remain even after the associated weapon is removed
+- Fixed a bug where Ghosts would collide with RED players (might be buggy)
 - Removed support for "slender_logic_escape_music", use "sf2_escape_custommusic" instead
+- Removed support for "slender_logic_escape", use "sf2_logic_escape" instead
+- Removed support for "slender_intro_message", use "sf2_intro_message" instead
+- Removed support for "slender_page_message", use "sf2_page_message" instead
+- Removed support for "slender_escape_message", use "sf2_escape_message" instead
+- Removed unnecessary gamedata portions
+- Added color and color2 support for all game_text entities.
+- Added "sf2_intro_fade" (env_fade) entity, which defines how long the intro/title sequence lasts via duration and fadetime.
+- Added "sf2_intro_text_#" (game_text) entity, which defines what is to be said in the text in sequential order during the intro/title sequence. YOU NEED THIS FOR sf2_intro_music!
+- Added "sf2_intro_music" (ambient_generic) entity, which defines what music is to be played during the intro/title sequence.
+- Added "sf2_intro_relay" (logic_relay) entity, which fires the input Trigger when the intro/title sequence. Can be used if you desire to do more in the intro/title sequence.
 - Chasing bosses now use Valve's Navmesh system for navigation (ONLY!)
 - Slender Man is now a chasing boss
 - Revised jump code of chasing bosses
-- Added boss attribute "always look at target", (0 / 1)
-- Added boss attribute "reduced speed on look", which is a multiplier to the boss's speed
-- Added boss attribute "reduced walk speed on look", which is a multiplier to the boss's walk speed
+- Added boss attribute "bleed player on hit", value determines how long the bleed lasts
+- Added boss attribute "always look at target", (0 / 1), which determines whether or not the boss should always look at its target when chasing, regardless of velocity
+- Added boss attribute "reduced speed on look", which is a multiplier to the boss's speed when being observed by a player
+- Added boss attribute "reduced walk speed on look", which is a multiplier to the boss's walk speed when being observed by a player
 - Added boss keyvalue "acceleration", default is 150.0
+- Adjusted boss keyvalue "turnrate", now it operates in degrees per second
 - Changed boss keyvalue "sound_chase" to "sound_chase_music"
+- Changed boss keyvalue "sound_20dollars" to "sound_20dollars_music"
 - Added boss keyvalue "sound_alert_music"
 - Added boss keyvalue "teleport_type", which determines teleportation behavior
 	- Only values 0 and 2 are accepted (default is 0)

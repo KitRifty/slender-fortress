@@ -169,6 +169,7 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	g_iSlenderType[iBossIndex] = GetProfileNum(sProfile, "type");
 	g_iSlenderID[iBossIndex] = g_iSlenderGlobalID;
 	GetProfileVector(sProfile, "eye_pos", g_flSlenderEyePosOffset[iBossIndex]);
+	GetProfileVector(sProfile, "eye_ang_offset", g_flSlenderEyePosOffset[iBossIndex]);
 	GetProfileVector(sProfile, "mins", g_flSlenderDetectMins[iBossIndex]);
 	GetProfileVector(sProfile, "maxs", g_flSlenderDetectMaxs[iBossIndex]);
 	g_iSlenderCopyMaster[iBossIndex] = -1;

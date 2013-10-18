@@ -218,14 +218,16 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			SDKHook(iBoss, SDKHook_OnTakeDamage, Hook_SlenderOnTakeDamage);
 			SDKHook(iBoss, SDKHook_OnTakeDamagePost, Hook_SlenderOnTakeDamagePost);
 		}
+		/*
 		default:
 		{
 			g_iSlender[iBossIndex] = g_iSlenderModel[iBossIndex];
 			SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
 		}
+		*/
 	}
 	
-	SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderSetTransmit);
+	SDKHook(iSlenderModel, SDKHook_SetTransmit, Hook_SlenderModelSetTransmit);
 	
 	SlenderSpawnEffects(iBossIndex, EffectEvent_Constant);
 	

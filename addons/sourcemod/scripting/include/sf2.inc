@@ -25,6 +25,7 @@
 #define MUSICF_CHASE (1 << 5)
 #define MUSICF_CHASEVISIBLE (1 << 6)
 #define MUSICF_ALERT (1 << 7)
+#define MUSICF_20DOLLARS (1 << 8)
 
 // Special round enumerations.
 enum

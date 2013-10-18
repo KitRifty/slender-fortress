@@ -18,7 +18,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.1.9 Dev"
+#define PLUGIN_VERSION "0.1.9"
 
 public Plugin:myinfo = 
 {
@@ -43,7 +43,6 @@ public Plugin:myinfo =
 #define FLASHLIGHT_BREAKSOUND "ambient/energy/spark6.wav"
 #define FLASHLIGHT_NOSOUND "player/suit_denydevice.wav"
 #define PAGE_GRABSOUND "slender/newgrabpage.wav"
-#define TWENTYDOLLARS_SOUND "slender/20dollars.wav"
 
 #define MUSIC_CHAN SNDCHAN_AUTO
 
@@ -54,6 +53,8 @@ public Plugin:myinfo =
 #define MUSIC_PAGE_VOLUME 1.0
 
 #define PVP_SPAWN_SOUND "items/spawn_item.wav"
+
+#define INTRO_MUSIC "slender/intro.mp3"
 
 #define SF2_HUD_TEXT_COLOR_R 127
 #define SF2_HUD_TEXT_COLOR_G 167
@@ -100,6 +101,7 @@ new g_iSlenderModel[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderPoseEnt[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderCopyMaster[MAX_BOSSES] = { -1, ... };
 new Float:g_flSlenderEyePosOffset[MAX_BOSSES][3];
+new Float:g_flSlenderEyeAngOffset[MAX_BOSSES][3];
 new Float:g_flSlenderDetectMins[MAX_BOSSES][3];
 new Float:g_flSlenderDetectMaxs[MAX_BOSSES][3];
 new Handle:g_hSlenderThink[MAX_BOSSES];
@@ -286,8 +288,6 @@ new Float:g_flPlayerJumpScareLifeTime[MAXPLAYERS + 1] = { -1.0, ... };
 
 // Player data. Holy crap this is a lot of data.
 new g_iPlayerLastButtons[MAXPLAYERS + 1];
-new Float:g_flPlayerLastEyeAngles[MAXPLAYERS + 1][3];
-new Float:g_flPlayerEyeAngleVelocity[MAXPLAYERS + 1][3];
 new bool:g_bPlayerChoseTeam[MAXPLAYERS + 1];
 new bool:g_bPlayerGhostMode[MAXPLAYERS + 1];
 new g_iPlayerGhostModeTarget[MAXPLAYERS + 1];
@@ -318,6 +318,7 @@ new bool:g_bPlayerInPvPTrigger[MAXPLAYERS + 1];
 new Handle:g_hPlayerPvPTimer[MAXPLAYERS + 1];
 new g_iPlayerPvPTimerCount[MAXPLAYERS + 1];
 new Float:g_flPlayerLastScareFromBoss[MAXPLAYERS + 1][MAX_BOSSES];
+new Handle:g_hPlayerFlames;
 
 // Player stress data.
 new Float:g_flPlayerStress[MAXPLAYERS + 1];
@@ -368,11 +369,22 @@ new Float:g_flPlayerAlertMusicVolumes[MAXPLAYERS + 1][MAX_BOSSES];
 new Handle:g_hPlayerAlertMusicTimer[MAXPLAYERS + 1][MAX_BOSSES];
 new g_iPlayerAlertMusicMaster[MAXPLAYERS + 1] = { -1, ... };
 
+new String:g_strPlayer20DollarsMusic[MAXPLAYERS + 1][PLATFORM_MAX_PATH];
+new Float:g_flPlayer20DollarsMusicVolumes[MAXPLAYERS + 1][MAX_BOSSES];
+new Handle:g_hPlayer20DollarsMusicTimer[MAXPLAYERS + 1][MAX_BOSSES];
+new g_iPlayer20DollarsMusicMaster[MAXPLAYERS + 1] = { -1, ... };
+
 new bool:g_bRoundGrace;
 new bool:g_bRoundWaitingForPlayers;
 new bool:g_bRoundWarmup;
+new bool:g_bRoundIntro;
+new Handle:g_hRoundIntroTimer;
+new bool:g_bRoundIntroTextDefault;
+new Handle:g_hRoundIntroTextTimer;
+new g_iRoundIntroText;
 new bool:g_bRoundMustEscape;
 new Handle:g_hRoundGraceTimer;
+new String:g_strRoundBossProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 new Float:g_flRoundDifficultyModifier = DIFFICULTY_NORMAL;
 new bool:g_bRoundEnded;
 new g_iRoundCount;
@@ -440,6 +452,8 @@ new Handle:g_cvUltravisionEnabled;
 new Handle:g_cvUltravisionRadiusRed;
 new Handle:g_cvUltravisionRadiusBlue;
 new Handle:g_cvUltravisionBrightness;
+new Handle:g_cvIntroDefaultHoldTime;
+new Handle:g_cvIntroDefaultFadeTime;
 new Handle:g_cvTimeLimit;
 new Handle:g_cvTimeLimitEscape;
 new Handle:g_cvTimeGainFromPageGrab;
@@ -454,6 +468,8 @@ new Handle:g_cvHalfZatoichiHealthGain;
 
 new Handle:g_cvGravity;
 new Float:g_flGravity;
+
+new bool:g_b20Dollars;
 
 new bool:g_bPlayerShakeEnabled;
 new bool:g_bPlayerViewbobEnabled;
@@ -627,6 +643,8 @@ public OnPluginStart()
 	LoadTranslations("common.phrases");
 	LoadTranslations("sf2.phrases");
 	
+	g_hPlayerFlames = CreateArray(2);
+	
 	// Get offsets.
 	g_offsPlayerFOV = FindSendPropInfo("CBasePlayer", "m_iFOV");
 	if (g_offsPlayerFOV == -1) SetFailState("Couldn't find CBasePlayer offset for m_iFOV.");
@@ -658,6 +676,8 @@ public OnPluginStart()
 	g_cvSlenderMapsOnly = CreateConVar("sf2_slendermapsonly", "1", "Only enable the Slender Fortress gamemode on map names prefixed with \"slender_\" or \"sf2_\".");
 	
 	g_cvGraceTime = CreateConVar("sf2_gracetime", "30.0");
+	g_cvIntroDefaultHoldTime = CreateConVar("sf2_intro_default_hold_time", "7.0");
+	g_cvIntroDefaultFadeTime = CreateConVar("sf2_intro_default_fade_time", "1.0");
 	
 	g_cvAllChat = CreateConVar("sf2_alltalk", "0");
 	
@@ -689,6 +709,7 @@ public OnPluginStart()
 	g_cvUltravisionBrightness = CreateConVar("sf2_player_ultravision_brightness", "-4");
 	
 	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.");
+	HookConVarChange(g_cv20Dollars, OnConVarChanged);
 	
 	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players than can be in one round.");
 	HookConVarChange(g_cvMaxPlayers, OnConVarChanged);
@@ -921,14 +942,15 @@ public OnPluginStart()
 	StrCat(buffer, sizeof(buffer), "Version: ");
 	StrCat(buffer, sizeof(buffer), PLUGIN_VERSION);
 	StrCat(buffer, sizeof(buffer), "\n \n");
+	StrCat(buffer, sizeof(buffer), "Mark J. Hadley - Creating Slender and the default music ambience\n");
 	StrCat(buffer, sizeof(buffer), "Mammoth Mogul - for being a GREAT test subject\n");
 	StrCat(buffer, sizeof(buffer), "Egosins - getting the first server to run this mod\n");
 	StrCat(buffer, sizeof(buffer), "Somberguy - suggestions and support\n");
 	StrCat(buffer, sizeof(buffer), "Voonyl/Tristtess - materials, maps, and other great stuff\n");
 	StrCat(buffer, sizeof(buffer), "Narry Gewman - imported Slender Man model that has tentacles\n");
 	StrCat(buffer, sizeof(buffer), "Simply Delicious - for the awesome camera overlay!\n");
-	StrCat(buffer, sizeof(buffer), "Jason278 - Page models\n");
-	StrCat(buffer, sizeof(buffer), "Mark J. Hadley - Creating Slender and the default music ambience\n");
+	StrCat(buffer, sizeof(buffer), "Jason278 - Page models");
+	StrCat(buffer, sizeof(buffer), "\n \n");
 	
 	SetMenuTitle(g_hMenuCredits, buffer);
 	AddMenuItem(g_hMenuCredits, "0", "Next");
@@ -1154,6 +1176,9 @@ public OnMapStart()
 	g_bBossRound = false;
 	g_iBossRoundCount = 0;
 	strcopy(g_strBossRoundProfile, sizeof(g_strBossRoundProfile), "");
+	
+	// Reset PvP stuff.
+	ClearArray(g_hPlayerFlames);
 }
 
 public OnConfigsExecuted()
@@ -1177,6 +1202,8 @@ public OnConfigsExecuted()
 	
 	g_flGravity = GetConVarFloat(g_cvGravity);
 	
+	g_b20Dollars = GetConVarBool(g_cv20Dollars);
+	
 	g_bPlayerShakeEnabled = GetConVarBool(g_cvPlayerShakeEnabled);
 	g_bPlayerViewbobEnabled = GetConVarBool(g_cvPlayerViewbobEnabled);
 	g_bPlayerViewbobHurtEnabled = GetConVarBool(g_cvPlayerViewbobHurtEnabled);
@@ -1192,7 +1219,7 @@ public OnConfigsExecuted()
 	ReloadRestrictedWeapons();
 	ReloadSpecialRounds();
 	
-	CreateTimer(0.2, Timer_HUDUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	CreateTimer(0.2, Timer_ClientAverageUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	CreateTimer(2.0, Timer_BossCountUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
 	// Reset special round.
@@ -1223,7 +1250,6 @@ PrecacheStuff()
 	PrecacheSound2(FLASHLIGHT_CLICKSOUND);
 	PrecacheSound2(FLASHLIGHT_BREAKSOUND);
 	PrecacheSound2(FLASHLIGHT_NOSOUND);
-	PrecacheSound2(TWENTYDOLLARS_SOUND);
 	PrecacheSound2(PAGE_GRABSOUND);
 	
 	PrecacheSound2(MUSIC_GOTPAGES1_SOUND);
@@ -1241,6 +1267,7 @@ PrecacheStuff()
 	// Special round.
 	PrecacheSound2(SR_MUSIC);
 	PrecacheSound2(SR_SOUND_SELECT);
+	PrecacheSound2(INTRO_MUSIC);
 	
 	PrecacheMaterial2(BLACK_OVERLAY);
 	
@@ -1299,13 +1326,160 @@ public OnPluginEnd()
 
 public OnGameFrame()
 {
+	// Process through boss movement.
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		if (g_iSlenderID[i] == -1) continue;
-		if (EntRefToEntIndex(g_iSlender[i]) == INVALID_ENT_REFERENCE) continue;
+		
+		new iBoss = EntRefToEntIndex(g_iSlender[i]);
+		
+		if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
 		if (g_iSlenderFlags[i] & SFF_MARKEDASFAKE) continue;
 		
-		SlenderChaseBossProcessMovement(i);
+		new iType = g_iSlenderType[i];
+		
+		switch (iType)
+		{
+			case 0:
+			{
+				decl Float:myPos[3], Float:hisPos[3];
+				SlenderGetAbsOrigin(i, myPos);
+				AddVectors(myPos, g_flSlenderEyePosOffset[i], myPos);
+				
+				new iBestPlayer = -1;
+				new Float:flBestDistance = 16384.0;
+				new Float:flTempDistance;
+				
+				for (new iClient = 1; iClient <= MaxClients; iClient++)
+				{
+					if (!IsClientInGame(iClient) || !IsPlayerAlive(iClient) || g_bPlayerGhostMode[iClient] || g_bPlayerDeathCam[iClient]) continue;
+					if (!IsPointVisibleToPlayer(iClient, myPos, false, false)) continue;
+					
+					GetClientAbsOrigin(iClient, hisPos);
+					
+					flTempDistance = GetVectorDistance(myPos, hisPos);
+					if (flTempDistance < flBestDistance)
+					{
+						iBestPlayer = iClient;
+						flBestDistance = flTempDistance;
+					}
+				}
+				
+				if (iBestPlayer > 0)
+				{
+					SlenderGetAbsOrigin(i, myPos);
+					GetClientAbsOrigin(iBestPlayer, hisPos);
+					
+					if (!SlenderOnlyLooksIfNotSeen(i) || !IsPointVisibleToAPlayer(myPos, false, SlenderUsesBlink(i)))
+					{
+						new Float:flTurnRate = g_flSlenderTurnRate[i];
+					
+						if (flTurnRate > 0.0)
+						{
+							decl Float:flMyEyeAng[3], Float:ang[3];
+							GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
+							SubtractVectors(flMyEyeAng, g_flSlenderEyeAngOffset[i], flMyEyeAng);
+							SubtractVectors(hisPos, myPos, ang);
+							GetVectorAngles(ang, ang);
+							ang[0] = 0.0;
+							ang[1] += (AngleDiff(ang[1], flMyEyeAng[1]) >= 0.0 ? 1.0 : -1.0) * flTurnRate * GetTickInterval();
+							ang[2] = 0.0;
+							
+							// Take care of angle offsets.
+							AddVectors(ang, g_flSlenderEyePosOffset[i], ang);
+							for (new i2 = 0; i2 < 3; i2++) ang[i2] = AngleNormalize(ang[i2]);
+							
+							TeleportEntity(iBoss, NULL_VECTOR, ang, NULL_VECTOR);
+						}
+					}
+				}
+			}
+			case 2:
+			{
+				SlenderChaseBossProcessMovement(i);
+			}
+		}
+	}
+	
+	// Process through PvP projectiles.
+	for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
+	{
+		new ent = -1;
+		while ((ent = FindEntityByClassname(ent, g_sPlayerProjectileClasses[i])) != -1)
+		{
+			new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
+			new bool:bChangeProjectileTeam = false;
+			
+			new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
+			if (IsValidClient(iOwnerEntity) && IsClientInPvP(iOwnerEntity))
+			{
+				bChangeProjectileTeam = true;
+			}
+			else if (iThrowerOffset != -1)
+			{
+				iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
+				if (IsValidClient(iOwnerEntity) && IsClientInPvP(iOwnerEntity))
+				{
+					bChangeProjectileTeam = true;
+				}
+			}
+			
+			if (bChangeProjectileTeam)
+			{
+				SetEntProp(ent, Prop_Data, "m_iInitialTeamNum", 0);
+				SetEntProp(ent, Prop_Send, "m_iTeamNum", 0);
+			}
+		}
+	}
+	
+	// Process through PvP flame entities.
+	{
+		static Float:flMins[3] = { -6.0, ... };
+		static Float:flMaxs[3] = { 6.0, ... };
+		
+		decl Float:flOrigin[3];
+		
+		new Handle:hTrace = INVALID_HANDLE;
+		new ent = -1;
+		new iOwnerEntity = INVALID_ENT_REFERENCE; 
+		new iHitEntity = INVALID_ENT_REFERENCE;
+		
+		while ((ent = FindEntityByClassname(ent, "tf_flame")) != -1)
+		{
+			iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
+			
+			if (IsValidEdict(iOwnerEntity))
+			{
+				// tf_flame's initial owner SHOULD be the flamethrower that it originates from.
+				// If not, then something's completely bogus.
+				
+				iOwnerEntity = GetEntPropEnt(iOwnerEntity, Prop_Data, "m_hOwnerEntity");
+			}
+			
+			if (IsValidClient(iOwnerEntity) && (g_bRoundWarmup || IsClientInPvP(iOwnerEntity)))
+			{
+				GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flOrigin);
+				
+				hTrace = TR_TraceHullFilterEx(flOrigin, flOrigin, flMins, flMaxs, MASK_PLAYERSOLID, TraceRayDontHitEntity, iOwnerEntity);
+				iHitEntity = TR_GetEntityIndex(hTrace);
+				CloseHandle(hTrace);
+				
+				if (IsValidEntity(iHitEntity))
+				{
+					new entref = EntIndexToEntRef(ent);
+					
+					new iIndex = FindValueInArray(g_hPlayerFlames, entref);
+					if (iIndex != -1)
+					{
+						if (iHitEntity != EntRefToEntIndex(GetArrayCell(g_hPlayerFlames, iIndex, 1)))
+						{
+							SetArrayCell(g_hPlayerFlames, iIndex, EntIndexToEntRef(iHitEntity), 1);
+							FakeHook_TFFlameStartTouchPost(ent, iHitEntity);
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -2938,6 +3112,10 @@ public OnConVarChanged(Handle:cvar, const String:oldValue[], const String:newVal
 	{
 		g_flGravity = StringToFloat(newValue);
 	}
+	else if (cvar == g_cv20Dollars)
+	{
+		g_b20Dollars = bool:StringToInt(newValue);
+	}
 }
 
 //	==========================================================
@@ -2962,6 +3140,14 @@ public OnEntityCreated(ent, const String:classname[])
 	{
 		SDKHook(ent, SDKHook_SpawnPost, Hook_BreakableSpawnPost);
 	}
+	else if (StrEqual(classname, "tf_flame", false))
+	{
+		new iIndex = PushArrayCell(g_hPlayerFlames, EntIndexToEntRef(ent));
+		if (iIndex != -1)
+		{
+			SetArrayCell(g_hPlayerFlames, iIndex, INVALID_ENT_REFERENCE, 1);
+		}
+	}
 	else
 	{
 		for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
@@ -2981,13 +3167,33 @@ public OnEntityDestroyed(ent)
 
 	if (ent <= 0) return;
 	
-	if (IsValidEdict(ent))
+	if (IsValidEntity(ent))
 	{
 		decl String:sClassname[64];
-		GetEdictClassname(ent, sClassname, sizeof(sClassname));
+		GetEntityClassname(ent, sClassname, sizeof(sClassname));
+		
 		if (StrEqual(sClassname, "light_dynamic", false))
 		{
 			AcceptEntityInput(ent, "TurnOff");
+			
+			new iEnd = INVALID_ENT_REFERENCE;
+			while ((iEnd = FindEntityByClassname(iEnd, "spotlight_end")) != -1)
+			{
+				if (GetEntPropEnt(iEnd, Prop_Data, "m_hOwnerEntity") == ent)
+				{
+					AcceptEntityInput(iEnd, "Kill");
+					break;
+				}
+			}
+		}
+		else if (StrEqual(sClassname, "tf_flame", false))
+		{
+			new entref = EntIndexToEntRef(ent);
+			new iIndex = FindValueInArray(g_hPlayerFlames, entref);
+			if (iIndex != -1)
+			{
+				RemoveFromArray(g_hPlayerFlames, iIndex);
+			}
 		}
 	}
 }
@@ -3616,11 +3822,12 @@ public TF2_OnWaitingForPlayersEnd()
 #define SF2_PLAYER_HUD_INFINITY_SYMBOL "∞"
 #define SF2_PLAYER_HUD_SPRINT_SYMBOL "»"
 
-public Action:Timer_HUDUpdate(Handle:timer)
+public Action:Timer_ClientAverageUpdate(Handle:timer)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 	if (g_bRoundWarmup || g_bRoundEnded) return Plugin_Continue;
 	
+	// First, process through HUD stuff.
 	decl String:buffer[256];
 	
 	static iHudColorHealthy[3] = { 150, 255, 150 };
@@ -3761,6 +3968,7 @@ public Action:Timer_HUDUpdate(Handle:timer)
 		}
 		
 		ClientUpdateListeningFlags(i);
+		ClientUpdateMusicSystem(i);
 	}
 	
 	return Plugin_Continue;
@@ -3772,7 +3980,6 @@ stock bool:IsClientParticipating(client)
 	
 	new iTeam = GetClientTeam(client);
 	
-	// Not taking any chances!
 	if (g_bPlayerLagCompensation[client]) iTeam = g_iPlayerLagCompensationTeam[client];
 	
 	switch (iTeam)
@@ -3944,66 +4151,24 @@ public Hook_SlenderOnTakeDamagePost(slender, attacker, inflictor, Float:damage, 
 	}
 }
 
-public Action:Hook_SlenderSetTransmit(slender, other)
+public Action:Hook_SlenderModelSetTransmit(entity, other)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
-	if (iBossIndex == -1) return Plugin_Continue;
+	new iBossIndex = -1;
 	
-	if (g_iSlenderType[iBossIndex] != 1)
+	new entref = EntIndexToEntRef(entity);
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		decl Float:myPos[3], Float:hisPos[3];
-		SlenderGetAbsOrigin(iBossIndex, myPos);
-		AddVectors(myPos, g_flSlenderEyePosOffset[iBossIndex], myPos);
+		if (g_iSlenderID[i] == -1) continue;
+		if (g_iSlenderModel[i] != entref) continue;
 		
-		new iBestPlayer = -1;
-		new Float:flBestDistance = 16384.0;
-		new Float:flTempDistance;
-		
-		for (new i = 1; i <= MaxClients; i++)
-		{
-			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerGhostMode[i] || g_bPlayerDeathCam[i]) continue;
-			if (!IsPointVisibleToPlayer(i, myPos, false, false)) continue;
-			
-			GetClientAbsOrigin(i, hisPos);
-			
-			flTempDistance = GetVectorDistance(myPos, hisPos);
-			if (flTempDistance < flBestDistance)
-			{
-				iBestPlayer = i;
-				flBestDistance = flTempDistance;
-			}
-		}
-		
-		if (iBestPlayer > 0)
-		{
-			SlenderGetAbsOrigin(iBossIndex, myPos);
-			GetClientAbsOrigin(iBestPlayer, hisPos);
-			
-			if (!SlenderOnlyLooksIfNotSeen(iBossIndex) || !IsPointVisibleToAPlayer(myPos, false, SlenderUsesBlink(iBossIndex)))
-			{
-				if (g_flSlenderTurnRate[iBossIndex] > 0.0)
-				{
-					decl Float:flMyEyeAng[3], Float:ang[3], Float:flAngOffset[3];
-					GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-					GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", flAngOffset);
-					SubtractVectors(flMyEyeAng, flAngOffset, flMyEyeAng);
-					SubtractVectors(hisPos, myPos, ang);
-					GetVectorAngles(ang, ang);
-					ang[0] = 0.0;
-					ang[1] = ApproachAngle(ang[1], flMyEyeAng[1], g_flSlenderTurnRate[iBossIndex]);
-					ang[2] = 0.0;
-					
-					// Take care of angle offsets.
-					AddVectors(ang, flAngOffset, ang);
-					for (new i = 0; i < 3; i++) ang[i] = AngleNormalize(ang[i]);
-					
-					TeleportEntity(slender, NULL_VECTOR, ang, NULL_VECTOR);
-				}
-			}
-		}
+		iBossIndex = i;
+		break;
 	}
+	
+	if (iBossIndex == -1) return Plugin_Continue;
 	
 	if (!IsPlayerAlive(other) || g_bPlayerDeathCam[other]) return Plugin_Handled;
 	return Plugin_Continue;
@@ -4074,8 +4239,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsVelocity", flSlenderVelocity);
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	GetProfileVector(sSlenderProfile, "eye_ang_offset", flBuffer, Float:{ 0.0, 0.0, 0.0 });
-	AddVectors(flMyEyeAng, flBuffer, flMyEyeAng);
+	AddVectors(flMyEyeAng, g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
 	
 	new Float:flVelocityRatio;
@@ -5340,7 +5504,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 		
 		if (bTraceHit)
 		{
-			new Float:flGroundHeight = GetVectorDistance(flMyPos, flTraceEndPos);
+			//new Float:flGroundHeight = GetVectorDistance(flMyPos, flTraceEndPos);
 			GetVectorCrossProduct(flLat, flTraceNormal, flMoveDir);
 			GetVectorCrossProduct(flMoveDir, flTraceNormal, flLat);
 			
@@ -5803,8 +5967,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 					GetVectorAngles(flAng, flAng);
 					
 					// Take care of angle offsets.
-					GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", flBuffer);
-					AddVectors(flAng, flBuffer, flAng);
+					AddVectors(flAng, g_flSlenderEyePosOffset[iBossIndex], flAng);
 					for (new i = 0; i < 3; i++) flAng[i] = AngleNormalize(flAng[i]);
 					
 					flAng[0] = 0.0;
@@ -6269,13 +6432,43 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 								
 								new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
 								
-								// Check space.
-								if (IsSpaceOccupiedNPC(flAreaCenter,
-									g_flSlenderDetectMins[iBossIndex],
-									g_flSlenderDetectMaxs[iBossIndex],
-									iBoss))
+								// Check space. First raise to HalfHumanHeight, then trace downwards to get ground level.
 								{
-									continue;
+									decl Float:flTraceStartPos[3];
+									flTraceStartPos[0] = flAreaCenter[0];
+									flTraceStartPos[1] = flAreaCenter[1];
+									flTraceStartPos[2] = flAreaCenter[2] + HalfHumanHeight;
+									
+									decl Float:flTraceMins[3];
+									flTraceMins[0] = g_flSlenderDetectMins[iBossIndex][0];
+									flTraceMins[1] = g_flSlenderDetectMins[iBossIndex][1];
+									flTraceMins[2] = 0.0;
+									
+									decl Float:flTraceMaxs[3];
+									flTraceMaxs[0] = g_flSlenderDetectMaxs[iBossIndex][0];
+									flTraceMaxs[1] = g_flSlenderDetectMaxs[iBossIndex][1];
+									flTraceMaxs[2] = 0.0;
+									
+									new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+										flAreaCenter,
+										flTraceMins,
+										flTraceMaxs,
+										MASK_NPCSOLID,
+										TraceRayDontHitEntity,
+										iBoss);
+									
+									decl Float:flTraceHitPos[3];
+									TR_GetEndPosition(flTraceHitPos, hTrace);
+									new bool:bDidHit = TR_DidHit(hTrace);
+									CloseHandle(hTrace);
+									
+									if (bDidHit || (IsSpaceOccupiedNPC(flTraceHitPos,
+										g_flSlenderDetectMins[iBossIndex],
+										g_flSlenderDetectMaxs[iBossIndex],
+										iBoss)))
+									{
+										continue;
+									}
 								}
 								
 								new bool:bTooNear = false;
@@ -6424,11 +6617,10 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	new iDamageType = GetProfileNum(g_strSlenderProfile[iBossIndex], "attack_damagetype");
 	
 	// Damage all players within range.
-	decl Float:flMyEyePos[3], Float:flMyEyeAngOffset[3], Float:flMyEyeAng[3];
+	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
 	SlenderGetEyePosition(iBossIndex, flMyEyePos);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", flMyEyeAngOffset);
-	AddVectors(flMyEyeAngOffset, flMyEyeAng, flMyEyeAng);
+	AddVectors(g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
 	
 	decl Float:flViewPunch[3];
@@ -6485,7 +6677,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 		if (!bTraceDidHit || iTraceHitEntity == i)
 		{
 			flTargetDist = GetVectorDistance(flTargetPos, flMyEyePos);
-		
+			
 			if (flTargetDist <= flAttackRange)
 			{
 				decl Float:flDirection[3];
@@ -6512,7 +6704,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 						new Float:flDuration = SlenderGetAttributeValue(iBossIndex, "bleed player on hit");
 						if (flDuration > 0.0)
 						{
-							TF2_MakeBleed(i, i, flDuration);
+							TF2_MakeBleed(i, slender, flDuration);
 						}
 					}
 					
@@ -6639,10 +6831,7 @@ SetPageCount(iNum)
 		CreateTimer(0.2, Timer_CheckRoundState, _, TIMER_FLAG_NO_MAPCHANGE);
 		
 		new iGameTextPage = GetTextEntity("sf2_page_message", false);
-		if (iGameTextPage == -1) iGameTextPage = GetTextEntity("slender_page_message", false);
-		
 		new iGameTextEscape = GetTextEntity("sf2_escape_message", false);
-		if (iGameTextEscape == -1) iGameTextEscape = GetTextEntity("slender_escape_message", false);
 		
 		new iClients[MAXPLAYERS + 1] = { -1, ... };
 		new iClientsNum = 0;
@@ -6662,8 +6851,7 @@ SetPageCount(iNum)
 						while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
 						{
 							GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-							if (StrEqual(sName, "sf2_logic_escape", false) ||
-								StrEqual(sName, "slender_logic_escape", false))
+							if (StrEqual(sName, "sf2_logic_escape", false))
 							{
 								AcceptEntityInput(ent, "FireUser1");
 								break;
@@ -6808,23 +6996,24 @@ ShowHudTextUsingTextEntity(const iClients[], iClientsNum, iGameText, Handle:hHud
 	new Float:flHoldTime = GetEntPropFloat(iGameText, Prop_Data, "m_textParms.holdTime");
 	new Float:flFxTime = GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fxTime");
 	
-	new Color1[4], Color2[4];
-	/*
-	Color1[0] = GetEntProp(iGameText, Prop_Data, "m_textParms.r1");
-	Color1[1] = GetEntProp(iGameText, Prop_Data, "m_textParms.g1");
-	Color1[2] = GetEntProp(iGameText, Prop_Data, "m_textParms.b1");
-	Color1[3] = GetEntProp(iGameText, Prop_Data, "m_textParms.a1");
-	Color2[0] = GetEntProp(iGameText, Prop_Data, "m_textParms.r2");
-	Color2[1] = GetEntProp(iGameText, Prop_Data, "m_textParms.g2");
-	Color2[2] = GetEntProp(iGameText, Prop_Data, "m_textParms.b2");
-	Color2[3] = GetEntProp(iGameText, Prop_Data, "m_textParms.a2");
-	*/
-	for (new i = 0; i < 4; i++)
-	{
-		Color1[i] = 255;
-		Color2[i] = 255;
-	}
+	new Color1[4] = { 255, 255, 255, 255 };
+	new Color2[4] = { 255, 255, 255, 255 };
 	
+	new iParmsOffset = FindDataMapOffs(iGameText, "m_textParms");
+	if (iParmsOffset != -1)
+	{
+		// hudtextparms_s m_textParms
+		
+		Color1[0] = GetEntData(iGameText, iParmsOffset + 12, 1);
+		Color1[1] = GetEntData(iGameText, iParmsOffset + 13, 1);
+		Color1[2] = GetEntData(iGameText, iParmsOffset + 14, 1);
+		Color1[3] = GetEntData(iGameText, iParmsOffset + 15, 1);
+		
+		Color2[0] = GetEntData(iGameText, iParmsOffset + 16, 1);
+		Color2[1] = GetEntData(iGameText, iParmsOffset + 17, 1);
+		Color2[2] = GetEntData(iGameText, iParmsOffset + 18, 1);
+		Color2[3] = GetEntData(iGameText, iParmsOffset + 19, 1);
+	}
 	
 	SetHudTextParamsEx(flX, flY, flHoldTime, Color1, Color2, iEffect, flFxTime, flFadeInTime, flFadeOutTime);
 	
@@ -6861,7 +7050,7 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dB)
 	}
 	else
 	{
-		CreateTimer(2.0, Timer_RoundStart, _, TIMER_FLAG_NO_MAPCHANGE);
+		//CreateTimer(2.0, Timer_RoundStart, _, TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
 #if defined DEBUG
@@ -7169,6 +7358,36 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 					g_hPlayerCampingTimer[client] = CreateTimer(5.0, Timer_ClientCheckCamp, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 					g_hPlayerBlinkTimer[client] = CreateTimer(GetClientBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 					CreateTimer(0.1, Timer_CheckEscapedPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+					
+					// Black out the player's screen.
+					if (g_bRoundIntro)
+					{
+						new iFadeFlags = FFADE_OUT | FFADE_STAYOUT | FFADE_PURGE;
+						new iColor[4] = { 0, 0, 0, 255 };
+						
+						new iFadeEntity = INVALID_ENT_REFERENCE;
+						
+						while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
+						{
+							decl String:sName[32];
+							GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
+							if (StrEqual(sName, "sf2_intro_fade", false))
+							{
+								new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
+								if (iColorOffset != -1)
+								{
+									iColor[0] = GetEntData(iFadeEntity, iColorOffset, 1);
+									iColor[1] = GetEntData(iFadeEntity, iColorOffset + 1, 1);
+									iColor[2] = GetEntData(iFadeEntity, iColorOffset + 2, 1);
+									iColor[3] = GetEntData(iFadeEntity, iColorOffset + 3, 1);
+								}
+								
+								break;
+							}
+						}
+						
+						UTIL_ScreenFade(client, 0, FixedUnsigned16(90.0, 1 << 12), iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
+					}
 				}
 			}
 			else
@@ -7192,6 +7411,8 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			TF2_RemoveCondition(client, TFCond_SmallBulletResist);
 			TF2_RemoveCondition(client, TFCond_SmallBlastResist);
 			TF2_RemoveCondition(client, TFCond_SmallFireResist);
+			
+			SetEntProp(client, Prop_Send, "m_CollisionGroup", 11) // COLLISION_GROUP_WEAPON
 		}
 	}
 	
@@ -7329,10 +7550,11 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 			ClientResetJumpScare(client);
 			ClientResetGlow(client);
 			ClientResetProxyGlow(client);
-			ClientMusicReset(client);
 			ClientChaseMusicReset(client);
 			ClientChaseMusicSeeReset(client);
 			ClientAlertMusicReset(client);
+			Client20DollarsMusicReset(client);
+			ClientMusicReset(client);
 			ClientResetDeathCam(client);
 			ClientResetPvP(client);
 			ClientResetSprint(client);
@@ -7462,10 +7684,6 @@ public Action:Timer_RoundStart(Handle:timer)
 		new iClientsNum = 0;
 		
 		new iGameText = GetTextEntity("sf2_intro_message", false);
-		if (iGameText == -1)
-		{
-			iGameText = GetTextEntity("slender_intro_message", false);
-		}
 		
 		for (new i = 1; i <= MaxClients; i++)
 		{
@@ -7729,16 +7947,17 @@ InitializeNewGame()
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeNewGame()");
 #endif
-
+	
 	SetPageCount(0);
 	g_iPageMax = 0;
 	g_flPageFoundLastTime = GetGameTime();
 	g_iRoundCount++;
+	g_bRoundIntro = false;
 	g_bRoundEnded = false;
 	g_bRoundWarmup = true;
 	g_bRoundGrace = true;
 	g_bRoundMustEscape = false;
-	g_hRoundGraceTimer = CreateTimer(GetConVarFloat(g_cvGraceTime), Timer_RoundGrace, _, TIMER_FLAG_NO_MAPCHANGE);
+	g_hRoundGraceTimer = INVALID_HANDLE;
 	g_bRoundInfiniteFlashlight = false;
 	g_bRoundInfiniteBlink = false;
 	g_hRoundTimer = INVALID_HANDLE;
@@ -8203,6 +8422,8 @@ InitializeNewGame()
 	}
 	
 	// Was a new boss round initialized?
+	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	if (bBossOld != g_bBossRound || GetConVarInt(g_cvBossRoundBehavior) == 0)
 	{
 		if (g_bBossRound)
@@ -8223,11 +8444,11 @@ InitializeNewGame()
 			}
 			
 			// Get a new boss.
-			GetArrayString(hArray, GetRandomInt(1, GetArraySize(hArray) - 1), g_strBossRoundProfile, sizeof(g_strBossRoundProfile));
+			GetArrayString(hArray, GetRandomInt(1, GetArraySize(hArray) - 1), sProfile, sizeof(sProfile));
 		}
 		else
 		{
-			strcopy(g_strBossRoundProfile, sizeof(g_strBossRoundProfile), "");
+			strcopy(sProfile, sizeof(sProfile), "");
 		}
 	}
 	
@@ -8235,58 +8456,39 @@ InitializeNewGame()
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Selecting boss profile");
 #endif
 	
-	// Select which profile to use.
-	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH], String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	// Select which boss profile to use.
+	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH];
 	GetConVarString(g_cvProfileOverride, sProfileOverride, sizeof(sProfileOverride));
+	
+	strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), "");
 	
 	if (sProfileOverride[0] && FindStringInArray(hArray, sProfileOverride) != -1)
 	{
 		// Pick the overridden boss.
-		strcopy(sProfile, sizeof(sProfile), sProfileOverride);
+		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfileOverride);
 		SetConVarString(g_cvProfileOverride, "");
 	}
-	else if (g_bBossRound && g_strBossRoundProfile[0] && FindStringInArray(hArray, g_strBossRoundProfile) != -1)
+	else if (g_bBossRound && sProfile[0] && FindStringInArray(hArray, sProfile) != -1)
 	{
 		// Pick the special boss.
-		strcopy(sProfile, sizeof(sProfile), g_strBossRoundProfile);
+		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfile);
 	}
 	else
 	{
-		GetConVarString(g_cvBossMain, sProfileOverride, sizeof(sProfileOverride));
-		if (sProfileOverride[0] && FindStringInArray(hArray, sProfileOverride) != -1)
+		GetConVarString(g_cvBossMain, sProfile, sizeof(sProfile));
+		if (sProfile[0] && FindStringInArray(hArray, sProfile) != -1)
 		{
-			strcopy(sProfile, sizeof(sProfile), sProfileOverride);
+			strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfile);
 		}
 		else
 		{
-			// Pick the first boss.
-			GetArrayString(hArray, 0, sProfile, sizeof(sProfile));
+			// Pick the first boss in our array.
+			GetArrayString(hArray, 0, g_strRoundBossProfile, sizeof(g_strRoundBossProfile));
 		}
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Getting boss profile companions");
-#endif
 	
 	// We don't need this anymore. Close it now.
 	CloseHandle(hArray);
-	
-	SelectProfile(0, sProfile);
-	
-	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, sProfile);
-	
-	if (KvJumpToKey(g_hConfig, "companions"))
-	{
-		for (new i = 1; i <= MAX_BOSSES; i++)
-		{
-			IntToString(i, buffer, sizeof(buffer));
-			KvGetString(g_hConfig, buffer, sProfile, sizeof(sProfile));
-			if (!sProfile[0]) break;
-			
-			SelectProfile(i, sProfile);
-		}
-	}
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Refreshing groups and players");
@@ -8318,14 +8520,234 @@ InitializeNewGame()
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Respawning players");
 #endif
 	
+	// All players respawned. Start the intro sequence.
+	g_bRoundIntro = true;
+	g_hRoundIntroTimer = CreateTimer(GetConVarFloat(g_cvIntroDefaultHoldTime), Timer_IntroEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+	
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (IsClientParticipating(i)) TF2_RespawnPlayer(i);
 	}
 	
+	g_iRoundIntroText = 0;
+	g_bRoundIntroTextDefault = false;
+	g_hRoundIntroTextTimer = CreateTimer(0.0, Timer_IntroTextSequence, _, TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hRoundIntroTextTimer);
+	
+	// Trigger intro logic, if any.
+	{
+		new iLogic = INVALID_ENT_REFERENCE;
+		while ((iLogic = FindEntityByClassname(iLogic, "logic_relay")) != -1)
+		{
+			decl String:sName[64];
+			GetEntPropString(iLogic, Prop_Data, "m_iName", sName, sizeof(sName));
+			if (StrEqual(sName, "sf2_intro_relay", false))
+			{
+				AcceptEntityInput(iLogic, "Trigger");
+				break;
+			}
+		}
+	}
+	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeNewGame()");
 #endif
+}
+
+public Action:Timer_IntroTextSequence(Handle:timer)
+{
+	if (!g_bEnabled) return;
+	if (g_hRoundIntroTextTimer != timer) return;
+	
+	new Float:flDuration = 0.0;
+	
+	if (g_iRoundIntroText != 0)
+	{
+		decl String:sTargetname[64];
+		Format(sTargetname, sizeof(sTargetname), "sf2_intro_text_%d", g_iRoundIntroText);
+		
+		new iGameText = INVALID_ENT_REFERENCE;
+		new bool:bFoundGameText = false;
+		
+		new iClients[MAXPLAYERS + 1];
+		new iClientsNum;
+		
+		for (new i = 1; i <= MaxClients; i++)
+		{
+			if (!IsClientInGame(i) || g_bPlayerEliminated[i]) continue;
+			
+			iClients[iClientsNum] = i;
+			iClientsNum++;
+		}
+		
+		if (!g_bRoundIntroTextDefault)
+		{
+			while ((iGameText = FindEntityByClassname(iGameText, "game_text")) != -1)
+			{
+				decl String:sName[64];
+				GetEntPropString(iGameText, Prop_Data, "m_iName", sName, sizeof(sName));
+				
+				if (StrEqual(sName, sTargetname, false))
+				{
+					bFoundGameText = true;
+					flDuration = GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fadeinTime") + GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fadeoutTime") + GetEntPropFloat(iGameText, Prop_Data, "m_textParms.holdTime");
+					
+					decl String:sMessage[512];
+					GetEntPropString(iGameText, Prop_Data, "m_iszMessage", sMessage, sizeof(sMessage));
+					ShowHudTextUsingTextEntity(iClients, iClientsNum, iGameText, g_hHudSync, sMessage);
+					break;
+				}
+			}
+		}
+		else
+		{
+			if (g_iRoundIntroText == 2)
+			{
+				bFoundGameText = false;
+				
+				decl String:sMessage[64];
+				GetCurrentMap(sMessage, sizeof(sMessage));
+				
+				for (new i = 0; i < iClientsNum; i++)
+				{
+					ClientShowMainMessage(iClients[i], sMessage, 1);
+				}
+			}
+		}
+		
+		if (g_iRoundIntroText == 1 && !bFoundGameText)
+		{
+			// Use default intro sequence. Eugh.
+			g_bRoundIntroTextDefault = true;
+			flDuration = GetConVarFloat(g_cvIntroDefaultHoldTime) / 2.0;
+			
+			for (new i = 0; i < iClientsNum; i++)
+			{
+				EmitSoundToClient(iClients[i], INTRO_MUSIC, _, MUSIC_CHAN, SNDLEVEL_NONE);
+			}
+		}
+		else
+		{
+			if (!bFoundGameText) return; // done with sequence; don't check anymore.
+			
+			if (g_iRoundIntroText == 1)
+			{
+				new bool:bUseDefault = true;
+			
+				new iIntroMusic = INVALID_ENT_REFERENCE;
+				while ((iIntroMusic = FindEntityByClassname(iIntroMusic, "ambient_generic")) != -1)
+				{
+					decl String:sName[64];
+					GetEntPropString(iIntroMusic, Prop_Data, "m_iName", sName, sizeof(sName));
+					
+					if (StrEqual(sName, "sf2_intro_music", false))
+					{
+						decl String:sPath[PLATFORM_MAX_PATH];
+						GetEntPropString(iIntroMusic, Prop_Data, "m_iszSound", sPath, sizeof(sPath));
+						
+						if (!sPath[0])
+						{
+							LogError("Error! Found sf2_intro_music entity, but it has no sound path! Using default...");
+						}
+						else
+						{
+							bUseDefault = false;
+							
+							for (new i = 0; i < iClientsNum; i++)
+							{
+								EmitSoundToClient(iClients[i], sPath, _, MUSIC_CHAN, SNDLEVEL_NONE);
+							}
+						}
+						
+						break;
+					}
+				}
+				
+				if (bUseDefault)
+				{
+					for (new i = 0; i < iClientsNum; i++)
+					{
+						EmitSoundToClient(iClients[i], INTRO_MUSIC, _, MUSIC_CHAN, SNDLEVEL_NONE);
+					}
+				}
+			}
+		}
+	}
+	
+	g_iRoundIntroText++;
+	g_hRoundIntroTextTimer = CreateTimer(flDuration, Timer_IntroTextSequence, _, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action:Timer_IntroEnd(Handle:timer)
+{
+	if (!g_bEnabled) return;
+	if (g_hRoundIntroTimer != timer) return;
+	
+	g_bRoundIntro = false;
+	g_hRoundIntroTimer = INVALID_HANDLE;
+	
+	// Start the grace timer.
+	g_bRoundGrace = true;
+	g_hRoundGraceTimer = CreateTimer(GetConVarFloat(g_cvGraceTime), Timer_RoundGrace, _, TIMER_FLAG_NO_MAPCHANGE);
+	
+	CreateTimer(2.0, Timer_RoundStart, _, TIMER_FLAG_NO_MAPCHANGE);
+	
+	// Spawn the bosses!
+	SelectProfile(0, g_strRoundBossProfile);
+	
+	KvRewind(g_hConfig);
+	KvJumpToKey(g_hConfig, g_strRoundBossProfile);
+	
+	if (KvJumpToKey(g_hConfig, "companions"))
+	{
+		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		decl String:sNum[32];
+		
+		for (new i = 1;;i++)
+		{
+			IntToString(i, sNum, sizeof(sNum));
+			KvGetString(g_hConfig, sNum, sProfile, sizeof(sProfile));
+			if (!sProfile[0]) break;
+			
+			AddProfile(sProfile);
+		}
+	}
+	
+	// Fade in pls.
+	{
+		new Float:flFadeTime = GetConVarFloat(g_cvIntroDefaultFadeTime);
+		new iFadeFlags = SF_FADE_IN | FFADE_PURGE;
+		new iColor[4] = { 0, 0, 0, 255 };
+		
+		new iFadeEntity = INVALID_ENT_REFERENCE;
+		
+		while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
+		{
+			decl String:sName[32];
+			GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
+			if (StrEqual(sName, "sf2_intro_fade", false))
+			{
+				flFadeTime = GetEntPropFloat(iFadeEntity, Prop_Data, "m_Duration");
+				
+				new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
+				if (iColorOffset != -1)
+				{
+					iColor[0] = GetEntData(iFadeEntity, iColorOffset, 1);
+					iColor[1] = GetEntData(iFadeEntity, iColorOffset + 1, 1);
+					iColor[2] = GetEntData(iFadeEntity, iColorOffset + 2, 1);
+					iColor[3] = GetEntData(iFadeEntity, iColorOffset + 3, 1);
+				}
+				
+				break;
+			}
+		}
+		
+		for (new i = 1; i <= MaxClients; i++)
+		{
+			if (!IsClientInGame(i) || g_bPlayerEliminated[i]) continue;
+			UTIL_ScreenFade(i, FixedUnsigned16(flFadeTime, 1 << 12), 0, iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
+		}
+	}
 }
 
 public Action:Timer_DisplaySpecialRound(Handle:timer)

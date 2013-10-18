@@ -24,6 +24,11 @@
 #define FFADE_STAYOUT       0x0008        // ignores the duration, stays faded out until new ScreenFade message received
 #define FFADE_PURGE         0x0010        // Purges all other fades, replacing them with this one
 
+#define SF_FADE_IN				0x0001		// Fade in, not out
+#define SF_FADE_MODULATE		0x0002		// Modulate, don't blend
+#define SF_FADE_ONLYONE			0x0004
+#define SF_FADE_STAYOUT			0x0008
+
 #define MAX_BUTTONS 25
 
 #define FSOLID_CUSTOMRAYTEST 0x0001
@@ -432,6 +437,25 @@ stock VectorTransform(const Float:offset[3], const Float:worldpos[3], const Floa
 	buffer[0] = worldpos[0] + right[0] + fwd[0] + up[0];
 	buffer[1] = worldpos[1] + right[1] + fwd[1] + up[1];
 	buffer[2] = worldpos[2] + right[2] + fwd[2] + up[2];
+}
+
+stock FixedUnsigned16(Float:value, scale)
+{
+	new iOutput;
+	
+	iOutput = RoundToFloor(value * float(scale));
+	
+	if (iOutput < 0)
+	{
+		iOutput = 0;
+	}
+	
+	if (iOutput > 0xFFFF)
+	{
+		iOutput = 0xFFFF;
+	}
+	
+	return iOutput;
 }
 
 public bool:TraceRayDontHitEntity(entity, mask, any:data)
