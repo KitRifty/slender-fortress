@@ -5630,8 +5630,7 @@ public Action:Timer_CheckEscapedPlayer(Handle:timer, any:userid)
 		while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
 		{
 			GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-			if (!StrContains(sName, "sf2_escape_spawnpoint", false) ||
-				!StrContains(sName, "slender_escape_spawnpoint", false))
+			if (!StrContains(sName, "sf2_escape_spawnpoint", false))
 			{
 				decl Float:pos[3], Float:ang[3];
 				GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", pos);

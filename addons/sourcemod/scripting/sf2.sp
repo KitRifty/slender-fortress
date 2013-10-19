@@ -452,6 +452,7 @@ new Handle:g_cvUltravisionEnabled;
 new Handle:g_cvUltravisionRadiusRed;
 new Handle:g_cvUltravisionRadiusBlue;
 new Handle:g_cvUltravisionBrightness;
+new Handle:g_cvIntroEnabled;
 new Handle:g_cvIntroDefaultHoldTime;
 new Handle:g_cvIntroDefaultFadeTime;
 new Handle:g_cvTimeLimit;
@@ -465,6 +466,7 @@ new Handle:g_cvPlayerFakeLagCompensation;
 new Handle:g_cvPlayerProxyWaitTime;
 new Handle:g_cvPlayerProxyAsk;
 new Handle:g_cvHalfZatoichiHealthGain;
+new Handle:g_cvBlockSuicideDuringRound;
 
 new Handle:g_cvGravity;
 new Float:g_flGravity;
@@ -676,8 +678,11 @@ public OnPluginStart()
 	g_cvSlenderMapsOnly = CreateConVar("sf2_slendermapsonly", "1", "Only enable the Slender Fortress gamemode on map names prefixed with \"slender_\" or \"sf2_\".");
 	
 	g_cvGraceTime = CreateConVar("sf2_gracetime", "30.0");
+	g_cvIntroEnabled = CreateConVar("sf2_intro_enabled", "1");
 	g_cvIntroDefaultHoldTime = CreateConVar("sf2_intro_default_hold_time", "7.0");
 	g_cvIntroDefaultFadeTime = CreateConVar("sf2_intro_default_fade_time", "1.0");
+	
+	g_cvBlockSuicideDuringRound = CreateConVar("sf2_block_suicide_during_round", "0");
 	
 	g_cvAllChat = CreateConVar("sf2_alltalk", "0");
 	
@@ -787,12 +792,12 @@ public OnPluginStart()
 	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server");
 	AddCommandListener(Hook_CommandActionSlotItemOn, "+use_action_slot_item_server");
 	AddCommandListener(Hook_CommandActionSlotItemOff, "-use_action_slot_item_server");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "kill");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "explode");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "joinclass");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "join_class");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "jointeam");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "spectate");
+	AddCommandListener(Hook_CommandSuicideAttempt, "kill");
+	AddCommandListener(Hook_CommandSuicideAttempt, "explode");
+	AddCommandListener(Hook_CommandSuicideAttempt, "joinclass");
+	AddCommandListener(Hook_CommandSuicideAttempt, "join_class");
+	AddCommandListener(Hook_CommandSuicideAttempt, "jointeam");
+	AddCommandListener(Hook_CommandSuicideAttempt, "spectate");
 	AddCommandListener(Hook_CommandVoiceMenu, "voicemenu");
 	AddCommandListener(Hook_CommandSay, "say");
 	
@@ -942,12 +947,13 @@ public OnPluginStart()
 	StrCat(buffer, sizeof(buffer), "Version: ");
 	StrCat(buffer, sizeof(buffer), PLUGIN_VERSION);
 	StrCat(buffer, sizeof(buffer), "\n \n");
-	StrCat(buffer, sizeof(buffer), "Mark J. Hadley - Creating Slender and the default music ambience\n");
+	StrCat(buffer, sizeof(buffer), "Mark J. Hadley (AgentParsec) - Creating Slender and the default music ambience\n");
+	StrCat(buffer, sizeof(buffer), "Mark Steen - Composing the intro music");
 	StrCat(buffer, sizeof(buffer), "Mammoth Mogul - for being a GREAT test subject\n");
 	StrCat(buffer, sizeof(buffer), "Egosins - getting the first server to run this mod\n");
 	StrCat(buffer, sizeof(buffer), "Somberguy - suggestions and support\n");
-	StrCat(buffer, sizeof(buffer), "Voonyl/Tristtess - materials, maps, and other great stuff\n");
-	StrCat(buffer, sizeof(buffer), "Narry Gewman - imported Slender Man model that has tentacles\n");
+	StrCat(buffer, sizeof(buffer), "Voonyl/Tristtess - materials, maps, importing current Slender Man model, and more!\n");
+	StrCat(buffer, sizeof(buffer), "Narry Gewman - imported first Slender Man model\n");
 	StrCat(buffer, sizeof(buffer), "Simply Delicious - for the awesome camera overlay!\n");
 	StrCat(buffer, sizeof(buffer), "Jason278 - Page models");
 	StrCat(buffer, sizeof(buffer), "\n \n");
@@ -2246,6 +2252,18 @@ public Action:Hook_CommandSay(client, const String:command[], argc)
 	return Plugin_Continue;
 }
 
+public Action:Hook_CommandSuicideAttempt(client, const String:command[], argc)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
+	
+	if (g_bRoundIntro && !g_bPlayerEliminated[client]) return Plugin_Handled;
+	
+	if (!g_bRoundGrace && !g_bPlayerEliminated[client] && GetConVarBool(g_cvBlockSuicideDuringRound)) return Plugin_Handled;
+	
+	return Plugin_Continue;
+}
+
 public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
@@ -2993,6 +3011,160 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			
 			if (iSpawnNum <= 0) continue;
 			
+			if (!NavMesh_Exists()) continue; // No nav mesh, no spawning.
+			
+			new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[i]);
+			if (!IsValidEntity(iTeleportTarget)) continue;
+			
+			decl Float:flTargetPos[3];
+			GetClientAbsOrigin(iTeleportTarget, flTargetPos);
+			
+			new iTargetAreaIndex = NavMesh_GetNearestArea(flTargetPos);
+			if (iTargetAreaIndex == -1) continue; // not on nav mesh.
+			
+			// Search outwards until travel distance is at maximum range.
+			new Handle:hAreaArray = CreateArray(2);
+			new Handle:hAreas = NavMesh_CollectSurroundingAreas(iTargetAreaIndex, g_flSlenderTeleportMaxRange[i]);
+			if (hAreas != INVALID_HANDLE)
+			{
+				new iPoppedAreas;
+				
+				while (!IsStackEmpty(hAreas))
+				{
+					new iAreaIndex = -1;
+					PopStackCell(hAreas, iAreaIndex);
+					new iIndex = PushArrayCell(hAreaArray, iAreaIndex);
+					SetArrayCell(hAreaArray, iIndex, float(NavMeshArea_GetCostSoFar(iAreaIndex)), 1);
+					iPoppedAreas++;
+				}
+				
+				CloseHandle(hAreas);
+			}
+			
+			new Handle:hAreaArrayClose = CreateArray();
+			new Handle:hAreaArrayAverage = CreateArray();
+			new Handle:hAreaArrayFar = CreateArray();
+			
+			new Float:flTeleportTargetTimeLeft = g_flSlenderTeleportMaxTargetTime[i] - GetGameTime();
+			new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[i] - g_flSlenderTeleportTargetTime[i];
+			new Float:flTeleportMinRange = g_flSlenderTeleportMaxRange[i] - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (g_flSlenderTeleportMaxRange[i] - g_flSlenderTeleportMinRange[i]);
+			
+			if (g_flSlenderAnger[i] <= 1.0)
+			{
+				flTeleportMinRange += (g_flSlenderTeleportMinRange[i] - g_flSlenderTeleportMaxRange[i]) * Pow(g_flSlenderAnger[i] - 1.0, 2.0 / g_flRoundDifficultyModifier);
+			}
+			
+			if (flTeleportMinRange < g_flSlenderTeleportMinRange[i]) flTeleportMinRange = g_flSlenderTeleportMinRange[i];
+			if (flTeleportMinRange > g_flSlenderTeleportMaxRange[i]) flTeleportMinRange = g_flSlenderTeleportMaxRange[i];
+			
+			for (new i2 = 1; i2 <= 3; i2++)
+			{
+				new Float:flRangeSectionMin = flTeleportMinRange + (g_flSlenderTeleportMaxRange[i2] - flTeleportMinRange) * (float(i2 - 1) / 3.0);
+				new Float:flRangeSectionMax = flTeleportMinRange + (g_flSlenderTeleportMaxRange[i2] - flTeleportMinRange) * (float(i2) / 3.0);
+				
+				for (new i3 = 0, iSize = GetArraySize(hAreaArray); i3 < iSize; i3++)
+				{
+					new iAreaIndex = GetArrayCell(hAreaArray, i3);
+					
+					decl Float:flAreaCenter[3];
+					NavMeshArea_GetCenter(iAreaIndex, flAreaCenter);
+					
+					decl Float:flEyeOffset[3];
+					flEyeOffset[0] = GetEntPropFloat(iTeleportTarget, Prop_Send, "m_vecViewOffset[0]");
+					flEyeOffset[1] = GetEntPropFloat(iTeleportTarget, Prop_Send, "m_vecViewOffset[1]");
+					flEyeOffset[2] = GetEntPropFloat(iTeleportTarget, Prop_Send, "m_vecViewOffset[2]");
+					
+					// Check visibility.
+					if (IsPointVisibleToAPlayer(flAreaCenter, false, false)) continue;
+					
+					AddVectors(flAreaCenter, flEyeOffset, flAreaCenter);
+					
+					if (IsPointVisibleToAPlayer(flAreaCenter, false, false)) continue;
+					
+					SubtractVectors(flAreaCenter, flEyeOffset, flAreaCenter);
+					
+					new iBoss = EntRefToEntIndex(g_iSlender[i]);
+					
+					// Check space. First raise to HalfHumanHeight, then trace downwards to get ground level.
+					{
+						decl Float:flTraceStartPos[3];
+						flTraceStartPos[0] = flAreaCenter[0];
+						flTraceStartPos[1] = flAreaCenter[1];
+						flTraceStartPos[2] = flAreaCenter[2] + HalfHumanHeight;
+						
+						decl Float:flTraceMins[3];
+						flTraceMins[0] = g_flSlenderDetectMins[i][0];
+						flTraceMins[1] = g_flSlenderDetectMins[i][1];
+						flTraceMins[2] = 0.0;
+						
+						decl Float:flTraceMaxs[3];
+						flTraceMaxs[0] = g_flSlenderDetectMaxs[i][0];
+						flTraceMaxs[1] = g_flSlenderDetectMaxs[i][1];
+						flTraceMaxs[2] = 0.0;
+						
+						new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+							flAreaCenter,
+							flTraceMins,
+							flTraceMaxs,
+							MASK_NPCSOLID,
+							TraceRayDontHitEntity,
+							iBoss);
+						
+						decl Float:flTraceHitPos[3];
+						TR_GetEndPosition(flTraceHitPos, hTrace);
+						new bool:bDidHit = TR_DidHit(hTrace);
+						CloseHandle(hTrace);
+						
+						if (bDidHit || (IsSpaceOccupiedNPC(flTraceHitPos,
+							g_flSlenderDetectMins[i],
+							g_flSlenderDetectMaxs[i],
+							iBoss)))
+						{
+							continue;
+						}
+					}
+					
+					new bool:bTooNear = false;
+					
+					// Check minimum range.
+					for (new iClient = 1; iClient <= MaxClients; iClient++)
+					{
+						if (!IsClientInGame(iClient) ||
+							!IsPlayerAlive(iClient) ||
+							g_bPlayerEliminated[iClient] ||
+							g_bPlayerEscaped[iClient])
+						{
+							continue;
+						}
+						
+						decl Float:flTempPos[3];
+						GetClientAbsOrigin(iClient, flTempPos);
+						
+						if (GetVectorDistance(flAreaCenter, flTempPos) <= g_flSlenderTeleportMinRange[i])
+						{
+							bTooNear = true;
+							break;
+						}
+					}
+					
+					if (bTooNear) continue;	// This area is not compatible.
+					
+					// Check travel distance.
+					new Float:flDist = Float:GetArrayCell(hAreaArray, i3, 1);
+					if (flDist > flRangeSectionMin && flDist < flRangeSectionMax)
+					{
+						switch (i2)
+						{
+							case 1: PushArrayCell(hAreaArrayClose, iAreaIndex);
+							case 2: PushArrayCell(hAreaArrayAverage, iAreaIndex);
+							case 3: PushArrayCell(hAreaArrayFar, iAreaIndex);
+						}
+					}
+				}
+			}
+			
+			CloseHandle(hAreaArray);
+			
 			new Float:flSpawnCooldownMin = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_cooldown_min");
 			new Float:flSpawnCooldownMax = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_cooldown_max");
 			
@@ -3004,7 +3176,22 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			for (new iNum = 0; iNum < iSpawnNum && iNum < iAvailableProxies; iNum++)
 			{
 				new iClient = GetArrayCell(hAvailableProxies, iNum);
-				if (!SlenderCalculateNewPlace(i, flNewPos, true, true, iClient)) break;
+				new iBestAreaIndex = -1;
+				
+				if (GetArraySize(hAreaArrayClose))
+				{
+					iBestAreaIndex = GetArrayCell(hAreaArrayClose, GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1));
+				}
+				else if (GetArraySize(hAreaArrayAverage))
+				{
+					iBestAreaIndex = GetArrayCell(hAreaArrayAverage, GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1));
+				}
+				else if (GetArraySize(hAreaArrayFar))
+				{
+					iBestAreaIndex = GetArrayCell(hAreaArrayFar, GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1));
+				}
+				
+				if (iBestAreaIndex == -1) break;
 				
 				if (!GetConVarBool(g_cvPlayerProxyAsk))
 				{
@@ -3015,6 +3202,10 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 					DisplayProxyAskMenu(iClient, g_iSlenderID[i], flNewPos);
 				}
 			}
+			
+			CloseHandle(hAreaArrayClose);
+			CloseHandle(hAreaArrayAverage);
+			CloseHandle(hAreaArrayFar);
 		}
 		
 		CloseHandle(hAvailableProxies);
@@ -3240,6 +3431,8 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 			{
 				case SNDCHAN_VOICE:
 				{
+					if (g_bRoundIntro) return Plugin_Handled;
+				
 					for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 					{
 						if (g_iSlenderID[iBossIndex] == -1) continue;
@@ -5412,8 +5605,6 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		}
 	}
 	
-	//SlenderChaseBossProcessMovement(iBossIndex);
-	
 	// Sound handling.
 	if (GetGameTime() >= g_flSlenderNextVoiceSound[iBossIndex])
 	{
@@ -5926,7 +6117,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 				
 				for (new i = 1; i <= MaxClients; i++)
 				{
-					if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerDeathCam[i] || g_bPlayerEliminated[i] || g_bPlayerEscaped[i] || !PlayerCanSeeSlender(i, iBossIndex, false, false)) continue;
+					if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerDeathCam[i] || g_bPlayerEliminated[i] || g_bPlayerEscaped[i] || g_bPlayerGhostMode[i] || !PlayerCanSeeSlender(i, iBossIndex, false, false)) continue;
 					PushArrayCell(hArray, i);
 				}
 				
@@ -6383,7 +6574,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 						{
 							bShouldBeBehindObstruction = true;
 						}
-					
+						
 						// Search outwards until travel distance is at maximum range.
 						new Handle:hAreaArray = CreateArray(2);
 						new Handle:hAreas = NavMesh_CollectSurroundingAreas(iTargetAreaIndex, g_flSlenderTeleportMaxRange[iBossIndex]);
@@ -7083,8 +7274,7 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 	while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
 	{
 		GetEntPropString(ent, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));
-		if (!StrContains(sTargetName, "sf2_escape_spawnpoint", false) || 
-			!StrContains(sTargetName, "slender_escape_spawnpoint", false))
+		if (!StrContains(sTargetName, "sf2_escape_spawnpoint", false))
 		{
 			iEscapePoint = ent;
 			GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
@@ -7359,34 +7549,39 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 					g_hPlayerBlinkTimer[client] = CreateTimer(GetClientBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 					CreateTimer(0.1, Timer_CheckEscapedPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 					
-					// Black out the player's screen.
 					if (g_bRoundIntro)
 					{
-						new iFadeFlags = FFADE_OUT | FFADE_STAYOUT | FFADE_PURGE;
-						new iColor[4] = { 0, 0, 0, 255 };
+						// Disable movement on player.
+						SetEntityFlags(client, GetEntityFlags(client) | FL_FROZEN);
 						
-						new iFadeEntity = INVALID_ENT_REFERENCE;
-						
-						while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
+						// Black out the player's screen.
 						{
-							decl String:sName[32];
-							GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
-							if (StrEqual(sName, "sf2_intro_fade", false))
+							new iFadeFlags = FFADE_OUT | FFADE_STAYOUT | FFADE_PURGE;
+							new iColor[4] = { 0, 0, 0, 255 };
+							
+							new iFadeEntity = INVALID_ENT_REFERENCE;
+							
+							while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
 							{
-								new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
-								if (iColorOffset != -1)
+								decl String:sName[32];
+								GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
+								if (StrEqual(sName, "sf2_intro_fade", false))
 								{
-									iColor[0] = GetEntData(iFadeEntity, iColorOffset, 1);
-									iColor[1] = GetEntData(iFadeEntity, iColorOffset + 1, 1);
-									iColor[2] = GetEntData(iFadeEntity, iColorOffset + 2, 1);
-									iColor[3] = GetEntData(iFadeEntity, iColorOffset + 3, 1);
+									new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
+									if (iColorOffset != -1)
+									{
+										iColor[0] = GetEntData(iFadeEntity, iColorOffset, 1);
+										iColor[1] = GetEntData(iFadeEntity, iColorOffset + 1, 1);
+										iColor[2] = GetEntData(iFadeEntity, iColorOffset + 2, 1);
+										iColor[3] = GetEntData(iFadeEntity, iColorOffset + 3, 1);
+									}
+									
+									break;
 								}
-								
-								break;
 							}
+							
+							UTIL_ScreenFade(client, 0, FixedUnsigned16(90.0, 1 << 12), iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
 						}
-						
-						UTIL_ScreenFade(client, 0, FixedUnsigned16(90.0, 1 << 12), iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
 					}
 				}
 			}
@@ -8135,42 +8330,31 @@ InitializeNewGame()
 		GetEntPropString(ent, Prop_Data, "m_iName", targetName, sizeof(targetName));
 		if (targetName[0])
 		{
-			if (!StrContains(targetName, "sf2_maxpages_", false) ||
-				!StrContains(targetName, "slender_logic_numpages_", false))
+			if (!StrContains(targetName, "sf2_maxpages_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_maxpages_", "", false);
-				ReplaceString(targetName, sizeof(targetName), "slender_logic_numpages_", "", false);
 				g_iPageMax = StringToInt(targetName);
 			}
-			else if (!StrContains(targetName, "sf2_page_spawnpoint", false) ||
-				!StrContains(targetName, "slender_page_spawn", false))
+			else if (!StrContains(targetName, "sf2_page_spawnpoint", false))
 			{
-				if (!StrContains(targetName, "sf2_page_spawnpoint_", false))
+				ReplaceString(targetName, sizeof(targetName), "sf2_page_spawnpoint_", "", false);
+				if (targetName[0])
 				{
-					ReplaceString(targetName, sizeof(targetName), "sf2_page_spawnpoint_", "", false);
-					if (targetName[0])
+					new Handle:hButtStallion = INVALID_HANDLE;
+					if (!GetTrieValue(hPageTrie, targetName, hButtStallion))
 					{
-						new Handle:hButtStallion = INVALID_HANDLE;
-						if (!GetTrieValue(hPageTrie, targetName, hButtStallion))
-						{
-							hButtStallion = CreateArray();
-							SetTrieValue(hPageTrie, targetName, hButtStallion);
-						}
-						
-						new iIndex = FindValueInArray(hArray, hButtStallion);
-						if (iIndex == -1)
-						{
-							iIndex = PushArrayCell(hArray, hButtStallion);
-						}
-						
-						PushArrayCell(hButtStallion, ent);
-						SetArrayCell(hArray, iIndex, true, 1);
+						hButtStallion = CreateArray();
+						SetTrieValue(hPageTrie, targetName, hButtStallion);
 					}
-					else
+					
+					new iIndex = FindValueInArray(hArray, hButtStallion);
+					if (iIndex == -1)
 					{
-						new iIndex = PushArrayCell(hArray, ent);
-						SetArrayCell(hArray, iIndex, false, 1);
+						iIndex = PushArrayCell(hArray, hButtStallion);
 					}
+					
+					PushArrayCell(hButtStallion, ent);
+					SetArrayCell(hArray, iIndex, true, 1);
 				}
 				else
 				{
@@ -8178,66 +8362,52 @@ InitializeNewGame()
 					SetArrayCell(hArray, iIndex, false, 1);
 				}
 			}
-			else if (!StrContains(targetName, "sf2_logic_escape", false) ||
-				!StrContains(targetName, "slender_logic_escape", false))
+			else if (!StrContains(targetName, "sf2_logic_escape", false))
 			{
 				g_bRoundMustEscape = true;
 			}
-			else if (!StrContains(targetName, "sf2_infiniteflashlight", false) ||
-				!StrContains(targetName, "slender_logic_infiniteflashlight", false))
+			else if (!StrContains(targetName, "sf2_infiniteflashlight", false))
 			{
 				g_bRoundInfiniteFlashlight = true;
 			}
-			else if (!StrContains(targetName, "sf2_infiniteblink", false) ||
-				!StrContains(targetName, "slender_logic_infiniteblink", false))
+			else if (!StrContains(targetName, "sf2_infiniteblink", false))
 			{
 				g_bRoundInfiniteBlink = true;
 			}
-			else if (!StrContains(targetName, "sf2_time_limit_", false) ||
-				!StrContains(targetName, "slender_time_limit_", false))
+			else if (!StrContains(targetName, "sf2_time_limit_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_time_limit_", "", false);
-				ReplaceString(targetName, sizeof(targetName), "slender_time_limit_", "", false);
 				g_iRoundTimeLimit = StringToInt(targetName);
 				
 				LogMessage("Found sf2_time_limit entity, set time limit to %d", g_iRoundTimeLimit);
 			}
-			//g_iRoundTimeGainFromPage
-			else if (!StrContains(targetName, "sf2_escape_time_limit_", false) ||
-				!StrContains(targetName, "slender_escape_time_limit_", false))
+			else if (!StrContains(targetName, "sf2_escape_time_limit_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_escape_time_limit_", "", false);
-				ReplaceString(targetName, sizeof(targetName), "slender_escape_time_limit_", "", false);
 				g_iRoundEscapeTimeLimit = StringToInt(targetName);
 				
 				LogMessage("Found sf2_escape_time_limit entity, set escape time limit to %d", g_iRoundEscapeTimeLimit);
 			}
-			else if (!StrContains(targetName, "sf2_time_gain_from_page_", false) ||
-				!StrContains(targetName, "slender_time_gain_from_page_", false))
+			else if (!StrContains(targetName, "sf2_time_gain_from_page_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_time_gain_from_page_", "", false);
-				ReplaceString(targetName, sizeof(targetName), "slender_time_gain_from_page_", "", false);
 				g_iRoundTimeGainFromPage = StringToInt(targetName);
 				
 				LogMessage("Found sf2_time_gain_from_page entity, set time gain to %d", g_iRoundTimeGainFromPage);
 			}
-			else if (g_iRoundCount == 1 && 
-				(!StrContains(targetName, "sf2_maxplayers_", false) || !StrContains(targetName, "slender_logic_maxplayers_", false)))
+			else if (g_iRoundCount == 1 && (!StrContains(targetName, "sf2_maxplayers_", false)))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_maxplayers_", "", false);
-				ReplaceString(targetName, sizeof(targetName), "slender_logic_maxplayers_", "", false);
 				SetConVarInt(g_cvMaxPlayers, StringToInt(targetName));
 				
 				LogMessage("Found sf2_maxplayers entity, set maxplayers to %d", StringToInt(targetName));
 			}
-			else if (!StrContains(targetName, "sf2_boss_override_", false) ||
-				!StrContains(targetName, "slender_boss_override_", false))
+			else if (!StrContains(targetName, "sf2_boss_override_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_boss_override_", "", false);
-				ReplaceString(targetName, sizeof(targetName), "slender_boss_override_", "", false);
 				SetConVarString(g_cvProfileOverride, targetName);
 				
-				LogMessage("Found sf2_boss_override entity, set override to %s", targetName);
+				LogMessage("Found sf2_boss_override entity, set boss profile override to %s", targetName);
 			}
 		}
 	}
@@ -8256,8 +8426,7 @@ InitializeNewGame()
 		GetEntPropString(ent, Prop_Data, "m_iName", targetName, sizeof(targetName));
 		if (targetName[0])
 		{
-			if (StrEqual(targetName, "sf2_page_model", false) || 
-				StrEqual(targetName, "slender_page_ref", false))
+			if (StrEqual(targetName, "sf2_page_model", false))
 			{
 				g_bPageRef = true;
 				GetEntPropString(ent, Prop_Data, "m_ModelName", g_strPageRefModel, sizeof(g_strPageRefModel));
@@ -8520,31 +8689,98 @@ InitializeNewGame()
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Respawning players");
 #endif
 	
-	// All players respawned. Start the intro sequence.
-	g_bRoundIntro = true;
-	g_hRoundIntroTimer = CreateTimer(GetConVarFloat(g_cvIntroDefaultHoldTime), Timer_IntroEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+	new bool:bDoIntro = GetConVarBool(g_cvIntroEnabled);
 	
+	if (bDoIntro)
+	{
+		// Start the intro sequence.
+		g_bRoundIntro = true;
+		
+		new Float:flHoldTime = GetConVarFloat(g_cvIntroDefaultHoldTime);
+		new iFadeEntity = INVALID_ENT_REFERENCE;
+		
+		while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
+		{
+			decl String:sName[32];
+			GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
+			if (StrEqual(sName, "sf2_intro_fade", false))
+			{
+				flHoldTime = GetEntPropFloat(iFadeEntity, Prop_Data, "m_HoldTime");
+				break;
+			}
+		}
+		
+		g_hRoundIntroTimer = CreateTimer(flHoldTime, Timer_IntroEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+	}
+	else
+	{
+		g_bRoundIntro = false;
+		g_hRoundIntroTimer = CreateTimer(0.0, Timer_IntroEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+		TriggerTimer(g_hRoundIntroTimer);
+	}
+	
+	// Respawn all players.
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (IsClientParticipating(i)) TF2_RespawnPlayer(i);
 	}
 	
-	g_iRoundIntroText = 0;
-	g_bRoundIntroTextDefault = false;
-	g_hRoundIntroTextTimer = CreateTimer(0.0, Timer_IntroTextSequence, _, TIMER_FLAG_NO_MAPCHANGE);
-	TriggerTimer(g_hRoundIntroTextTimer);
-	
-	// Trigger intro logic, if any.
+	if (bDoIntro)
 	{
-		new iLogic = INVALID_ENT_REFERENCE;
-		while ((iLogic = FindEntityByClassname(iLogic, "logic_relay")) != -1)
+		g_iRoundIntroText = 0;
+		g_bRoundIntroTextDefault = false;
+		g_hRoundIntroTextTimer = CreateTimer(0.0, Timer_IntroTextSequence, _, TIMER_FLAG_NO_MAPCHANGE);
+		TriggerTimer(g_hRoundIntroTextTimer);
+		
+		// Trigger intro logic, if any.
 		{
-			decl String:sName[64];
-			GetEntPropString(iLogic, Prop_Data, "m_iName", sName, sizeof(sName));
-			if (StrEqual(sName, "sf2_intro_relay", false))
+			new iLogic = INVALID_ENT_REFERENCE;
+			while ((iLogic = FindEntityByClassname(iLogic, "logic_relay")) != -1)
 			{
-				AcceptEntityInput(iLogic, "Trigger");
-				break;
+				decl String:sName[64];
+				GetEntPropString(iLogic, Prop_Data, "m_iName", sName, sizeof(sName));
+				if (StrEqual(sName, "sf2_intro_relay", false))
+				{
+					AcceptEntityInput(iLogic, "Trigger");
+					break;
+				}
+			}
+		}
+		
+		// Play intro music.
+		{
+			decl String:sPath[PLATFORM_MAX_PATH];
+			strcopy(sPath, sizeof(sPath), INTRO_MUSIC);
+			
+			new iIntroMusic = INVALID_ENT_REFERENCE;
+			while ((iIntroMusic = FindEntityByClassname(iIntroMusic, "ambient_generic")) != -1)
+			{
+				decl String:sName[64];
+				GetEntPropString(iIntroMusic, Prop_Data, "m_iName", sName, sizeof(sName));
+				
+				if (StrEqual(sName, "sf2_intro_music", false))
+				{
+					decl String:sSongPath[PLATFORM_MAX_PATH];
+					GetEntPropString(iIntroMusic, Prop_Data, "m_iszSound", sSongPath, sizeof(sSongPath));
+					
+					if (!sSongPath[0])
+					{
+						LogError("Error! Found sf2_intro_music entity, but it has no sound path specified! Default intro music will be used.");
+					}
+					else
+					{
+						strcopy(sPath, sizeof(sPath), sSongPath);
+					}
+					
+					break;
+				}
+			}
+			
+			for (new i = 1; i <= MaxClients; i++)
+			{
+				if (!IsClientInGame(i) || g_bPlayerEliminated[i]) continue;
+			
+				EmitSoundToClient(i, sPath, _, MUSIC_CHAN, SNDLEVEL_NONE);
 			}
 		}
 	}
@@ -8629,48 +8865,6 @@ public Action:Timer_IntroTextSequence(Handle:timer)
 		else
 		{
 			if (!bFoundGameText) return; // done with sequence; don't check anymore.
-			
-			if (g_iRoundIntroText == 1)
-			{
-				new bool:bUseDefault = true;
-			
-				new iIntroMusic = INVALID_ENT_REFERENCE;
-				while ((iIntroMusic = FindEntityByClassname(iIntroMusic, "ambient_generic")) != -1)
-				{
-					decl String:sName[64];
-					GetEntPropString(iIntroMusic, Prop_Data, "m_iName", sName, sizeof(sName));
-					
-					if (StrEqual(sName, "sf2_intro_music", false))
-					{
-						decl String:sPath[PLATFORM_MAX_PATH];
-						GetEntPropString(iIntroMusic, Prop_Data, "m_iszSound", sPath, sizeof(sPath));
-						
-						if (!sPath[0])
-						{
-							LogError("Error! Found sf2_intro_music entity, but it has no sound path! Using default...");
-						}
-						else
-						{
-							bUseDefault = false;
-							
-							for (new i = 0; i < iClientsNum; i++)
-							{
-								EmitSoundToClient(iClients[i], sPath, _, MUSIC_CHAN, SNDLEVEL_NONE);
-							}
-						}
-						
-						break;
-					}
-				}
-				
-				if (bUseDefault)
-				{
-					for (new i = 0; i < iClientsNum; i++)
-					{
-						EmitSoundToClient(iClients[i], INTRO_MUSIC, _, MUSIC_CHAN, SNDLEVEL_NONE);
-					}
-				}
-			}
 		}
 	}
 	
@@ -8711,6 +8905,13 @@ public Action:Timer_IntroEnd(Handle:timer)
 			
 			AddProfile(sProfile);
 		}
+	}
+	
+	// Enable movement on players.
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i) || g_bPlayerEliminated[i]) continue;
+		SetEntityFlags(i, GetEntityFlags(i) & ~FL_FROZEN);
 	}
 	
 	// Fade in pls.

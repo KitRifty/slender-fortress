@@ -10,10 +10,22 @@ Version 0.1.9 (October 20, 2013):
 - Removed support for "slender_intro_message", use "sf2_intro_message" instead
 - Removed support for "slender_page_message", use "sf2_page_message" instead
 - Removed support for "slender_escape_message", use "sf2_escape_message" instead
+- Removed support for "slender_escape_spawnpoint", use "sf2_escape_spawnpoint" instead
+- Removed support for "slender_logic_numpages_#", use "sf2_maxpages_#" instead
+- Removed support for "slender_page_spawn", use "sf2_page_spawnpoint" instead
+- Removed support for "slender_logic_escape", use "sf2_logic_escape" instead
+- Removed support for "slender_logic_infiniteflashlight", use "sf2_infiniteflashlight" instead
+- Removed support for "slender_logic_infiniteblink", use "sf2_infiniteblink" instead
+- Removed supprot for "slender_time_limit_#", use "sf2_time_limit_#" instead
+- Removed support for "slender_escape_time_limit_#", use "sf2_escape_time_limit_#" instead
+- Removed support for "slender_time_gain_from_page_#", use "sf2_time_gain_from_page_#" instead
+- Removed support for "slender_logic_maxplayers_#", use "sf2_maxplayers_#" instead
+- Removed support for "slender_boss_override_<name>", use "sf2_boss_override_<name>" instead
+- Removed support for "slender_page_ref", use "sf2_page_model" instead
 - Removed unnecessary gamedata portions
 - Added color and color2 support for all game_text entities.
 - Added "sf2_intro_fade" (env_fade) entity, which defines how long the intro/title sequence lasts via duration and fadetime.
-- Added "sf2_intro_text_#" (game_text) entity, which defines what is to be said in the text in sequential order during the intro/title sequence. YOU NEED THIS FOR sf2_intro_music!
+- Added "sf2_intro_text_#" (game_text) entity, which defines what is to be said in the text in sequential order during the intro/title sequence.
 - Added "sf2_intro_music" (ambient_generic) entity, which defines what music is to be played during the intro/title sequence.
 - Added "sf2_intro_relay" (logic_relay) entity, which fires the input Trigger when the intro/title sequence. Can be used if you desire to do more in the intro/title sequence.
 - Chasing bosses now use Valve's Navmesh system for navigation (ONLY!)
