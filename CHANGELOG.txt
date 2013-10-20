@@ -5,6 +5,8 @@ Version 0.1.9 (October 20, 2013):
 - Fixed a bug where effects of certain Mediguns would linger after spawn/weapon change
 - Fixed a bug where Botkiller items would remain even after the associated weapon is removed
 - Fixed a bug where Ghosts would collide with RED players (might be buggy)
+- Fixed a small bug where removing flashlight entities would still linger
+- Personal queue points will now be reset when chosen to play instead of resetting right away when joining a group while on BLU
 - Removed support for "slender_logic_escape_music", use "sf2_escape_custommusic" instead
 - Removed support for "slender_logic_escape", use "sf2_logic_escape" instead
 - Removed support for "slender_intro_message", use "sf2_intro_message" instead
@@ -16,7 +18,7 @@ Version 0.1.9 (October 20, 2013):
 - Removed support for "slender_logic_escape", use "sf2_logic_escape" instead
 - Removed support for "slender_logic_infiniteflashlight", use "sf2_infiniteflashlight" instead
 - Removed support for "slender_logic_infiniteblink", use "sf2_infiniteblink" instead
-- Removed supprot for "slender_time_limit_#", use "sf2_time_limit_#" instead
+- Removed support for "slender_time_limit_#", use "sf2_time_limit_#" instead
 - Removed support for "slender_escape_time_limit_#", use "sf2_escape_time_limit_#" instead
 - Removed support for "slender_time_gain_from_page_#", use "sf2_time_gain_from_page_#" instead
 - Removed support for "slender_logic_maxplayers_#", use "sf2_maxplayers_#" instead
