@@ -3109,13 +3109,12 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 						
 						decl Float:flTraceHitPos[3];
 						TR_GetEndPosition(flTraceHitPos, hTrace);
-						new bool:bDidHit = TR_DidHit(hTrace);
 						CloseHandle(hTrace);
 						
-						if (bDidHit || (IsSpaceOccupiedNPC(flTraceHitPos,
+						if (IsSpaceOccupiedNPC(flTraceHitPos,
 							g_flSlenderDetectMins[i],
 							g_flSlenderDetectMaxs[i],
-							iBoss)))
+							iBoss))
 						{
 							continue;
 						}
@@ -6230,7 +6229,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 			if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 			
 			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_move", sBuffer, sizeof(sBuffer), 1);
-			if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
+			if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING, SND_CHANGEVOL);
 		}
 		else
 		{
@@ -6664,13 +6663,12 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									
 									decl Float:flTraceHitPos[3];
 									TR_GetEndPosition(flTraceHitPos, hTrace);
-									new bool:bDidHit = TR_DidHit(hTrace);
 									CloseHandle(hTrace);
 									
-									if (bDidHit || (IsSpaceOccupiedNPC(flTraceHitPos,
+									if (IsSpaceOccupiedNPC(flTraceHitPos,
 										g_flSlenderDetectMins[iBossIndex],
 										g_flSlenderDetectMaxs[iBossIndex],
-										iBoss)))
+										iBoss))
 									{
 										continue;
 									}
