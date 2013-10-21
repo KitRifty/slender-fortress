@@ -8351,24 +8351,32 @@ InitializeNewGame()
 			}
 			else if (!StrContains(targetName, "sf2_page_spawnpoint", false))
 			{
-				ReplaceString(targetName, sizeof(targetName), "sf2_page_spawnpoint_", "", false);
-				if (targetName[0])
+				if (!StrContains(targetName, "sf2_page_spawnpoint_", false))
 				{
-					new Handle:hButtStallion = INVALID_HANDLE;
-					if (!GetTrieValue(hPageTrie, targetName, hButtStallion))
+					ReplaceString(targetName, sizeof(targetName), "sf2_page_spawnpoint_", "", false);
+					if (targetName[0])
 					{
-						hButtStallion = CreateArray();
-						SetTrieValue(hPageTrie, targetName, hButtStallion);
+						new Handle:hButtStallion = INVALID_HANDLE;
+						if (!GetTrieValue(hPageTrie, targetName, hButtStallion))
+						{
+							hButtStallion = CreateArray();
+							SetTrieValue(hPageTrie, targetName, hButtStallion);
+						}
+						
+						new iIndex = FindValueInArray(hArray, hButtStallion);
+						if (iIndex == -1)
+						{
+							iIndex = PushArrayCell(hArray, hButtStallion);
+						}
+						
+						PushArrayCell(hButtStallion, ent);
+						SetArrayCell(hArray, iIndex, true, 1);
 					}
-					
-					new iIndex = FindValueInArray(hArray, hButtStallion);
-					if (iIndex == -1)
+					else
 					{
-						iIndex = PushArrayCell(hArray, hButtStallion);
+						new iIndex = PushArrayCell(hArray, ent);
+						SetArrayCell(hArray, iIndex, false, 1);
 					}
-					
-					PushArrayCell(hButtStallion, ent);
-					SetArrayCell(hArray, iIndex, true, 1);
 				}
 				else
 				{
