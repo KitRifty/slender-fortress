@@ -317,6 +317,7 @@ new bool:g_bPlayerInPvPSpawning[MAXPLAYERS + 1];
 new bool:g_bPlayerInPvPTrigger[MAXPLAYERS + 1];
 new Handle:g_hPlayerPvPTimer[MAXPLAYERS + 1];
 new g_iPlayerPvPTimerCount[MAXPLAYERS + 1];
+new Float:g_flPlayerLastScareFromBoss[MAXPLAYERS + 1][MAX_BOSSES];
 new Handle:g_hPlayerFlames;
 
 // Player stress data.
@@ -434,6 +435,7 @@ new Handle:g_cvCampingNoStrikeSanity;
 new Handle:g_cvCampingNoStrikeBossDistance;
 new Handle:g_cvDifficulty;
 new Handle:g_cvBossMain;
+new Handle:g_cvBossAppearChanceOverride;
 new Handle:g_cvProfileOverride;
 new Handle:g_cvPlayerBlinkRate;
 new Handle:g_cvPlayerBlinkHoldTime;
@@ -677,7 +679,7 @@ public OnPluginStart()
 	
 	g_cvGraceTime = CreateConVar("sf2_gracetime", "30.0");
 	g_cvIntroEnabled = CreateConVar("sf2_intro_enabled", "1");
-	g_cvIntroDefaultHoldTime = CreateConVar("sf2_intro_default_hold_time", "9.0");
+	g_cvIntroDefaultHoldTime = CreateConVar("sf2_intro_default_hold_time", "7.0");
 	g_cvIntroDefaultFadeTime = CreateConVar("sf2_intro_default_fade_time", "1.0");
 	
 	g_cvBlockSuicideDuringRound = CreateConVar("sf2_block_suicide_during_round", "0");
@@ -723,6 +725,7 @@ public OnPluginStart()
 	g_cvCampingMinDistance = CreateConVar("sf2_anticamping_mindistance", "128.0", "Every 5 seconds the player has to be at least this far away from his last position 5 seconds ago or else he'll get a strike.");
 	g_cvCampingNoStrikeSanity = CreateConVar("sf2_anticamping_no_strike_sanity", "0.1", "The camping system will NOT give any strikes under any circumstances if the players's Sanity is missing at least this much of his maximum Sanity (max is 1.0).");
 	g_cvCampingNoStrikeBossDistance = CreateConVar("sf2_anticamping_no_strike_boss_distance", "512.0", "The camping system will NOT give any strikes under any circumstances if the player is this close to a boss (ignoring LOS).");
+	g_cvBossAppearChanceOverride = CreateConVar("sf2_boss_appear_chance_override", "-1.0", "Overrides the chance which any boss will appear. Set to -1 to disable the override.");
 	g_cvBossMain = CreateConVar("sf2_boss_main", "slenderman", "The name of the main boss (its profile name, not its display name)");
 	g_cvProfileOverride = CreateConVar("sf2_boss_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
 	g_cvDifficulty = CreateConVar("sf2_difficulty", "1", "Difficulty of the game. 1 = Normal, 2 = Hard, 3 = Insane.", _, true, 1.0, true, 3.0);
@@ -3676,15 +3679,6 @@ public MRESReturn:Hook_EntityShouldTransmit(this, Handle:hReturn, Handle:hParams
 			return MRES_Supercede;
 		}
 	}
-	else
-	{
-		new iBossIndex = SlenderEntIndexToArrayIndex(this);
-		if (iBossIndex != -1)
-		{
-			DHookSetReturn(hReturn, FL_EDICT_ALWAYS); // Should always transmit, but our SetTransmit hook gets the final say.
-			return MRES_Supercede;
-		}
-	}
 	
 	return MRES_Ignored;
 }
@@ -3872,7 +3866,7 @@ public OnClientCookiesCached(client)
 public OnClientPutInServer(client)
 {
 	if (!g_bEnabled) return;
-	
+
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START OnClientPutInServer(%d)", client);
 #endif
@@ -3967,11 +3961,6 @@ public OnClientDisconnect(client)
 		}
 		else
 		{
-			if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
-			{
-				ClientSetQueuePoints(client, 0);
-			}
-		
 			if (!g_bRoundEnded) CreateTimer(0.2, Timer_CheckRoundState, _, TIMER_FLAG_NO_MAPCHANGE);
 		}
 	}
@@ -4275,9 +4264,6 @@ stock ForceInNextPlayersInQueue(iAmount, bool:bShowMessage=false)
 					if (ClientGetPlayerGroup(iClient) == iGroupIndex)
 					{
 						PushArrayCell(hPlayers, iClient);
-						
-						// Set queue points to 0.
-						ClientSetQueuePoints(iClient, 0);
 					}
 				}
 				

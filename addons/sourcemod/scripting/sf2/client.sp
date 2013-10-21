@@ -2886,8 +2886,7 @@ ClientOnButtonPress(client, button)
 				if (g_bPlayerGhostMode[client]) ClientGhostModeNextTarget(client);
 				else 
 				{
-					if (!g_bRoundWarmup &&
-						!g_bRoundIntro &&
+					if (!g_bRoundWarmup && 
 						!g_bRoundEnded && 
 						!g_bPlayerEscaped[client])
 					{

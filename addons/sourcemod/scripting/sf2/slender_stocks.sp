@@ -217,7 +217,6 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 			
 			SDKHook(iBoss, SDKHook_OnTakeDamage, Hook_SlenderOnTakeDamage);
 			SDKHook(iBoss, SDKHook_OnTakeDamagePost, Hook_SlenderOnTakeDamagePost);
-			DHookEntity(g_hSDKShouldTransmit, true, iBoss);
 		}
 		/*
 		default:
@@ -803,9 +802,6 @@ public bool:SlenderChaseBossPlaceFunctor(iBossIndex, const Float:flActiveAreaCen
 	return bOriginalResult;
 }
 
-/*
-// Deprecated.
-
 // This is just to calculate the new place, not do time checks.
 // Distance will be determined by the progression of the game and the
 // manually set values determined by flMinSearchDist and flMaxSearchDist,
@@ -871,7 +867,6 @@ bool:SlenderChaseBossCalculateNewPlace(iBossIndex, const Float:flActiveAreaCente
 	NavMeshArea_GetCenter(iBestAreaIndex, flBuffer);
 	return true;
 }
-*/
 
 bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=false, bool:bProxy=false, iProxyPlayer=-1, &iBestPlayer=-1)
 {
