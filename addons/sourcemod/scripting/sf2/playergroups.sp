@@ -1199,6 +1199,11 @@ stock ClientSetPlayerGroup(client, iGroupIndex)
 		CheckPlayerGroup(iOldPlayerGroup);
 	}
 	
+	if (IsPlayerGroupPlaying(iGroupIndex))
+	{
+		ClientSetQueuePoints(client, 0);
+	}
+	
 	if (IsPlayerGroupActive(iGroupIndex))
 	{
 		SetPlayerGroupInvitedPlayer(iGroupIndex, client, false);
@@ -1206,7 +1211,7 @@ stock ClientSetPlayerGroup(client, iGroupIndex)
 		SetPlayerGroupInvitedPlayerTime(iGroupIndex, client, 0.0);
 		
 		// Set the player's personal queue points to 0.
-		ClientSetQueuePoints(client, 0);
+		//ClientSetQueuePoints(client, 0);
 		
 		decl String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
 		GetPlayerGroupName(iGroupIndex, sGroupName, sizeof(sGroupName));
