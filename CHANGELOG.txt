@@ -1,4 +1,7 @@
 Version 0.1.9 (October 20, 2013):
+- Added cvar "sf2_intro_enabled"
+- Added cvar "sf2_intro_default_hold_time"
+- Added cvar "sf2_intro_default_fade time"
 - Added Stamina meter
 - Hud will now change color depending on how much health you have
 - Fixed a bug where map-defined page music would not stop playing when custom escape music has been defined in the map
