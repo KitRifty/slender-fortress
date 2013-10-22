@@ -6608,6 +6608,10 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							
 							CloseHandle(hAreas);
 						}
+						else
+						{
+							SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed to get collection of near areas!", iBossIndex);
+						}
 						
 						new Handle:hAreaArrayClose = CreateArray();
 						new Handle:hAreaArrayAverage = CreateArray();
@@ -6743,6 +6747,10 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 						{
 							iTeleportAreaIndex = iBestAreaIndex;
 						}
+					}
+					else
+					{
+						SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because target is not on nav mesh!", iBossIndex);
 					}
 				}
 				
@@ -7567,36 +7575,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 						// Disable movement on player.
 						SetEntityFlags(client, GetEntityFlags(client) | FL_FROZEN);
 						
-						// Black out the player's screen.
-						{
-							new iFadeFlags = FFADE_OUT | FFADE_STAYOUT | FFADE_PURGE;
-							new iColor[4] = { 0, 0, 0, 255 };
-							
-							new iFadeEntity = INVALID_ENT_REFERENCE;
-							
-							while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
-							{
-								decl String:sName[32];
-								GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
-								if (StrEqual(sName, "sf2_intro_fade", false))
-								{
-									new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
-									if (iColorOffset != -1)
-									{
-										iColor[0] = GetEntData(iFadeEntity, iColorOffset, 1);
-										iColor[1] = GetEntData(iFadeEntity, iColorOffset + 1, 1);
-										iColor[2] = GetEntData(iFadeEntity, iColorOffset + 2, 1);
-										iColor[3] = GetEntData(iFadeEntity, iColorOffset + 3, 1);
-									}
-									
-									break;
-								}
-							}
-							
-							UTIL_ScreenFade(client, 0, FixedUnsigned16(90.0, 1 << 12), iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
-						}
-						
-						CreateTimer(GetClientLatency(client, NetFlow_Outgoing), Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+						CreateTimer(GetClientLatency(client, NetFlow_Outgoing) * 2.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 					}
 				}
 			}
@@ -7622,7 +7601,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			TF2_RemoveCondition(client, TFCond_SmallBlastResist);
 			TF2_RemoveCondition(client, TFCond_SmallFireResist);
 			
-			SetEntProp(client, Prop_Send, "m_CollisionGroup", 11) // COLLISION_GROUP_WEAPON
+			SetEntProp(client, Prop_Send, "m_CollisionGroup", 4) // COLLISION_GROUP_INTERACTIVE
 		}
 	}
 	

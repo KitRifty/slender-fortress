@@ -3140,12 +3140,12 @@ ClientEnableGhostMode(client)
 	
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
-	if (!(iFlags & FSOLID_CUSTOMBOXTEST)) iFlags |= FSOLID_CUSTOMBOXTEST;
+	//if (!(iFlags & FSOLID_CUSTOMBOXTEST)) iFlags |= FSOLID_CUSTOMBOXTEST;
 	if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
 	if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
 	
 	SetEntProp(client, Prop_Send, "m_usSolidFlags", iFlags);
-	SetEntProp(client, Prop_Send, "m_CollisionGroup", 11); // COLLISION_GROUP_WEAPON
+	SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
 	SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", -1);
 	SetEntPropEnt(client, Prop_Send, "m_hLastWeapon", -1);
 	
@@ -3184,7 +3184,7 @@ ClientDisableGhostMode(client)
 	
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
-	if (iFlags & FSOLID_CUSTOMBOXTEST) iFlags &= ~FSOLID_CUSTOMBOXTEST;
+	//if (iFlags & FSOLID_CUSTOMBOXTEST) iFlags &= ~FSOLID_CUSTOMBOXTEST;
 	if (iFlags & FSOLID_NOT_SOLID) iFlags &= ~FSOLID_NOT_SOLID;
 	if (iFlags & FSOLID_TRIGGER) iFlags &= ~FSOLID_TRIGGER;
 	
