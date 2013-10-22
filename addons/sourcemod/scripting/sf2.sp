@@ -6494,7 +6494,7 @@ stock SendDebugMessageToPlayers(iDebugFlags, iType, const String:sMessage[], any
 
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (!IsClientInGame(i) || IsFakeClient(i)) return;
+		if (!IsClientInGame(i) || IsFakeClient(i)) continue;
 		
 		if (g_iPlayerDebugFlags[i] & iDebugFlags)
 		{
@@ -6663,6 +6663,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									
 									decl Float:flTraceHitPos[3];
 									TR_GetEndPosition(flTraceHitPos, hTrace);
+									flTraceHitPos[2] += 0.1;
 									CloseHandle(hTrace);
 									
 									if (IsSpaceOccupiedNPC(flTraceHitPos,
@@ -7594,6 +7595,8 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 							
 							UTIL_ScreenFade(client, 0, FixedUnsigned16(90.0, 1 << 12), iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
 						}
+						
+						CreateTimer(GetClientLatency(client, NetFlow_Outgoing), Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 					}
 				}
 			}
@@ -7626,6 +7629,45 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerSpawn");
 #endif
+}
+
+public Action:Timer_IntroBlackOut(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return;
+	
+	if (!g_bRoundIntro) return;
+	
+	if (!IsPlayerAlive(client) || g_bPlayerEliminated[client]) return;
+	
+	// Black out the player's screen.
+	{
+		new iFadeFlags = FFADE_OUT | FFADE_STAYOUT | FFADE_PURGE;
+		new iColor[4] = { 0, 0, 0, 255 };
+		
+		new iFadeEntity = INVALID_ENT_REFERENCE;
+		
+		while ((iFadeEntity = FindEntityByClassname(iFadeEntity, "env_fade")) != -1)
+		{
+			decl String:sName[32];
+			GetEntPropString(iFadeEntity, Prop_Data, "m_iName", sName, sizeof(sName));
+			if (StrEqual(sName, "sf2_intro_fade", false))
+			{
+				new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
+				if (iColorOffset != -1)
+				{
+					iColor[0] = GetEntData(iFadeEntity, iColorOffset, 1);
+					iColor[1] = GetEntData(iFadeEntity, iColorOffset + 1, 1);
+					iColor[2] = GetEntData(iFadeEntity, iColorOffset + 2, 1);
+					iColor[3] = GetEntData(iFadeEntity, iColorOffset + 3, 1);
+				}
+				
+				break;
+			}
+		}
+		
+		UTIL_ScreenFade(client, 0, FixedUnsigned16(90.0, 1 << 12), iFadeFlags, iColor[0], iColor[1], iColor[2], iColor[3]);
+	}
 }
 
 public Event_PostInventoryApplication(Handle:event, const String:name[], bool:dB)
