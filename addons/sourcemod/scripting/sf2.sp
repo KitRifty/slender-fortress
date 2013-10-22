@@ -6215,7 +6215,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 						else
 						{
 							g_flSlenderLastKill[iBossIndex] = GetGameTime();
-							ClientStartDeathCam(iBestPlayer, iBossIndex, buffer); // Lmao. You're dead.
+							ClientStartDeathCam(iBestPlayer, iBossIndex, buffer);
 						}
 					}
 				}
@@ -6235,7 +6235,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 		{
 			decl String:sBuffer[PLATFORM_MAX_PATH];
 			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_move", sBuffer, sizeof(sBuffer), 1);
-			if (sBuffer[0]) StopSound(slender, SNDCHAN_AUTO, g_strSlenderProfile[iBossIndex]);
+			if (sBuffer[0]) StopSound(slender, SNDCHAN_AUTO, sBuffer);
 		}
 	}
 	
