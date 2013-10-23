@@ -3002,6 +3002,8 @@ ClientResetDeathCam(client)
 
 ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 {
+	if (iBossIndex < 0 || iBossIndex >= MAX_BOSSES) return;
+
 	decl String:buffer[PLATFORM_MAX_PATH];
 	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);

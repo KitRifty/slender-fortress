@@ -3083,12 +3083,12 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 					
 					new iBoss = EntRefToEntIndex(g_iSlender[i]);
 					
-					// Check space. First raise to HalfHumanHeight, then trace downwards to get ground level.
+					// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
 					{
 						decl Float:flTraceStartPos[3];
 						flTraceStartPos[0] = flAreaCenter[0];
 						flTraceStartPos[1] = flAreaCenter[1];
-						flTraceStartPos[2] = flAreaCenter[2] + HalfHumanHeight;
+						flTraceStartPos[2] = flAreaCenter[2] + (HalfHumanHeight * 2.0);
 						
 						decl Float:flTraceMins[3];
 						flTraceMins[0] = g_flSlenderDetectMins[i][0];
@@ -6641,12 +6641,12 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 								
 								new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
 								
-								// Check space. First raise to HalfHumanHeight, then trace downwards to get ground level.
+								// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
 								{
 									decl Float:flTraceStartPos[3];
 									flTraceStartPos[0] = flAreaCenter[0];
 									flTraceStartPos[1] = flAreaCenter[1];
-									flTraceStartPos[2] = flAreaCenter[2] + HalfHumanHeight;
+									flTraceStartPos[2] = flAreaCenter[2] + (HalfHumanHeight * 2.0);
 									
 									decl Float:flTraceMins[3];
 									flTraceMins[0] = g_flSlenderDetectMins[iBossIndex][0];
