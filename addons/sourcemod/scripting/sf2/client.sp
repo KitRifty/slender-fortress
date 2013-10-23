@@ -2908,6 +2908,7 @@ ClientOnButtonPress(client, button)
 				{
 					if (!g_bRoundEnded && 
 					!g_bRoundWarmup &&
+					!g_bRoundIntro &&
 					!g_bPlayerEscaped[client])
 					{
 						ClientBlink(client);
@@ -3140,7 +3141,6 @@ ClientEnableGhostMode(client)
 	
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
-	//if (!(iFlags & FSOLID_CUSTOMBOXTEST)) iFlags |= FSOLID_CUSTOMBOXTEST;
 	if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
 	if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
 	
@@ -3184,7 +3184,6 @@ ClientDisableGhostMode(client)
 	
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
-	//if (iFlags & FSOLID_CUSTOMBOXTEST) iFlags &= ~FSOLID_CUSTOMBOXTEST;
 	if (iFlags & FSOLID_NOT_SOLID) iFlags &= ~FSOLID_NOT_SOLID;
 	if (iFlags & FSOLID_TRIGGER) iFlags &= ~FSOLID_TRIGGER;
 	

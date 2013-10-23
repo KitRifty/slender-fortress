@@ -2265,6 +2265,7 @@ public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
+	if (g_bRoundIntro && !g_bPlayerEliminated[client]) return Plugin_Handled;
 	
 	return Plugin_Continue;
 }
@@ -3354,7 +3355,7 @@ public OnEntityDestroyed(ent)
 
 	if (ent <= 0) return;
 	
-	if (IsValidEntity(ent))
+	if (IsValidEntity(ent) && ent > MaxClients)
 	{
 		decl String:sClassname[64];
 		GetEntityClassname(ent, sClassname, sizeof(sClassname));
@@ -6667,7 +6668,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									
 									decl Float:flTraceHitPos[3];
 									TR_GetEndPosition(flTraceHitPos, hTrace);
-									flTraceHitPos[2] += 0.1;
+									flTraceHitPos[2] += 1.0;
 									CloseHandle(hTrace);
 									
 									if (IsSpaceOccupiedNPC(flTraceHitPos,
