@@ -5969,20 +5969,19 @@ SlenderChaseBossProcessMovement(iBossIndex)
 	if (!bSlenderShouldJump && bSlenderOnGround && !bSlenderTeleportedOnStep && flSlenderJumpSpeed > 0.0 && GetVectorLength(flDesiredVelocity) > 0.0 &&
 		GetGameTime() >= g_flSlenderNextJump[iBossIndex])
 	{
-		new Float:flSlenderMaxJumpHeight = Pow(flSlenderJumpSpeed, 2.0) / (2.0 * g_flGravity);
-		new Float:flZDiff = (flMyPos[2] - flGoalPosition[2]);
+		new Float:flZDiff = (flGoalPosition[2] - flMyPos[2]);
 		
-		if (flZDiff > flSlenderStepSize && flZDiff <= flSlenderMaxJumpHeight)
+		if (flZDiff > flSlenderStepSize)
 		{
 			// Our path has a jump thingy to it. Calculate the jump height needed to reach it and how far away we should start
 			// checking on when to jump.
 			
 			decl Float:vecDir[3], Float:vecDesiredDir[3];
-			NormalizeVector(flMyVelocity, vecDir);
+			GetVectorAngles(flMyVelocity, vecDir);
 			SubtractVectors(flGoalPosition, flMyPos, vecDesiredDir);
-			NormalizeVector(vecDesiredDir, vecDesiredDir);
+			GetVectorAngles(vecDesiredDir, vecDesiredDir);
 			
-			if (GetVectorDotProduct(vecDir, vecDesiredDir) >= 0.5)
+			if ((FloatAbs(AngleDiff(vecDir[0], vecDesiredDir[0])) + FloatAbs(AngleDiff(vecDir[1], vecDesiredDir[1]))) >= 45.0)
 			{
 				// Assuming we are actually capable of making the jump, find out WHEN we have to jump,
 				// based on 2D distance between our position and the target point, and our current horizontal 
@@ -5998,7 +5997,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 				
 				new Float:fl2DDist = GetVectorDistance(vecMyPos2D, vecGoalPos2D);
 				
-				new Float:flNotImaginary = Pow(flSlenderJumpSpeed, 4.0) - g_flGravity * (g_flGravity * Pow(fl2DDist, 2.0) + 2.0 * flZDiff * Pow(flSlenderJumpSpeed, 2.0));
+				new Float:flNotImaginary = Pow(flSlenderJumpSpeed, 4.0) - (g_flGravity * (g_flGravity * Pow(fl2DDist, 2.0)) + (2.0 * flZDiff * Pow(flSlenderJumpSpeed, 2.0)));
 				if (flNotImaginary >= 0.0)
 				{
 					// We can reach it.
@@ -6007,7 +6006,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 					{
 						SubtractVectors(vecGoalPos2D, vecMyPos2D, angJumpReach);
 						GetVectorAngles(angJumpReach, angJumpReach);
-						angJumpReach[0] = RadToDeg(ArcTangent((Pow(flSlenderJumpSpeed, 2.0) + Pow(flNotImaginary, 0.5)) / flNotInfinite));
+						angJumpReach[0] = -RadToDeg(ArcTangent((Pow(flSlenderJumpSpeed, 2.0) + SquareRoot(flNotImaginary)) / flNotInfinite));
 						bSlenderShouldJump = true;
 					}
 				}
@@ -7602,7 +7601,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			TF2_RemoveCondition(client, TFCond_SmallBlastResist);
 			TF2_RemoveCondition(client, TFCond_SmallFireResist);
 			
-			SetEntProp(client, Prop_Send, "m_CollisionGroup", 4) // COLLISION_GROUP_INTERACTIVE
+			SetEntProp(client, Prop_Send, "m_CollisionGroup", 3) // COLLISION_GROUP_INTERACTIVE_DEBRIS
 		}
 	}
 	

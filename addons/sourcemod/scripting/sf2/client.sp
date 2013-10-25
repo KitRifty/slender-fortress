@@ -3197,6 +3197,18 @@ ClientDisableGhostMode(client)
 	
 	SetEntityRenderMode(client, RENDER_NORMAL);
 	SetEntityRenderColor(client, 255, 255, 255, 255);
+	
+	// Set viewmodel visible.
+	new ent = -1;
+	while ((ent = FindEntityByClassname(ent, "tf_viewmodel")) != -1)
+	{
+		if (GetEntPropEnt(ent, Prop_Send, "m_hOwner") == client)
+		{
+			iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
+			iFlags &= ~32;
+			SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
+		}
+	}
 }
 
 ClientGhostModeNextTarget(client)
@@ -5333,6 +5345,18 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			if (g_bPlayerGhostMode[client]) 
 			{
 				bRemoveWeapons = true;
+				
+				// Set viewmodel invisible.
+				new ent = -1;
+				while ((ent = FindEntityByClassname(ent, "tf_viewmodel")) != -1)
+				{
+					if (GetEntPropEnt(ent, Prop_Send, "m_hOwner") == client)
+					{
+						new iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
+						iFlags |= 32;
+						SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
+					}
+				}
 			}
 			
 			if (bRemoveWeapons)
