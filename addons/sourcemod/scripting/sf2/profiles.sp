@@ -214,8 +214,6 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	if (!(iFlags & SFF_HASVIEWSHAKE) && GetProfileNum(sProfile, "view_shake", 1)) iFlags |= SFF_HASVIEWSHAKE;
 	if (!(iFlags & SFF_COPIES) && GetProfileNum(sProfile, "copy")) iFlags |= SFF_COPIES;
 	
-	g_hSlenderThink[iBossIndex] = CreateTimer(0.1, Timer_SlenderTeleportThink, iBossIndex, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	
 	switch (g_iSlenderType[iBossIndex])
 	{
 		case 2:
@@ -245,6 +243,8 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	g_flSlenderTeleportMaxTargetTime[iBossIndex] = -1.0;
 	g_flSlenderNextTeleportTime[iBossIndex] = -1.0;
 	g_flSlenderTeleportTargetTime[iBossIndex] = -1.0;
+	
+	g_hSlenderThink[iBossIndex] = CreateTimer(0.1, Timer_SlenderTeleportThink, iBossIndex, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
 	if (iCopyMaster >= 0 && iCopyMaster < MAX_BOSSES && g_iSlenderID[iCopyMaster] != -1)
 	{

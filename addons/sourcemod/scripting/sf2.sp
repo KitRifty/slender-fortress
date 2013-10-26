@@ -6418,7 +6418,13 @@ SlenderOnClientStressUpdate(client)
 		else if (!g_bRoundGrace)
 		{
 			new iPreferredTeleportTarget = INVALID_ENT_REFERENCE;
-			new Float:flPreferredTeleportTargetStress = 99999.0;
+			
+			new Float:flTargetStressMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_stress_min", 0.2);
+			new Float:flTargetStressMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_stress_max", 0.9);
+			
+			new Float:flTargetStress = flTargetStressMax - ((flTargetStressMax - flTargetStressMin) / (g_flRoundDifficultyModifier * g_flSlenderAnger[iBossIndex]));
+			
+			new Float:flPreferredTeleportTargetStress = flTargetStress;
 			
 			for (new i = 1; i <= MaxClients; i++)
 			{
@@ -6447,11 +6453,6 @@ SlenderOnClientStressUpdate(client)
 				new Float:flTargetDuration = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_persistency_period", 13.0);
 				new Float:flDeviation = GetRandomFloat(0.92, 1.08);
 				flTargetDuration = Pow(flDeviation * flTargetDuration, ((g_flRoundDifficultyModifier * (g_flSlenderAnger[iBossIndex] - 1.0)) / 2.0)) + ((flDeviation * flTargetDuration) - 1.0);
-				
-				new Float:flTargetStressMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_stress_min", 0.2);
-				new Float:flTargetStressMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_stress_max", 0.9);
-				
-				new Float:flTargetStress = flTargetStressMax - ((flTargetStressMax - flTargetStressMin) / (g_flRoundDifficultyModifier * g_flSlenderAnger[iBossIndex]));
 				
 				g_iSlenderTeleportTarget[iBossIndex] = EntIndexToEntRef(iPreferredTeleportTarget);
 				g_flSlenderTeleportPlayersRestTime[iBossIndex][iPreferredTeleportTarget] = -1.0;
@@ -6751,6 +6752,10 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 						SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because target is not on nav mesh!", iBossIndex);
 					}
 				}
+				else
+				{
+					SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because of lack of nav mesh!", iBossIndex);
+				}
 				
 				if (iTeleportAreaIndex == -1)
 				{
@@ -6797,6 +6802,10 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 					}
 				}
 			}
+		}
+		else
+		{
+			SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because of teleport time (curtime: %f, teletime: %f)", iBossIndex, GetGameTime(), g_flSlenderNextTeleportTime[iBossIndex]);
 		}
 	}
 	
