@@ -288,6 +288,8 @@ public Hook_ClientPreThink(client)
 		SendDebugMessageToPlayer(client, DEBUG_PLAYER_STRESS, 1, "g_flPlayerStress[%d]: %0.1f", client, g_flPlayerStress[client]);
 	}
 	
+	/*
+	// Moved this section of code to OnGameFrame().
 	static Handle:hFlames = INVALID_HANDLE;
 	if (hFlames == INVALID_HANDLE) hFlames = CreateArray(2);
 	
@@ -310,8 +312,6 @@ public Hook_ClientPreThink(client)
 		CloseHandle(hCopy);
 	}
 	
-	/*
-	// Moved this section of code to OnGameFrame().
 	if (g_bRoundWarmup || IsClientInPvP(client))
 	{
 		// BOOOOX!

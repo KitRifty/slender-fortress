@@ -3698,8 +3698,7 @@ public Hook_TriggerOnStartTouch(const String:output[], caller, activator, Float:
 	decl String:sName[64];
 	GetEntPropString(caller, Prop_Data, "m_iName", sName, sizeof(sName));
 	
-	if (!StrContains(sName, "sf2_escape_trigger", false) ||
-		!StrContains(sName, "slender_escape_trigger", false))
+	if (!StrContains(sName, "sf2_escape_trigger", false))
 	{
 		if (g_bRoundMustEscape && g_iPageMax > 0 && g_iPageCount == g_iPageMax)
 		{
@@ -3709,8 +3708,7 @@ public Hook_TriggerOnStartTouch(const String:output[], caller, activator, Float:
 				while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
 				{
 					GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-					if (!StrContains(sName, "sf2_escape_spawnpoint", false) ||
-						!StrContains(sName, "slender_escape_spawnpoint", false))
+					if (!StrContains(sName, "sf2_escape_spawnpoint", false))
 					{
 						decl Float:flPos[3], Float:flAng[3];
 						GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
