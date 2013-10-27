@@ -6522,13 +6522,17 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 	
 	if (g_iSlenderTeleportType[iBossIndex] == 2)
 	{
-		// Check to see if it's a good time to teleport away.
-		new iState = g_iSlenderState[iBossIndex];
-		if (iState == STATE_IDLE || iState == STATE_WANDER)
+		new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+		if (!iBoss || iBoss == INVALID_ENT_REFERENCE)
 		{
-			if (GetGameTime() < g_flSlenderTimeUntilKill[iBossIndex])
+			// Check to see if it's a good time to teleport away.
+			new iState = g_iSlenderState[iBossIndex];
+			if (iState == STATE_IDLE || iState == STATE_WANDER)
 			{
-				return Plugin_Continue;
+				if (GetGameTime() < g_flSlenderTimeUntilKill[iBossIndex])
+				{
+					return Plugin_Continue;
+				}
 			}
 		}
 	}
