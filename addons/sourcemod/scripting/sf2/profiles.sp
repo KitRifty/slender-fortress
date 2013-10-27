@@ -186,6 +186,7 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	g_hSlenderAttackTimer[iBossIndex] = INVALID_HANDLE;
 	g_flSlenderNextTeleportTime[iBossIndex] = GetGameTime();
 	g_flSlenderLastKill[iBossIndex] = GetGameTime();
+	g_flSlenderTimeUntilKill[iBossIndex] = -1.0;
 	g_flSlenderNextJumpScare[iBossIndex] = -1.0;
 	g_flSlenderTimeUntilNextProxy[iBossIndex] = -1.0;
 	g_flSlenderTeleportMinRange[iBossIndex] = GetProfileFloat(sProfile, "teleport_range_min", 325.0);
@@ -349,6 +350,7 @@ RemoveProfile(iBossIndex)
 	g_flSlenderTeleportMaxTargetTime[iBossIndex] = -1.0;
 	g_flSlenderNextTeleportTime[iBossIndex] = -1.0;
 	g_flSlenderTeleportTargetTime[iBossIndex] = -1.0;
+	g_flSlenderTimeUntilKill[iBossIndex] = -1.0;
 	
 	// Remove all copies associated with me.
 	for (new i = 0; i < MAX_BOSSES; i++)

@@ -6523,7 +6523,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 	if (g_iSlenderTeleportType[iBossIndex] == 2)
 	{
 		new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
-		if (!iBoss || iBoss == INVALID_ENT_REFERENCE)
+		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
 			// Check to see if it's a good time to teleport away.
 			new iState = g_iSlenderState[iBossIndex];
