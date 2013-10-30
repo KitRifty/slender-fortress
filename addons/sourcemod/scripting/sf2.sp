@@ -18,7 +18,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.1.9"
+#define PLUGIN_VERSION "0.2.0"
 
 public Plugin:myinfo = 
 {
@@ -3022,8 +3022,9 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			
 			// Search outwards until travel distance is at maximum range.
 			new Handle:hAreaArray = CreateArray(2);
-			new Handle:hAreas = NavMesh_CollectSurroundingAreas(iTargetAreaIndex, g_flSlenderTeleportMaxRange[i]);
-			if (hAreas != INVALID_HANDLE)
+			new Handle:hAreas = CreateStack();
+			NavMesh_CollectSurroundingAreas(hAreas, iTargetAreaIndex, g_flSlenderTeleportMaxRange[i]);
+			
 			{
 				new iPoppedAreas;
 				
@@ -5708,6 +5709,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 		if (bTraceHit)
 		{
 			//new Float:flGroundHeight = GetVectorDistance(flMyPos, flTraceEndPos);
+			NormalizeVector(flTraceNormal, flTraceNormal);
 			GetVectorCrossProduct(flLat, flTraceNormal, flMoveDir);
 			GetVectorCrossProduct(flMoveDir, flTraceNormal, flLat);
 			
@@ -6525,13 +6527,16 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 		new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
 		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
-			// Check to see if it's a good time to teleport away.
-			new iState = g_iSlenderState[iBossIndex];
-			if (iState == STATE_IDLE || iState == STATE_WANDER)
+			if (g_iSlenderType[iBossIndex] == 2)
 			{
-				if (GetGameTime() < g_flSlenderTimeUntilKill[iBossIndex])
+				// Check to see if it's a good time to teleport away.
+				new iState = g_iSlenderState[iBossIndex];
+				if (iState == STATE_IDLE || iState == STATE_WANDER)
 				{
-					return Plugin_Continue;
+					if (GetGameTime() < g_flSlenderTimeUntilKill[iBossIndex])
+					{
+						return Plugin_Continue;
+					}
 				}
 			}
 		}
@@ -6575,6 +6580,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 				if (flTeleportMinRange > g_flSlenderTeleportMaxRange[iBossIndex]) flTeleportMinRange = g_flSlenderTeleportMaxRange[iBossIndex];
 				
 				new iTeleportAreaIndex = -1;
+				decl Float:flTeleportPos[3];
 				
 				// Search surrounding nav areas around target.
 				if (NavMesh_Exists())
@@ -6593,8 +6599,9 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 						
 						// Search outwards until travel distance is at maximum range.
 						new Handle:hAreaArray = CreateArray(2);
-						new Handle:hAreas = NavMesh_CollectSurroundingAreas(iTargetAreaIndex, g_flSlenderTeleportMaxRange[iBossIndex]);
-						if (hAreas != INVALID_HANDLE)
+						new Handle:hAreas = CreateStack();
+						NavMesh_CollectSurroundingAreas(hAreas, iTargetAreaIndex, g_flSlenderTeleportMaxRange[iBossIndex]);
+						
 						{
 							new iPoppedAreas;
 						
@@ -6611,14 +6618,10 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							
 							CloseHandle(hAreas);
 						}
-						else
-						{
-							SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed to get collection of near areas!", iBossIndex);
-						}
 						
-						new Handle:hAreaArrayClose = CreateArray();
-						new Handle:hAreaArrayAverage = CreateArray();
-						new Handle:hAreaArrayFar = CreateArray();
+						new Handle:hAreaArrayClose = CreateArray(4);
+						new Handle:hAreaArrayAverage = CreateArray(4);
+						new Handle:hAreaArrayFar = CreateArray(4);
 						
 						for (new i = 1; i <= 3; i++)
 						{
@@ -6629,26 +6632,17 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							{
 								new iAreaIndex = GetArrayCell(hAreaArray, i2);
 								
-								decl Float:flAreaCenter[3];
-								NavMeshArea_GetCenter(iAreaIndex, flAreaCenter);
-								
-								// Check visibility.
-								if (IsPointVisibleToAPlayer(flAreaCenter, !bShouldBeBehindObstruction, false)) continue;
-								
-								AddVectors(flAreaCenter, g_flSlenderEyePosOffset[iBossIndex], flAreaCenter);
-								
-								if (IsPointVisibleToAPlayer(flAreaCenter, !bShouldBeBehindObstruction, false)) continue;
-								
-								SubtractVectors(flAreaCenter, g_flSlenderEyePosOffset[iBossIndex], flAreaCenter);
+								decl Float:flAreaSpawnPoint[3];
+								NavMeshArea_GetCenter(iAreaIndex, flAreaSpawnPoint);
 								
 								new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
 								
 								// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
 								{
 									decl Float:flTraceStartPos[3];
-									flTraceStartPos[0] = flAreaCenter[0];
-									flTraceStartPos[1] = flAreaCenter[1];
-									flTraceStartPos[2] = flAreaCenter[2] + (HalfHumanHeight * 2.0);
+									flTraceStartPos[0] = flAreaSpawnPoint[0];
+									flTraceStartPos[1] = flAreaSpawnPoint[1];
+									flTraceStartPos[2] = flAreaSpawnPoint[2] + (HalfHumanHeight * 2.0);
 									
 									decl Float:flTraceMins[3];
 									flTraceMins[0] = g_flSlenderDetectMins[iBossIndex][0];
@@ -6661,7 +6655,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									flTraceMaxs[2] = 0.0;
 									
 									new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
-										flAreaCenter,
+										flAreaSpawnPoint,
 										flTraceMins,
 										flTraceMaxs,
 										MASK_NPCSOLID,
@@ -6680,16 +6674,30 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									{
 										continue;
 									}
+									
+									flAreaSpawnPoint[0] = flTraceHitPos[0];
+									flAreaSpawnPoint[1] = flTraceHitPos[1];
+									flAreaSpawnPoint[2] = flTraceHitPos[2];
 								}
+								
+								// Check visibility.
+								if (IsPointVisibleToAPlayer(flAreaSpawnPoint, !bShouldBeBehindObstruction, false)) continue;
+								
+								AddVectors(flAreaSpawnPoint, g_flSlenderEyePosOffset[iBossIndex], flAreaSpawnPoint);
+								
+								if (IsPointVisibleToAPlayer(flAreaSpawnPoint, !bShouldBeBehindObstruction, false)) continue;
+								
+								SubtractVectors(flAreaSpawnPoint, g_flSlenderEyePosOffset[iBossIndex], flAreaSpawnPoint);
 								
 								new bool:bTooNear = false;
 								
-								// Check minimum range.
+								// Check minimum range with players.
 								for (new iClient = 1; iClient <= MaxClients; iClient++)
 								{
 									if (!IsClientInGame(iClient) ||
 										!IsPlayerAlive(iClient) ||
 										g_bPlayerEliminated[iClient] ||
+										g_bPlayerGhostMode[iClient] || 
 										g_bPlayerEscaped[iClient])
 									{
 										continue;
@@ -6698,7 +6706,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									decl Float:flTempPos[3];
 									GetClientAbsOrigin(iClient, flTempPos);
 									
-									if (GetVectorDistance(flAreaCenter, flTempPos) <= g_flSlenderTeleportMinRange[iBossIndex])
+									if (GetVectorDistance(flAreaSpawnPoint, flTempPos) <= g_flSlenderTeleportMinRange[iBossIndex])
 									{
 										bTooNear = true;
 										break;
@@ -6707,15 +6715,67 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 								
 								if (bTooNear) continue;	// This area is not compatible.
 								
-								// Check travel distance.
+								// Check minimum range with boss copies (if supported).
+								if (g_iSlenderFlags[iBossIndex] & SFF_COPIES)
+								{
+									new Float:flMinDistBetweenBosses = GetProfileFloat(g_strSlenderProfile[iBossIndex], "copy_teleport_dist_from_others", 800.0);
+									
+									for (new iBossCheck = 0; iBossCheck < MAX_BOSSES; iBossCheck++)
+									{
+										if (iBossCheck == iBossIndex ||
+											g_iSlenderID[iBossCheck] == -1 ||
+											(g_iSlenderCopyMaster[iBossIndex] != iBossCheck && g_iSlenderCopyMaster[iBossIndex] != g_iSlenderCopyMaster[iBossCheck]))
+										{
+											continue;
+										}
+										
+										new iBossEnt = EntRefToEntIndex(g_iSlender[iBossCheck]);
+										if (!iBossEnt || iBossEnt == INVALID_ENT_REFERENCE) continue;
+										
+										decl Float:flTempPos[3];
+										SlenderGetAbsOrigin(iBossCheck, flTempPos);
+										
+										if (GetVectorDistance(flAreaSpawnPoint, flTempPos) <= flMinDistBetweenBosses)
+										{
+											bTooNear = true;
+											break;
+										}
+									}
+								}
+								
+								if (bTooNear) continue;	// This area is not compatible.
+								
+								// Check travel distance and put in the appropriate arrays.
 								new Float:flDist = Float:GetArrayCell(hAreaArray, i2, 1);
 								if (flDist > flRangeSectionMin && flDist < flRangeSectionMax)
 								{
+									new iIndex = -1;
+									new Handle:hTargetAreaArray = INVALID_HANDLE;
+									
 									switch (i)
 									{
-										case 1: PushArrayCell(hAreaArrayClose, iAreaIndex);
-										case 2: PushArrayCell(hAreaArrayAverage, iAreaIndex);
-										case 3: PushArrayCell(hAreaArrayFar, iAreaIndex);
+										case 1: 
+										{
+											iIndex = PushArrayCell(hAreaArrayClose, iAreaIndex);
+											hTargetAreaArray = hAreaArrayClose;
+										}
+										case 2: 
+										{
+											iIndex = PushArrayCell(hAreaArrayAverage, iAreaIndex);
+											hTargetAreaArray = hAreaArrayAverage;
+										}
+										case 3: 
+										{
+											iIndex = PushArrayCell(hAreaArrayFar, iAreaIndex);
+											hTargetAreaArray = hAreaArrayFar;
+										}
+									}
+									
+									if (hTargetAreaArray != INVALID_HANDLE && iIndex != -1)
+									{
+										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[0], 1);
+										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[1], 2);
+										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[2], 3);
 									}
 								}
 							}
@@ -6727,29 +6787,36 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							GetArraySize(hAreaArrayAverage),
 							GetArraySize(hAreaArrayFar));
 						
-						new iBestAreaIndex = -1;
+						new iArrayIndex = -1;
 						
 						if (GetArraySize(hAreaArrayClose))
 						{
-							iBestAreaIndex = GetArrayCell(hAreaArrayClose, GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1));
+							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1);
+							iTeleportAreaIndex = GetArrayCell(hAreaArrayClose, iArrayIndex);
+							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 1);
+							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 2);
+							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 3);
 						}
 						else if (GetArraySize(hAreaArrayAverage))
 						{
-							iBestAreaIndex = GetArrayCell(hAreaArrayAverage, GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1));
+							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1);
+							iTeleportAreaIndex = GetArrayCell(hAreaArrayAverage, iArrayIndex);
+							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 1);
+							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 2);
+							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 3);
 						}
 						else if (GetArraySize(hAreaArrayFar))
 						{
-							iBestAreaIndex = GetArrayCell(hAreaArrayFar, GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1));
+							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1);
+							iTeleportAreaIndex = GetArrayCell(hAreaArrayFar, iArrayIndex);
+							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 1);
+							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 2);
+							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 3);
 						}
 						
 						CloseHandle(hAreaArrayClose);
 						CloseHandle(hAreaArrayAverage);
 						CloseHandle(hAreaArrayFar);
-						
-						if (iBestAreaIndex != -1)
-						{
-							iTeleportAreaIndex = iBestAreaIndex;
-						}
 					}
 					else
 					{
@@ -6768,9 +6835,6 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 				}
 				else
 				{
-					// Use the center for now.
-					decl Float:flTeleportPos[3];
-					NavMeshArea_GetCenter(iTeleportAreaIndex, flTeleportPos);
 					SpawnSlender(iBossIndex, flTeleportPos);
 					
 					if (g_iSlenderFlags[iBossIndex] & SFF_HASJUMPSCARE)
