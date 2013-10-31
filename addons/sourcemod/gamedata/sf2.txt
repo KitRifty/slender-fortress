@@ -4,18 +4,25 @@
 	{
 		"Offsets"
 		{
-			"WantsLagCompensationOnEntity"
+			"CTFPlayer::WantsLagCompensationOnEntity"
 			{
 				"windows"	"322"
 				"linux"		"323"
 				"mac"		"323"
 			}
 			
-			"ShouldTransmit"
+			"CBaseEntity::ShouldTransmit"
 			{
 				"windows"	"18"
 				"linux"	"19"
 				"mac"	"19"
+			}
+			
+			"CGameRules::ClientCommandKeyValues"
+			{
+				"windows"	"38"
+				"linux"	"39"
+				"mac"	"30"
 			}
 		}
 	}

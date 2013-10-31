@@ -557,6 +557,7 @@ new Handle:g_hSDKWeaponWrench;
 new Handle:g_hSDKGetMaxHealth;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
+new Handle:g_hSDKClientCommandKeyValues;
 
 
 #include "sf2/stocks.sp"
@@ -786,9 +787,9 @@ public OnPluginStart()
 	AddCommandListener(Hook_CommandBuild, "build");
 	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
 	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server");
-	AddCommandListener(Hook_CommandActionSlotItemOn, "+use_action_slot_item_server");
-	AddCommandListener(Hook_CommandActionSlotItemOff, "-use_action_slot_item_server");
+//	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server"); // defunct
+//	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
+//	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
 	AddCommandListener(Hook_CommandSuicideAttempt, "kill");
 	AddCommandListener(Hook_CommandSuicideAttempt, "explode");
 	AddCommandListener(Hook_CommandSuicideAttempt, "joinclass");
@@ -1065,27 +1066,64 @@ SetupSDK()
 	hConfig = LoadGameConfigFile("sf2");
 	if (hConfig == INVALID_HANDLE) SetFailState("Could not find SF2 gamedata!");
 	
-	new iOffset = GameConfGetOffset(hConfig, "WantsLagCompensationOnEntity"); 
+	new iOffset = GameConfGetOffset(hConfig, "CTFPlayer::WantsLagCompensationOnEntity"); 
 	g_hSDKWantsLagCompensationOnEntity = DHookCreate(iOffset, HookType_Entity, ReturnType_Bool, ThisPointer_CBaseEntity, Hook_ClientWantsLagCompensationOnEntity); 
 	if (g_hSDKWantsLagCompensationOnEntity == INVALID_HANDLE)
 	{
-		SetFailState("Failed to hook onto WantsLagCompensationOnEntity offset from SF2 gamedata!");
+		SetFailState("Failed to create hook CTFPlayer::WantsLagCompensationOnEntity offset from SF2 gamedata!");
 	}
 	
 	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_CBaseEntity);
 	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_ObjectPtr);
 	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_Unknown);
 	
-	iOffset = GameConfGetOffset(hConfig, "ShouldTransmit");
+	iOffset = GameConfGetOffset(hConfig, "CBaseEntity::ShouldTransmit");
 	g_hSDKShouldTransmit = DHookCreate(iOffset, HookType_Entity, ReturnType_Int, ThisPointer_CBaseEntity, Hook_EntityShouldTransmit);
 	if (g_hSDKShouldTransmit == INVALID_HANDLE)
 	{
-		SetFailState("Failed to hook onto ShouldTransmit offset from SF2 gamedata!");
+		SetFailState("Failed to create hook CBaseEntity::ShouldTransmit offset from SF2 gamedata!");
 	}
 	
 	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
 	
+	iOffset = GameConfGetOffset(hConfig, "CGameRules::ClientCommandKeyValues");
+	g_hSDKClientCommandKeyValues = DHookCreate(iOffset, HookType_GameRules, ReturnType_Void, ThisPointer_Ignore, Hook_ClientCommandKeyValues);
+	if (g_hSDKClientCommandKeyValues == INVALID_HANDLE)
+	{
+		SetFailState("Failed to create hook CGameRules::ClientCommandKeyValues offset from SF2 gamedata!");
+	}
+	
+	DHookAddParam(g_hSDKClientCommandKeyValues, HookParamType_Edict);
+	DHookAddParam(g_hSDKClientCommandKeyValues, HookParamType_ObjectPtr);
+	
 	CloseHandle(hConfig);
+}
+
+// This is easily the most ridiculous hacky way of doing this.
+public MRESReturn:Hook_ClientCommandKeyValues(Handle:hParams)
+{
+	new iEdict = DHookGetParam(hParams, 1);
+//	PrintToChatAll("CGameRules::ClientCommandKeyValues called by edict %d", iEdict);
+	
+	new iBytes = DHookGetParamObjectPtrVar(hParams, 2, 0, ObjectValueType_Int);
+	
+//	PrintToChatAll("Got KeyValues bytes %d", iBytes);
+	
+	switch (iBytes)
+	{
+		case 232764: // +use_action_slot_item
+		{
+			new Action:iAction = Hook_CommandActionSlotItemOn(iEdict, "+use_action_slot_item", 0);
+			if (iAction == Plugin_Handled || iAction == Plugin_Stop) return MRES_Supercede;
+		}
+		case 232796: // -use_action_slot_item
+		{
+			new Action:iAction = Hook_CommandActionSlotItemOff(iEdict, "-use_action_slot_item", 0);
+			if (iAction == Plugin_Handled || iAction == Plugin_Stop) return MRES_Supercede;
+		}
+	}
+	
+	return MRES_Ignored;
 }
 
 SetupWeapons()
@@ -1174,6 +1212,9 @@ public OnMapStart()
 	g_hRoundMessagesTimer = CreateTimer(200.0, Timer_RoundMessages, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	g_iRoundMessagesNum = 0;
 	g_iSpecialRoundCount = 0;
+	
+	// Hook gamerules.
+	DHookGamerules(g_hSDKClientCommandKeyValues, false);
 	
 	// Reset boss rounds.
 	g_bBossRound = false;

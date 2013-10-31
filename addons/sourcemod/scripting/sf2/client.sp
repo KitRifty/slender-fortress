@@ -5320,6 +5320,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 		{
 			new bool:bRemoveWeapons = true;
 			new bool:bRestrictWeapons = true;
+			new bool:bRemoveActionSlotItem = true;
 			
 			if (g_bRoundEnded)
 			{
@@ -5327,6 +5328,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 				{
 					bRemoveWeapons = false;
 					bRestrictWeapons = false;
+					bRemoveActionSlotItem = false;
 				}
 			}
 			
@@ -5334,17 +5336,25 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			{
 				bRemoveWeapons = false;
 				bRestrictWeapons = false;
+				bRemoveActionSlotItem = false;
 			}
 			
 			if (g_bRoundWarmup) 
 			{
 				bRemoveWeapons = false;
 				bRestrictWeapons = false;
+				bRemoveActionSlotItem = false;
+			}
+			
+			if (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])
+			{
+				bRemoveActionSlotItem = false;
 			}
 			
 			if (g_bPlayerGhostMode[client]) 
 			{
 				bRemoveWeapons = true;
+				bRemoveActionSlotItem = true;
 				
 				// Set viewmodel invisible.
 				new ent = -1;
@@ -5355,6 +5365,25 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 						new iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
 						iFlags |= 32;
 						SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
+					}
+				}
+			}
+			
+			if (bRemoveActionSlotItem)
+			{
+				new ent = -1;
+				while ((ent = FindEntityByClassname(ent, "tf_wearable")) != -1)
+				{
+					if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
+					{
+						new iItemDef = GetEntProp(ent, Prop_Send, "m_iItemDefinitionIndex");
+						switch (iItemDef)
+						{
+							case 167, 438, 463, 477:
+							{
+								AcceptEntityInput(ent, "Kill");
+							}
+						}
 					}
 				}
 			}
