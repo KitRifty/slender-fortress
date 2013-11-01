@@ -172,7 +172,7 @@
 	
 	"SF2 Help Controls Description"
 	{
-		"en"	"Primary attack - Grab page\nSecondary attack - Toggle flashlight\nReload - Blink\nSprint - Use action slot item"
+		"en"	"Primary attack - Grab page\nSecondary attack - Toggle flashlight\nReload - Blink\nSprint - Hold taunt"
 	}
 	
 	"SF2 Help Sprinting And Stamina Menu Title"
@@ -396,7 +396,7 @@
 	
 	"SF2 Hint Sprint"
 	{
-		"en"	"Sprint - HOLD Action Item Button"
+		"en"	"Sprint - HOLD Taunt"
 	}
 	
 	"SF2 Hint Flashlight"

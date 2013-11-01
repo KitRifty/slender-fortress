@@ -64,6 +64,7 @@ public Plugin:myinfo =
 #define DEBUG_BOSS_TELEPORTATION (1 << 0)
 #define DEBUG_BOSS_CHASE (1 << 1)
 #define DEBUG_PLAYER_STRESS (1 << 2)
+#define DEBUG_PLAYER_ACTION_SLOT (1 << 3)
 
 enum MuteMode
 {
@@ -557,7 +558,7 @@ new Handle:g_hSDKWeaponWrench;
 new Handle:g_hSDKGetMaxHealth;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
-new Handle:g_hSDKClientCommandKeyValues;
+//new Handle:g_hSDKClientCommandKeyValues;
 
 
 #include "sf2/stocks.sp"
@@ -782,14 +783,15 @@ public OnPluginStart()
 	RegAdminCmd("sm_sf2_debug_boss_teleport", Command_DebugBossTeleport, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_boss_chase", Command_DebugBossChase, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_player_stress", Command_DebugPlayerStress, ADMFLAG_CHEATS);
+	RegAdminCmd("sm_sf2_debug_player_action_slot", Command_DebugPlayerActionSlot, ADMFLAG_CHEATS);
 	
 	// Hook onto existing console commands.
 	AddCommandListener(Hook_CommandBuild, "build");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
+//	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
+//	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
 //	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server"); // defunct
-//	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
-//	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
+	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
+	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
 	AddCommandListener(Hook_CommandSuicideAttempt, "kill");
 	AddCommandListener(Hook_CommandSuicideAttempt, "explode");
 	AddCommandListener(Hook_CommandSuicideAttempt, "joinclass");
@@ -1041,6 +1043,23 @@ public Action:Command_DebugPlayerStress(client, args)
 	return Plugin_Handled;
 }
 
+public Action:Command_DebugPlayerActionSlot(client, args)
+{
+	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_PLAYER_ACTION_SLOT);
+	if (!bInMode)
+	{
+		g_iPlayerDebugFlags[client] |= DEBUG_PLAYER_ACTION_SLOT;
+		PrintToChat(client, "Enabled debugging player action slot.");
+	}
+	else
+	{
+		g_iPlayerDebugFlags[client] &= ~DEBUG_PLAYER_ACTION_SLOT;
+		PrintToChat(client, "Enabled debugging player action slot.");
+	}
+	
+	return Plugin_Handled;
+}
+
 public OnAllPluginsLoaded()
 {
 	SetupSDK();
@@ -1086,6 +1105,7 @@ SetupSDK()
 	
 	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
 	
+	/*
 	iOffset = GameConfGetOffset(hConfig, "CGameRules::ClientCommandKeyValues");
 	g_hSDKClientCommandKeyValues = DHookCreate(iOffset, HookType_GameRules, ReturnType_Void, ThisPointer_Ignore, Hook_ClientCommandKeyValues);
 	if (g_hSDKClientCommandKeyValues == INVALID_HANDLE)
@@ -1095,11 +1115,13 @@ SetupSDK()
 	
 	DHookAddParam(g_hSDKClientCommandKeyValues, HookParamType_Edict);
 	DHookAddParam(g_hSDKClientCommandKeyValues, HookParamType_ObjectPtr);
+	*/
 	
 	CloseHandle(hConfig);
 }
 
-// This is easily the most ridiculous hacky way of doing this.
+// This is easily the most ridiculous hacky way of doing this. But it doesn't work. Surprise, surprise.
+/*
 public MRESReturn:Hook_ClientCommandKeyValues(Handle:hParams)
 {
 	new iEdict = DHookGetParam(hParams, 1);
@@ -1108,6 +1130,7 @@ public MRESReturn:Hook_ClientCommandKeyValues(Handle:hParams)
 	new iBytes = DHookGetParamObjectPtrVar(hParams, 2, 0, ObjectValueType_Int);
 	
 //	PrintToChatAll("Got KeyValues bytes %d", iBytes);
+	SendDebugMessageToPlayers(DEBUG_PLAYER_ACTION_SLOT, 0, "CGameRules::ClientCommandKeyValues(%d) got bytes %d", iEdict, iBytes);
 	
 	switch (iBytes)
 	{
@@ -1125,6 +1148,7 @@ public MRESReturn:Hook_ClientCommandKeyValues(Handle:hParams)
 	
 	return MRES_Ignored;
 }
+*/
 
 SetupWeapons()
 {
@@ -1214,7 +1238,7 @@ public OnMapStart()
 	g_iSpecialRoundCount = 0;
 	
 	// Hook gamerules.
-	DHookGamerules(g_hSDKClientCommandKeyValues, false);
+	//DHookGamerules(g_hSDKClientCommandKeyValues, false);
 	
 	// Reset boss rounds.
 	g_bBossRound = false;
