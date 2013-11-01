@@ -7715,7 +7715,13 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 						// Disable movement on player.
 						SetEntityFlags(client, GetEntityFlags(client) | FL_FROZEN);
 						
-						CreateTimer(GetClientLatency(client, NetFlow_Outgoing) * 2.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+						new Float:flDelay = 0.0;
+						if (!IsFakeClient(client))
+						{
+							flDelay = GetClientLatency(client, NetFlow_Outgoing);
+						}
+						
+						CreateTimer(flDelay * 2.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 					}
 				}
 			}
@@ -7732,6 +7738,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 			CreateTimer(0.12, Timer_TeleportPlayerToPvP, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 			
+			/*
 			// Remove any conditions that linger due to mediguns.
 			TF2_RemoveCondition(client, TFCond_MegaHeal); // Quick-Fix
 			TF2_RemoveCondition(client, TFCond_UberBulletResist); // Vaccinator
@@ -7742,6 +7749,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			TF2_RemoveCondition(client, TFCond_SmallFireResist);
 			
 			SetEntProp(client, Prop_Send, "m_CollisionGroup", 3) // COLLISION_GROUP_INTERACTIVE_DEBRIS
+			*/
 		}
 	}
 	

@@ -3141,6 +3141,7 @@ ClientEnableGhostMode(client)
 	
 	g_bPlayerGhostMode[client] = true;
 	
+	/*
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
 	if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
@@ -3150,7 +3151,11 @@ ClientEnableGhostMode(client)
 	SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
 	SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", -1);
 	SetEntPropEnt(client, Prop_Send, "m_hLastWeapon", -1);
+	*/
 	
+	TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
+	
+	/*
 	if (strlen(GHOST_MODEL) > 0)
 	{
 		SetVariantString(GHOST_MODEL);
@@ -3170,6 +3175,7 @@ ClientEnableGhostMode(client)
 			AcceptEntityInput(ent, "Kill");
 		}
 	}
+	*/
 	
 	// Set first observer target.
 	ClientGhostModeNextTarget(client);
@@ -3184,6 +3190,9 @@ ClientDisableGhostMode(client)
 	
 	if (!IsClientInGame(client)) return;
 	
+	TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
+	
+	/*
 	// Set solid flags.
 	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
 	if (iFlags & FSOLID_NOT_SOLID) iFlags &= ~FSOLID_NOT_SOLID;
@@ -3209,6 +3218,7 @@ ClientDisableGhostMode(client)
 			SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
 		}
 	}
+	*/
 }
 
 ClientGhostModeNextTarget(client)
@@ -3239,7 +3249,7 @@ ClientGhostModeNextTarget(client)
 		
 		decl Float:flPos[3], Float:flAng[3], Float:flVelocity[3];
 		GetClientAbsOrigin(iTarget, flPos);
-		GetClientAbsAngles(iTarget, flAng);
+		GetClientEyeAngles(iTarget, flAng);
 		GetEntPropVector(iTarget, Prop_Data, "m_vecAbsVelocity", flVelocity);
 		TeleportEntity(client, flPos, flAng, flVelocity);
 	}
@@ -5320,7 +5330,6 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 		{
 			new bool:bRemoveWeapons = true;
 			new bool:bRestrictWeapons = true;
-			new bool:bRemoveActionSlotItem = true;
 			
 			if (g_bRoundEnded)
 			{
@@ -5328,7 +5337,6 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 				{
 					bRemoveWeapons = false;
 					bRestrictWeapons = false;
-					bRemoveActionSlotItem = false;
 				}
 			}
 			
@@ -5336,25 +5344,18 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			{
 				bRemoveWeapons = false;
 				bRestrictWeapons = false;
-				bRemoveActionSlotItem = false;
 			}
 			
 			if (g_bRoundWarmup) 
 			{
 				bRemoveWeapons = false;
 				bRestrictWeapons = false;
-				bRemoveActionSlotItem = false;
 			}
 			
-			if (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])
-			{
-				bRemoveActionSlotItem = false;
-			}
-			
+			/*
 			if (g_bPlayerGhostMode[client]) 
 			{
 				bRemoveWeapons = true;
-				bRemoveActionSlotItem = true;
 				
 				// Set viewmodel invisible.
 				new ent = -1;
@@ -5387,6 +5388,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 					}
 				}
 			}
+			*/
 			
 			if (bRemoveWeapons)
 			{
