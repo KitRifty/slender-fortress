@@ -89,6 +89,7 @@ enum
 #define SFF_HASSTATICLOOPLOCALSOUND (1 << 12)
 #define SFF_HASVIEWSHAKE (1 << 13)
 #define SFF_COPIES (1 << 14)
+#define SFF_ATTACKPROPS (1 << 15)
 
 // Interrup conditions.
 #define COND_HEARDSUSPICIOUSSOUND (1 << 0)
@@ -97,6 +98,7 @@ enum
 #define COND_HEARDWEAPON (1 << 3)
 #define COND_HEARDVOICE (1 << 4)
 #define COND_CHASETARGETINVALIDATED (1 << 5)
+#define COND_SAWENEMY (1 << 5)
 
 
 forward SF2_OnBossAdded(iBossIndex);

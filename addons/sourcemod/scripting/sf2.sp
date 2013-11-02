@@ -4550,6 +4550,12 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	if (flOriginalWalkSpeed <= 0.0) flVelocityRatioWalk = 0.0;
 	else flVelocityRatioWalk = GetVectorLength(flSlenderVelocity) / flOriginalWalkSpeed;
 	
+	new Float:flAttackRange = GetProfileFloat(sSlenderProfile, "attack_range");
+	new Float:flAttackFOV = GetProfileFloat(sSlenderProfile, "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
+	new Float:flAttackBeginRange = GetProfileFloat(sSlenderProfile, "attack_begin_range", flAttackRange);
+	new Float:flAttackBeginFOV = GetProfileFloat(sSlenderProfile, "attack_begin_fov", 70.0);
+	
+	
 	new iOldState = g_iSlenderState[iBossIndex];
 	new iOldTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
 	
@@ -4621,7 +4627,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		new Float:flDist;
 		new Float:flPriorityValue = g_iPageMax > 0 ? (float(g_iPlayerPageCount[i]) / float(g_iPageMax)) : 0.0;
 		
-		if (TF2_GetPlayerClass(i) == TFClass_Medic) flPriorityValue += 0.5;
+		if (TF2_GetPlayerClass(i) == TFClass_Medic) flPriorityValue += 0.72;
 		
 		flDist = GetVectorDistance(flTraceStartPos, flTraceEndPos);
 		flPlayerDists[i] = flDist;
@@ -4644,6 +4650,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flTargetPos[0];
 			g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flTargetPos[1];
 			g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flTargetPos[2];
+			g_iSlenderInterruptConditions[iBossIndex] |= COND_SAWENEMY;
 		}
 	}
 	
@@ -4703,20 +4710,30 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	// Process the target that we should have.
 	new iTarget = iOldTarget;
 	
+	/*
 	if (IsValidEdict(iBestNewTarget))
 	{
 		iTarget = iBestNewTarget;
 		g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestNewTarget);
 	}
+	*/
 	
-	if (iTarget != INVALID_ENT_REFERENCE)
+	if (iTarget && iTarget != INVALID_ENT_REFERENCE)
 	{
 		if (!IsTargetValidForSlender(iTarget, bAttackEliminated))
 		{
 			// Clear our target; he's not valid anymore.
+			iOldTarget = iTarget;
 			iTarget = INVALID_ENT_REFERENCE;
 			g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
 		}
+	}
+	else
+	{
+		// Clear our target; he's not valid anymore.
+		iOldTarget = iTarget;
+		iTarget = INVALID_ENT_REFERENCE;
+		g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
 	}
 	
 	new iInterruptConditions = g_iSlenderInterruptConditions[iBossIndex];
@@ -4742,7 +4759,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				}
 			}
 			
-			if (IsValidClient(iTarget))
+			if (iInterruptConditions & COND_SAWENEMY)
 			{
 				// I saw someone over here. Automatically put me into alert mode.
 				iState = STATE_ALERT;
@@ -4831,13 +4848,23 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					if ((bPlayerNear[iBestNewTarget] || bPlayerInFOV[iBestNewTarget]) && bPlayerVisible[iBestNewTarget])
 					{
 						// AHAHAHAH! I GOT YOU NOW!
+						iTarget = iBestNewTarget;
+						g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestNewTarget);
 						iState = STATE_CHASE;
 					}
 				}
 			}
 			else
 			{
-				if (iInterruptConditions & COND_HEARDSUSPICIOUSSOUND)
+				if (iInterruptConditions & COND_SAWENEMY)
+				{
+					g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][0];
+					g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][1];
+					g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][2];
+					
+					bQueueForNewPath = true;
+				}
+				else if (iInterruptConditions & COND_HEARDSUSPICIOUSSOUND)
 				{
 					new bool:bDiscardMasterPos = bool:(GetGameTime() >= g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex]);
 					
@@ -4858,6 +4885,42 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 						
 						bQueueForNewPath = true;
 					}
+				}
+				
+				new bool:bBlockingProp = false;
+				
+				if (g_iSlenderFlags[iBossIndex] & SFF_ATTACKPROPS)
+				{
+					new prop = -1;
+					while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
+					{
+						if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+						{
+							bBlockingProp = true;
+							break;
+						}
+					}
+					
+					if (!bBlockingProp)
+					{
+						prop = -1;
+						while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
+						{
+							if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
+							{
+								if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+								{
+									bBlockingProp = true;
+									break;
+								}
+							}
+						}
+					}
+				}
+				
+				if (bBlockingProp)
+				{
+					iState = STATE_ATTACK;
 				}
 			}
 		}
@@ -4923,19 +4986,59 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					{
 						g_bSlenderChaseDeathPosition[iBossIndex] = false;	// We're not chasing a dead player after all! Reset.
 					
-						new Float:flAttackRange = GetProfileFloat(sSlenderProfile, "attack_range", flAttackRange);
-						new Float:flAttackBeginRange = GetProfileFloat(sSlenderProfile, "attack_begin_range", flAttackRange);
-						
+						decl Float:flAttackDirection[3];
 						GetClientAbsOrigin(iTarget, g_flSlenderGoalPos[iBossIndex]);
-						if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= flAttackBeginRange)
+						SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flAttackDirection);
+						GetVectorAngles(flAttackDirection, flAttackDirection);
+						
+						if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= flAttackBeginRange &&
+							(FloatAbs(AngleDiff(flAttackDirection[0], flMyEyeAng[0])) + FloatAbs(AngleDiff(flAttackDirection[1], flMyEyeAng[1]))) <= flAttackBeginFOV)
 						{
 							// ENOUGH TALK! HAVE AT YOU!
 							iState = STATE_ATTACK;
 						}
-						else if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
+						else
 						{
-							g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
-							bQueueForNewPath = true;
+							new bool:bBlockingProp = false;
+							
+							if (g_iSlenderFlags[iBossIndex] & SFF_ATTACKPROPS)
+							{
+								new prop = -1;
+								while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
+								{
+									if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+									{
+										bBlockingProp = true;
+										break;
+									}
+								}
+								
+								if (!bBlockingProp)
+								{
+									prop = -1;
+									while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
+									{
+										if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
+										{
+											if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+											{
+												bBlockingProp = true;
+												break;
+											}
+										}
+									}
+								}
+							}
+							
+							if (bBlockingProp)
+							{
+								iState = STATE_ATTACK;
+							}
+							else if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
+							{
+								g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
+								bQueueForNewPath = true;
+							}
 						}
 					}
 				}
@@ -4956,14 +5059,14 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					if (IsValidClient(iTarget))
 					{
 						g_bSlenderChaseDeathPosition[iBossIndex] = false;
-					
+						
 						// Chase him again!
 						iState = STATE_CHASE;
 					}
 					else
 					{
 						// Target isn't valid anymore. We killed him, Mac!
-						iState = STATE_IDLE;
+						iState = STATE_ALERT;
 					}
 				}
 			}
@@ -4981,7 +5084,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					else
 					{
 						// WHAT DA FUUUUUUUUUUUQ. TARGET ISN'T VALID. AUSDHASUIHD
-						iState = STATE_IDLE;
+						iState = STATE_ALERT;
 					}
 				}
 			}
@@ -5068,19 +5171,13 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			case STATE_ALERT:
 			{
 				g_bSlenderChaseDeathPosition[iBossIndex] = false;
-			
+				
 				// Set our goal position.
 				if (g_bSlenderInvestigatingSound[iBossIndex])
 				{
 					g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderTargetSoundMasterPos[iBossIndex][0];
 					g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderTargetSoundMasterPos[iBossIndex][1];
 					g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderTargetSoundMasterPos[iBossIndex][2];
-				}
-				else if (IsValidClient(iTarget))
-				{
-					g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderLastFoundPlayerPos[iBossIndex][iTarget][0];
-					g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderLastFoundPlayerPos[iBossIndex][iTarget][1];
-					g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderLastFoundPlayerPos[iBossIndex][iTarget][2];
 				}
 				
 				g_flSlenderTimeUntilIdle[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_alert_duration", 5.0);
@@ -5272,22 +5369,32 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			}
 			else if (iState == STATE_ALERT)
 			{
-				if (IsValidClient(iTarget))
+				if (iInterruptConditions & COND_SAWENEMY)
 				{
-					if ((bPlayerInFOV[iTarget] || bPlayerNear[iTarget]) && bPlayerVisible[iTarget])
+					if (IsValidEntity(iBestNewTarget))
 					{
-						// Constantly update my path if I see him.
-						if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
+						if ((bPlayerInFOV[iBestNewTarget] || bPlayerNear[iBestNewTarget]) && bPlayerVisible[iBestNewTarget])
 						{
-							GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", g_flSlenderGoalPos[iBossIndex]);
-							bQueueForNewPath = true;
-							g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
+							// Constantly update my path if I see him.
+							if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
+							{
+								GetEntPropVector(iBestNewTarget, Prop_Data, "m_vecAbsOrigin", g_flSlenderGoalPos[iBossIndex]);
+								bQueueForNewPath = true;
+								g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
+							}
 						}
 					}
 				}
 			}
 			else if (iState == STATE_CHASE || iState == STATE_ATTACK)
 			{
+				if (IsValidEntity(iBestNewTarget))
+				{
+					iOldTarget = iTarget;
+					iTarget = iBestNewTarget;
+					g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestNewTarget);
+				}
+				
 				if (iTarget != INVALID_ENT_REFERENCE)
 				{
 					if (iOldTarget != iTarget)
@@ -6966,6 +7073,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	new bool:bAttackEliminated = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
 	
 	new Float:flDamage = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_damage");
+	new Float:flDamageVsProps = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_damage_vs_props", flDamage);
 	new iDamageType = GetProfileNum(g_strSlenderProfile[iBossIndex], "attack_damagetype");
 	
 	// Damage all players within range.
@@ -6983,8 +7091,34 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	
 	new Float:flAttackRange = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_range");
 	new Float:flAttackFOV = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
+	new Float:flAttackDamageForce = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_damageforce");
 	
 	new bool:bHit = false;
+	
+	{
+		new prop = -1;
+		while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
+		{
+			if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+			{
+				bHit = true;
+				SDKHooks_TakeDamage(prop, slender, slender, flDamageVsProps, iDamageType, _, _, flMyEyePos);
+			}
+		}
+		
+		prop = -1;
+		while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
+		{
+			if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
+			{
+				if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+				{
+					bHit = true;
+					SDKHooks_TakeDamage(prop, slender, slender, flDamageVsProps, iDamageType, _, _, flMyEyePos);
+				}
+			}
+		}
+	}
 	
 	for (new i = 1; i <= MaxClients; i++)
 	{
@@ -7039,6 +7173,9 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 				if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV)
 				{
 					bHit = true;
+					GetAngleVectors(flDirection, flDirection, NULL_VECTOR, NULL_VECTOR);
+					NormalizeVector(flDirection, flDirection);
+					ScaleVector(flDirection, flAttackDamageForce);
 					
 					Call_StartForward(fOnClientDamagedByBoss);
 					Call_PushCell(i);
@@ -7048,7 +7185,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 					Call_PushCell(iDamageType);
 					Call_Finish();
 					
-					SDKHooks_TakeDamage(i, slender, slender, flDamage, iDamageType);
+					SDKHooks_TakeDamage(i, slender, slender, flDamage, iDamageType, _, flDirection, flMyEyePos);
 					ClientViewPunch(i, flViewPunch);
 					
 					if (SlenderHasAttribute(iBossIndex, "bleed player on hit"))
@@ -7073,6 +7210,20 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	
 	if (bHit)
 	{
+		// Fling it.
+		new phys = CreateEntityByName("env_physexplosion");
+		if (phys != -1)
+		{
+			TeleportEntity(phys, flMyEyePos, NULL_VECTOR, NULL_VECTOR);
+			DispatchKeyValue(phys, "spawnflags", "1");
+			DispatchKeyValueFloat(phys, "radius", flAttackRange);
+			DispatchKeyValueFloat(phys, "magnitude", flAttackDamageForce);
+			DispatchSpawn(phys);
+			ActivateEntity(phys);
+			AcceptEntityInput(phys, "Explode");
+			AcceptEntityInput(phys, "Kill");
+		}
+		
 		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_hitenemy", sSoundPath, sizeof(sSoundPath));
 		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 	}
@@ -7083,6 +7234,56 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	}
 	
 	g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_endafter"), Timer_SlenderChaseBossAttackEnd, entref, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAttackFOV)
+{
+	new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	
+	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
+	SlenderGetEyePosition(iBossIndex, flMyEyePos);
+	GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
+	AddVectors(g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
+	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
+	
+	decl Float:flTargetPos[3], Float:flTargetMins[3], Float:flTargetMaxs[3];
+	GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flTargetPos);
+	GetEntPropVector(iTarget, Prop_Send, "m_vecMins", flTargetMins);
+	GetEntPropVector(iTarget, Prop_Send, "m_vecMaxs", flTargetMaxs);
+	
+	for (new i = 0; i < 3; i++)
+	{
+		flTargetPos[i] += (flTargetMins[i] + flTargetMaxs[i]) / 2.0;
+	}
+	
+	new Float:flTargetDist = GetVectorDistance(flTargetPos, flMyEyePos);
+	if (flTargetDist <= flAttackRange)
+	{
+		decl Float:flDirection[3];
+		SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyEyePos, flDirection);
+		GetVectorAngles(flDirection, flDirection);
+		
+		if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV)
+		{
+			new Handle:hTrace = TR_TraceRayFilterEx(flMyEyePos,
+				flTargetPos,
+				MASK_NPCSOLID,
+				RayType_EndPoint,
+				TraceRayDontHitEntity,
+				iBoss);
+				
+			new bool:bTraceDidHit = TR_DidHit(hTrace);
+			new iTraceHitEntity = TR_GetEntityIndex(hTrace);
+			CloseHandle(hTrace);
+			
+			if (!bTraceDidHit || iTraceHitEntity == iTarget)
+			{
+				return true;
+			}
+		}
+	}
+	
+	return false;
 }
 
 public Action:Timer_SlenderChaseBossAttackEnd(Handle:timer, any:entref)
