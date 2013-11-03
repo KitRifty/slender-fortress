@@ -1,4 +1,4 @@
-Version 0.2.0 (November 1, 2013):
+Version 0.2.0 (November 2, 2013):
 - Adjusted boss jumping code a bit
 - Sprint button changed to Taunt button
 - Ghost Mode now uses TFCond_HalloweenGhostMode

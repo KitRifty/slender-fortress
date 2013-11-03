@@ -2881,21 +2881,21 @@ ClientOnButtonPress(client, button)
 	{
 		case IN_ATTACK2:
 		{
-			if (IsPlayerAlive(client))
+			if (g_bPlayerGhostMode[client]) 
 			{
-				if (g_bPlayerGhostMode[client]) ClientGhostModeNextTarget(client);
-				else 
+				ClientGhostModeNextTarget(client);
+			}
+			else if (IsPlayerAlive(client))
+			{
+				if (!g_bRoundWarmup &&
+					!g_bRoundIntro &&
+					!g_bRoundEnded && 
+					!g_bPlayerEscaped[client])
 				{
-					if (!g_bRoundWarmup &&
-						!g_bRoundIntro &&
-						!g_bRoundEnded && 
-						!g_bPlayerEscaped[client])
+					if ((GetGameTime() - g_flPlayerFlashlightLastEnable[client]) >= SF2_FLASHLIGHT_COOLDOWN || 
+						g_bPlayerFlashlight[client])
 					{
-						if ((GetGameTime() - g_flPlayerFlashlightLastEnable[client]) >= SF2_FLASHLIGHT_COOLDOWN || 
-							g_bPlayerFlashlight[client])
-						{
-							ClientToggleFlashlight(client);
-						}
+						ClientToggleFlashlight(client);
 					}
 				}
 			}
@@ -3228,7 +3228,7 @@ ClientGhostModeNextTarget(client)
 	new iFirstTarget = -1;
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (IsClientInGame(i) && (!g_bPlayerEliminated[i] || g_bPlayerProxy[i]) && !g_bPlayerGhostMode[i] && IsPlayerAlive(i))
+		if (IsClientInGame(i) && (!g_bPlayerEliminated[i] || g_bPlayerProxy[i]) && !g_bPlayerGhostMode[i] && !g_bPlayerEscaped[i] && IsPlayerAlive(i))
 		{
 			if (iFirstTarget == -1) iFirstTarget = i;
 			if (i > iLastTarget) 
