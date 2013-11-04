@@ -1,8 +1,10 @@
 Version 0.2.0 (November 2, 2013):
+- Updated translation phrases
 - Adjusted boss jumping code a bit
 - Sprint button changed to Taunt button
 - Ghost Mode now uses TFCond_HalloweenGhostMode
-- Chasing bosses will now attack props (prop_physics and prop_dynamic entities) in their way (if breakable)
+- Ghost Mode target switch button changed to Taunt button
+- Chasing bosses can now attack props (prop_physics and prop_dynamic entities) in their way (if breakable)
 - Cleaned up some Handle usage
 - Added boss keyvalue "attack_begin_fov", which determines the FOV the boss should start its attack when the target is within sight of the boss
 - Added boss keyvalue "attack_props", if set to 1 the boss will attack props in its way, 0 to ignore props

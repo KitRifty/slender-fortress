@@ -1313,7 +1313,7 @@ PrecacheStuff()
 	PrecacheModel("models/humans/group01/female_01.mdl", true);
 	
 	PrecacheModel(PAGE_MODEL, true);
-	if (strlen(GHOST_MODEL) > 0) PrecacheModel(GHOST_MODEL, true);
+	PrecacheModel(GHOST_MODEL, true);
 	
 	PrecacheSound2(FLASHLIGHT_CLICKSOUND);
 	PrecacheSound2(FLASHLIGHT_BREAKSOUND);
@@ -2338,9 +2338,16 @@ public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 public Action:Hook_CommandActionSlotItemOn(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	if (g_bPlayerGhostMode[client] || g_bPlayerProxy[client]) return Plugin_Handled;
 	
-	if (IsPlayerAlive(client))
+	if (g_bPlayerGhostMode[client])
+	{
+		ClientGhostModeNextTarget(client);
+		return Plugin_Handled;
+	}
+	else if (g_bPlayerProxy[client])
+	{
+	}
+	else if (IsPlayerAlive(client))
 	{
 		if (!g_bPlayerEliminated[client])
 		{

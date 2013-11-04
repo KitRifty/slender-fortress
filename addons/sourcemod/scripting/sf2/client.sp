@@ -3,7 +3,7 @@
 #endif
 #define _sf2_client_included
 
-#define GHOST_MODEL ""
+#define GHOST_MODEL "models/props_halloween/ghost_no_hat.mdl"
 #define BLACK_OVERLAY "overlays/slender/newcamerahud"
 
 #define SF2_FLASHLIGHT_WIDTH 512.0 // How wide the player's Flashlight should be in world units.
@@ -2881,11 +2881,7 @@ ClientOnButtonPress(client, button)
 	{
 		case IN_ATTACK2:
 		{
-			if (g_bPlayerGhostMode[client]) 
-			{
-				ClientGhostModeNextTarget(client);
-			}
-			else if (IsPlayerAlive(client))
+			if (IsPlayerAlive(client))
 			{
 				if (!g_bRoundWarmup &&
 					!g_bRoundIntro &&
