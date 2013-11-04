@@ -4651,13 +4651,13 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			{
 				iBestNewTarget = i;
 				flBestNewTargetDist = flDist;
+				g_iSlenderInterruptConditions[iBossIndex] |= COND_SAWENEMY;
 			}
 			
 			g_flSlenderLastFoundPlayer[iBossIndex][i] = GetGameTime();
 			g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flTargetPos[0];
 			g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flTargetPos[1];
 			g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flTargetPos[2];
-			g_iSlenderInterruptConditions[iBossIndex] |= COND_SAWENEMY;
 		}
 	}
 	

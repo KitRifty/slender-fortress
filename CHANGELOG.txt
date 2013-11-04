@@ -10,6 +10,8 @@ Version 0.2.0 (November 2, 2013):
 - Added boss keyvalue "attack_props", if set to 1 the boss will attack props in its way, 0 to ignore props
 - Added boss keyvalue "attack_damageforce", which determines damage force against props
 - Added boss keyvalue "attack_damage_vs_props", which determines damage against props
+- Added boss keyvalue "skin", which sets the skin of the boss's model, default is 0
+- Added boss keyvalue "body", which sets the bodygroup(?) of the boss's model, default is 0
 
 Version 0.1.9 (October 20, 2013):
 - Added cvar "sf2_intro_enabled"
