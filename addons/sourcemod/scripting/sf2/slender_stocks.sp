@@ -232,6 +232,9 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 	
 	SlenderSpawnEffects(iBossIndex, EffectEvent_Constant);
 	
+	SetEntProp(iSlenderModel, Prop_Send, "m_nSkin", GetProfileNum(sProfile, "skin"));
+	SetEntProp(iSlenderModel, Prop_Send, "m_nBody", GetProfileNum(sProfile, "body"));
+	
 	// Initialize our pose parameters, if needed.
 	new iPose = EntRefToEntIndex(g_iSlenderPoseEnt[iBossIndex]);
 	g_iSlenderPoseEnt[iBossIndex] = INVALID_ENT_REFERENCE;

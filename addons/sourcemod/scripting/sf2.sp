@@ -4567,7 +4567,8 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	new iOldTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
 	
 	new iBestNewTarget = INVALID_ENT_REFERENCE;
-	new Float:flBestNewTargetDist = g_flSlenderSearchRange[iBossIndex];
+	new Float:flSearchRange = g_flSlenderSearchRange[iBossIndex];
+	new Float:flBestNewTargetDist = flSearchRange;
 	new iState = iOldState;
 	
 	new bool:bPlayerInFOV[MAXPLAYERS + 1];
@@ -4644,20 +4645,23 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			decl Float:flTargetPos[3];
 			GetClientAbsOrigin(i, flTargetPos);
 			
-			// Subtract distance to increase priority.
-			flDist -= (flDist * flPriorityValue);
-			
-			if (flDist < flBestNewTargetDist)
+			if (flDist <= flSearchRange)
 			{
-				iBestNewTarget = i;
-				flBestNewTargetDist = flDist;
-				g_iSlenderInterruptConditions[iBossIndex] |= COND_SAWENEMY;
+				// Subtract distance to increase priority.
+				flDist -= (flDist * flPriorityValue);
+				
+				if (flDist < flBestNewTargetDist)
+				{
+					iBestNewTarget = i;
+					flBestNewTargetDist = flDist;
+					g_iSlenderInterruptConditions[iBossIndex] |= COND_SAWENEMY;
+				}
+				
+				g_flSlenderLastFoundPlayer[iBossIndex][i] = GetGameTime();
+				g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flTargetPos[0];
+				g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flTargetPos[1];
+				g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flTargetPos[2];
 			}
-			
-			g_flSlenderLastFoundPlayer[iBossIndex][i] = GetGameTime();
-			g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flTargetPos[0];
-			g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flTargetPos[1];
-			g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flTargetPos[2];
 		}
 	}
 	
