@@ -3150,6 +3150,7 @@ ClientEnableGhostMode(client)
 	*/
 	
 	TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
+	SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
 	
 	/*
 	if (strlen(GHOST_MODEL) > 0)
@@ -3187,6 +3188,7 @@ ClientDisableGhostMode(client)
 	if (!IsClientInGame(client)) return;
 	
 	TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
+	SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
 	
 	/*
 	// Set solid flags.
