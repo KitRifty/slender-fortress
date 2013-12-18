@@ -4869,11 +4869,14 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			{
 				if (iInterruptConditions & COND_SAWENEMY)
 				{
-					g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][0];
-					g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][1];
-					g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][2];
-					
-					bQueueForNewPath = true;
+					if (IsValidClient(iBestNewTarget))
+					{
+						g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][0];
+						g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][1];
+						g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][2];
+						
+						bQueueForNewPath = true;
+					}
 				}
 				else if (iInterruptConditions & COND_HEARDSUSPICIOUSSOUND)
 				{

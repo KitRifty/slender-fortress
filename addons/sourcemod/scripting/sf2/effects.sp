@@ -253,6 +253,8 @@ SlenderSpawnEffects(iBossIndex, EffectEvent:iEvent)
 		
 		KvGoBack(g_hConfig);
 	}
+	
+	CloseHandle(hArray);
 }
 
 stock GetEffectEventString(EffectEvent:iEvent, String:sBuffer[], iBufferLen)
