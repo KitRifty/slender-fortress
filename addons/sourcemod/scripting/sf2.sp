@@ -8923,7 +8923,7 @@ InitializeNewGame()
 	CloseHandle(hArray);
 	
 	// Get valid boss list.
-	
+	new Handle:hValidRandomBosses = CreateArray(64);
 	hArray = CreateArray(64);
 	KvRewind(g_hConfig);
 	KvGotoFirstSubKey(g_hConfig);
@@ -8931,6 +8931,11 @@ InitializeNewGame()
 	{
 		KvGetSectionName(g_hConfig, buffer, sizeof(buffer));
 		PushArrayString(hArray, buffer);
+		
+		if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1)) 
+		{
+			PushArrayString(hValidRandomBosses, buffer);
+		}
 	}
 	while (KvGotoNextKey(g_hConfig));
 	
@@ -9017,7 +9022,7 @@ InitializeNewGame()
 			}
 			
 			// Get a new boss.
-			GetArrayString(hArray, GetRandomInt(1, GetArraySize(hArray) - 1), sProfile, sizeof(sProfile));
+			GetArrayString(hValidRandomBosses, GetRandomInt(1, GetArraySize(hValidRandomBosses) - 1), sProfile, sizeof(sProfile));
 		}
 		else
 		{
@@ -9060,8 +9065,9 @@ InitializeNewGame()
 		}
 	}
 	
-	// We don't need this anymore. Close it now.
+	// We don't need these anymore. Close it now.
 	CloseHandle(hArray);
+	CloseHandle(hValidRandomBosses);
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Refreshing groups and players");
