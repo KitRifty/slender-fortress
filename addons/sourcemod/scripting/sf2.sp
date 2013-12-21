@@ -8923,6 +8923,9 @@ InitializeNewGame()
 	CloseHandle(hArray);
 	
 	// Get valid boss list.
+	decl String:sBossMain[64];
+	GetConVarString(g_cvBossMain, sBossMain, sizeof(sBossMain));
+	
 	new Handle:hValidRandomBosses = CreateArray(64);
 	hArray = CreateArray(64);
 	KvRewind(g_hConfig);
@@ -8932,9 +8935,12 @@ InitializeNewGame()
 		KvGetSectionName(g_hConfig, buffer, sizeof(buffer));
 		PushArrayString(hArray, buffer);
 		
-		if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1)) 
+		if (!StrEqual(buffer, sBossMain))
 		{
-			PushArrayString(hValidRandomBosses, buffer);
+			if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1)) 
+			{
+				PushArrayString(hValidRandomBosses, buffer);
+			}
 		}
 	}
 	while (KvGotoNextKey(g_hConfig));

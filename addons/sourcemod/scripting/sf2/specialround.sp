@@ -214,8 +214,11 @@ SpecialRoundStart()
 			KvGotoFirstSubKey(g_hConfig);
 			do
 			{
-				KvGetSectionName(g_hConfig, sBuffer, sizeof(sBuffer));
-				PushArrayString(hArray, sBuffer);
+				if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1)) 
+				{
+					KvGetSectionName(g_hConfig, sBuffer, sizeof(sBuffer));
+					PushArrayString(hArray, sBuffer);
+				}
 			}
 			while (KvGotoNextKey(g_hConfig));
 			

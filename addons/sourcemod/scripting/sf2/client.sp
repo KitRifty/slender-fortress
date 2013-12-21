@@ -93,7 +93,7 @@ public Hook_ClientPreThink(client)
 			new iRoundState = _:GameRules_GetRoundState();
 		
 			// No double jumping for players in play.
-			SetEntProp(client, Prop_Send, "m_iAirDash", -1);
+			SetEntProp(client, Prop_Send, "m_iAirDash", 99999);
 		
 			if (!g_bPlayerProxy[client])
 			{
