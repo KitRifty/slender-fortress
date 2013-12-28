@@ -247,7 +247,7 @@ stock FindStringIndex2(tableidx, const String:str[])
 
 stock Handle:PrepareItemHandle(String:classname[], index, level, quality, String:att[])
 {
-	new Handle:hItem = TF2Items_CreateItem(OVERRIDE_CLASSNAME | OVERRIDE_ITEM_DEF | OVERRIDE_ITEM_LEVEL | OVERRIDE_ITEM_QUALITY | OVERRIDE_ATTRIBUTES | FORCE_GENERATION);
+	new Handle:hItem = TF2Items_CreateItem(OVERRIDE_ALL | FORCE_GENERATION);
 	TF2Items_SetClassname(hItem, classname);
 	TF2Items_SetItemIndex(hItem, index);
 	TF2Items_SetLevel(hItem, level);
@@ -256,7 +256,7 @@ stock Handle:PrepareItemHandle(String:classname[], index, level, quality, String
 	// Set attributes.
 	new String:atts[32][32];
 	new count = ExplodeString(att, " ; ", atts, 32, 32);
-	if (count > 0)
+	if (count > 1)
 	{
 		TF2Items_SetNumAttributes(hItem, count / 2);
 		new i2 = 0;
