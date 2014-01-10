@@ -2560,13 +2560,21 @@ ClientStartProxyAvailableTimer(client)
 
 ClientStartProxyForce(client, iSlenderID, const Float:flPos[3])
 {
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientStartProxyForce(%d, %d, flPos)", client, iSlenderID);
+#endif
+
 	g_iPlayerProxyAskMaster[client] = iSlenderID;
 	for (new i = 0; i < 3; i++) g_iPlayerProxyAskPosition[client][i] = flPos[i];
 
-	g_iPlayerProxyAvailableCount[client] = 6;
+	g_iPlayerProxyAvailableCount[client] = 0;
 	g_bPlayerProxyAvailableInForce[client] = true;
 	g_hPlayerProxyAvailableTimer[client] = CreateTimer(1.0, Timer_ClientForceProxy, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	TriggerTimer(g_hPlayerProxyAvailableTimer[client], true);
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientStartProxyForce(%d, %d, flPos)", client, iSlenderID);
+#endif
 }
 
 ClientStopProxyForce(client)

@@ -17,13 +17,6 @@
 				"linux"	"19"
 				"mac"	"19"
 			}
-			
-			"CGameRules::ClientCommandKeyValues"
-			{
-				"windows"	"38"
-				"linux"	"39"
-				"mac"	"39"
-			}
 		}
 	}
 }

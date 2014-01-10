@@ -18,7 +18,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.0"
+#define PLUGIN_VERSION "0.2.1"
 
 public Plugin:myinfo = 
 {
@@ -65,6 +65,7 @@ public Plugin:myinfo =
 #define DEBUG_BOSS_CHASE (1 << 1)
 #define DEBUG_PLAYER_STRESS (1 << 2)
 #define DEBUG_PLAYER_ACTION_SLOT (1 << 3)
+#define DEBUG_BOSS_PROXIES (1 << 4)
 
 enum MuteMode
 {
@@ -164,6 +165,9 @@ new Float:g_flSlenderNextPathTime[MAX_BOSSES] = { -1.0, ... };
 new Float:g_flSlenderCalculatedWalkSpeed[MAX_BOSSES];
 new Float:g_flSlenderCalculatedSpeed[MAX_BOSSES];
 new Float:g_flSlenderTimeUntilNoPersistence[MAX_BOSSES];
+
+new Float:g_flSlenderProxyTeleportMinRange[MAX_BOSSES];
+new Float:g_flSlenderProxyTeleportMaxRange[MAX_BOSSES];
 
 // Sound variables
 new Float:g_flSlenderTargetSoundLastTime[MAX_BOSSES] = { -1.0, ... };
@@ -783,7 +787,7 @@ public OnPluginStart()
 	RegAdminCmd("sm_sf2_debug_boss_teleport", Command_DebugBossTeleport, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_boss_chase", Command_DebugBossChase, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_player_stress", Command_DebugPlayerStress, ADMFLAG_CHEATS);
-	RegAdminCmd("sm_sf2_debug_player_action_slot", Command_DebugPlayerActionSlot, ADMFLAG_CHEATS);
+	RegAdminCmd("sm_sf2_debug_boss_proxies", Command_DebugBossProxies, ADMFLAG_CHEATS);
 	
 	// Hook onto existing console commands.
 	AddCommandListener(Hook_CommandBuild, "build");
@@ -1037,24 +1041,24 @@ public Action:Command_DebugPlayerStress(client, args)
 	else
 	{
 		g_iPlayerDebugFlags[client] &= ~DEBUG_PLAYER_STRESS;
-		PrintToChat(client, "Enabled debugging player stress.");
+		PrintToChat(client, "Disabled debugging player stress.");
 	}
 	
 	return Plugin_Handled;
 }
 
-public Action:Command_DebugPlayerActionSlot(client, args)
+public Action:Command_DebugBossProxies(client, args)
 {
-	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_PLAYER_ACTION_SLOT);
+	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_BOSS_PROXIES);
 	if (!bInMode)
 	{
-		g_iPlayerDebugFlags[client] |= DEBUG_PLAYER_ACTION_SLOT;
-		PrintToChat(client, "Enabled debugging player action slot.");
+		g_iPlayerDebugFlags[client] |= DEBUG_BOSS_PROXIES;
+		PrintToChat(client, "Enabled debugging boss proxies.");
 	}
 	else
 	{
-		g_iPlayerDebugFlags[client] &= ~DEBUG_PLAYER_ACTION_SLOT;
-		PrintToChat(client, "Enabled debugging player action slot.");
+		g_iPlayerDebugFlags[client] &= ~DEBUG_BOSS_PROXIES;
+		PrintToChat(client, "Disabled debugging boss proxies.");
 	}
 	
 	return Plugin_Handled;
@@ -3020,265 +3024,384 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 	// Check if we can add some proxies.
 	if (!g_bRoundGrace)
 	{
-		new Handle:hAvailableProxies = CreateArray();
-		
-		for (new i = 0; i < MAX_BOSSES; i++)
+		if (NavMesh_Exists())
 		{
-			if (!g_strSlenderProfile[i][0]) continue;
-			if (!(g_iSlenderFlags[i] & SFF_PROXIES)) continue;
-			if (g_iSlenderCopyMaster[i] != -1) continue; // Copies cannot generate proxies.
+			new Handle:hProxyCandidates = CreateArray();
 			
-			if (GetGameTime() < g_flSlenderTimeUntilNextProxy[i]) continue;
-			
-			new iMaxProxies = GetProfileNum(g_strSlenderProfile[i], "proxies_max");
-			new iNumProxies;
-			
-			for (new iClient = 1; iClient <= MaxClients; iClient++)
+			for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 			{
-				if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
-				if (!g_bPlayerProxy[iClient]) continue;
-				if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) != i) continue;
+				if (!g_strSlenderProfile[iBossIndex][0]) continue;
+				if (!(g_iSlenderFlags[iBossIndex] & SFF_PROXIES)) continue;
 				
-				iNumProxies++;
-			}
-			
-			if (iNumProxies >= iMaxProxies) continue;
-			
-			new Float:flSpawnChanceMin = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_chance_min");
-			new Float:flSpawnChanceMax = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_chance_max");
-			new Float:flSpawnChanceThreshold = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_chance_threshold") * g_flSlenderAnger[i];
-			
-			new Float:flChance = GetRandomFloat(flSpawnChanceMin, flSpawnChanceMax);
-			if (flChance > flSpawnChanceThreshold) continue;
-			
-			new iAvailableProxies = iMaxProxies - iNumProxies;
-			
-			new iSpawnNumMin = GetProfileNum(g_strSlenderProfile[i], "proxies_spawn_num_min");
-			new iSpawnNumMax = GetProfileNum(g_strSlenderProfile[i], "proxies_spawn_num_max");
-			
-			// Get a list of people we can TRANSFORM!!!
-			ClearArray(hAvailableProxies);
-			
-			new iSpawnNum;
-			
-			for (new iClient = 1; iClient <= MaxClients; iClient++)
-			{
-				if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
-				if (g_bPlayerProxy[iClient]) continue;
+				if (g_iSlenderCopyMaster[iBossIndex] != -1) continue; // Copies cannot generate proxies.
 				
-				if (!g_bPlayerWantsTheP[iClient] || !g_bPlayerProxyAvailable[iClient] || g_bPlayerProxyAvailableInForce[iClient]) continue;
+				if (GetGameTime() < g_flSlenderTimeUntilNextProxy[iBossIndex]) continue; // Proxy spawning hasn't cooled down yet.
 				
-				if (!IsClientParticipating(iClient)) continue;
+				new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[iBossIndex]);
+				if (!iTeleportTarget || iTeleportTarget == INVALID_ENT_REFERENCE) continue; // No teleport target.
 				
-				PushArrayCell(hAvailableProxies, iClient);
-				iSpawnNum++;
-			}
-			
-			if (iSpawnNumMax <= iSpawnNum)
-			{
-				iSpawnNum = GetRandomInt(iSpawnNumMin, iSpawnNumMax);
-			}
-			
-			if (iSpawnNum <= 0) continue;
-			
-			if (!NavMesh_Exists()) continue; // No nav mesh, no spawning.
-			
-			new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[i]);
-			if (!IsValidEntity(iTeleportTarget)) continue;
-			
-			decl Float:flTargetPos[3];
-			GetClientAbsOrigin(iTeleportTarget, flTargetPos);
-			
-			new iTargetAreaIndex = NavMesh_GetNearestArea(flTargetPos);
-			if (iTargetAreaIndex == -1) continue; // not on nav mesh.
-			
-			// Search outwards until travel distance is at maximum range.
-			new Handle:hAreaArray = CreateArray(2);
-			new Handle:hAreas = CreateStack();
-			NavMesh_CollectSurroundingAreas(hAreas, iTargetAreaIndex, g_flSlenderTeleportMaxRange[i]);
-			
-			{
-				new iPoppedAreas;
+				new iMaxProxies = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_max");
+				new iNumActiveProxies = 0;
 				
-				while (!IsStackEmpty(hAreas))
+				for (new iClient = 1; iClient <= MaxClients; iClient++)
+				{
+					if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
+					if (!g_bPlayerProxy[iClient]) continue;
+					
+					if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) == iBossIndex)
+					{
+						iNumActiveProxies++;
+					}
+				}
+				
+				if (iNumActiveProxies >= iMaxProxies) 
+				{
+#if defined DEBUG
+					SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d has too many active proxies!", iBossIndex);
+#endif
+					continue;
+				}
+				
+				new Float:flSpawnChanceMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_chance_min");
+				new Float:flSpawnChanceMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_chance_max");
+				new Float:flSpawnChanceThreshold = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_chance_threshold") * g_flSlenderAnger[iBossIndex];
+				
+				new Float:flChance = GetRandomFloat(flSpawnChanceMin, flSpawnChanceMax);
+				if (flChance > flSpawnChanceThreshold) 
+				{
+#if defined DEBUG
+					SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d's chances weren't in his favor!", iBossIndex);
+#endif
+					continue;
+				}
+				
+				new iAvailableProxies = iMaxProxies - iNumActiveProxies;
+				
+				new iSpawnNumMin = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_spawn_num_min");
+				new iSpawnNumMax = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_spawn_num_max");
+				
+				new iSpawnNum = 0;
+				
+				// Get a list of people we can transform into a good Proxy.
+				ClearArray(hProxyCandidates);
+				
+				for (new iClient = 1; iClient <= MaxClients; iClient++)
+				{
+					if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
+					if (g_bPlayerProxy[iClient]) continue;
+					
+					if (!g_bPlayerWantsTheP[iClient])
+					{
+#if defined DEBUG
+						SendDebugMessageToPlayer(iClient, DEBUG_BOSS_PROXIES, 0, "[PROXIES] You were rejected for being a proxy for boss %d because of your preferences.", iBossIndex);
+#endif
+						continue;
+					}
+					
+					if (!g_bPlayerProxyAvailable[iClient])
+					{
+#if defined DEBUG
+						SendDebugMessageToPlayer(iClient, DEBUG_BOSS_PROXIES, 0, "[PROXIES] You were rejected for being a proxy for boss %d because of your cooldown.", iBossIndex);
+#endif
+						continue;
+					}
+					
+					if (g_bPlayerProxyAvailableInForce[iClient])
+					{
+#if defined DEBUG
+						SendDebugMessageToPlayer(iClient, DEBUG_BOSS_PROXIES, 0, "[PROXIES] You were rejected for being a proxy for boss %d because you're already being forced into a Proxy.", iBossIndex);
+#endif
+						continue;
+					}
+					
+					if (!IsClientParticipating(iClient))
+					{
+#if defined DEBUG
+						SendDebugMessageToPlayer(iClient, DEBUG_BOSS_PROXIES, 0, "[PROXIES] You were rejected for being a proxy for boss %d because you're not participating.", iBossIndex);
+#endif
+						continue;
+					}
+					
+					PushArrayCell(hProxyCandidates, iClient);
+					iSpawnNum++;
+				}
+				
+				if (iSpawnNum >= iSpawnNumMax)
+				{
+					iSpawnNum = GetRandomInt(iSpawnNumMin, iSpawnNumMax);
+				}
+				else if (iSpawnNum >= iSpawnNumMin)
+				{
+					iSpawnNum = GetRandomInt(iSpawnNumMin, iSpawnNum);
+				}
+				
+				if (iSpawnNum <= 0) 
+				{
+#if defined DEBUG
+					SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d had a set spawn number of 0!", iBossIndex);
+#endif
+					continue;
+				}
+				
+				decl Float:flTargetPos[3];
+				GetClientAbsOrigin(iTeleportTarget, flTargetPos);
+				
+				new iTargetAreaIndex = NavMesh_GetNearestArea(flTargetPos);
+				if (iTargetAreaIndex == -1) 
+				{
+#if defined DEBUG
+					SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d's teleport target is not on the navmesh!", iBossIndex);
+#endif
+					continue; // target is not on the nav mesh.
+				}
+				
+				// Search outwards until travel distance is at maximum range.
+				new Handle:hAreaArray = CreateArray(2);
+				new Handle:hAreas = CreateStack();
+				NavMesh_CollectSurroundingAreas(hAreas, iTargetAreaIndex, g_flSlenderProxyTeleportMaxRange[iBossIndex]);
+				
+				new Float:flTeleportMinRange = CalculateTeleportMinRange(iBossIndex, g_flSlenderProxyTeleportMinRange[iBossIndex], g_flSlenderProxyTeleportMaxRange[iBossIndex]);
+				
 				{
 					new iAreaIndex = -1;
-					PopStackCell(hAreas, iAreaIndex);
-					new iIndex = PushArrayCell(hAreaArray, iAreaIndex);
-					SetArrayCell(hAreaArray, iIndex, float(NavMeshArea_GetCostSoFar(iAreaIndex)), 1);
-					iPoppedAreas++;
-				}
-				
-				CloseHandle(hAreas);
-			}
-			
-			new Handle:hAreaArrayClose = CreateArray();
-			new Handle:hAreaArrayAverage = CreateArray();
-			new Handle:hAreaArrayFar = CreateArray();
-			
-			new Float:flTeleportTargetTimeLeft = g_flSlenderTeleportMaxTargetTime[i] - GetGameTime();
-			new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[i] - g_flSlenderTeleportTargetTime[i];
-			new Float:flTeleportMinRange = g_flSlenderTeleportMaxRange[i] - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (g_flSlenderTeleportMaxRange[i] - g_flSlenderTeleportMinRange[i]);
-			
-			if (g_flSlenderAnger[i] <= 1.0)
-			{
-				flTeleportMinRange += (g_flSlenderTeleportMinRange[i] - g_flSlenderTeleportMaxRange[i]) * Pow(g_flSlenderAnger[i] - 1.0, 2.0 / g_flRoundDifficultyModifier);
-			}
-			
-			if (flTeleportMinRange < g_flSlenderTeleportMinRange[i]) flTeleportMinRange = g_flSlenderTeleportMinRange[i];
-			if (flTeleportMinRange > g_flSlenderTeleportMaxRange[i]) flTeleportMinRange = g_flSlenderTeleportMaxRange[i];
-			
-			for (new i2 = 1; i2 <= 3; i2++)
-			{
-				new Float:flRangeSectionMin = flTeleportMinRange + (g_flSlenderTeleportMaxRange[i2] - flTeleportMinRange) * (float(i2 - 1) / 3.0);
-				new Float:flRangeSectionMax = flTeleportMinRange + (g_flSlenderTeleportMaxRange[i2] - flTeleportMinRange) * (float(i2) / 3.0);
-				
-				for (new i3 = 0, iSize = GetArraySize(hAreaArray); i3 < iSize; i3++)
-				{
-					new iAreaIndex = GetArrayCell(hAreaArray, i3);
+					new iPoppedAreas = 0;
 					
-					decl Float:flAreaCenter[3];
-					NavMeshArea_GetCenter(iAreaIndex, flAreaCenter);
-					
-					decl Float:flEyeOffset[3];
-					flEyeOffset[0] = GetEntPropFloat(iTeleportTarget, Prop_Send, "m_vecViewOffset[0]");
-					flEyeOffset[1] = GetEntPropFloat(iTeleportTarget, Prop_Send, "m_vecViewOffset[1]");
-					flEyeOffset[2] = GetEntPropFloat(iTeleportTarget, Prop_Send, "m_vecViewOffset[2]");
-					
-					// Check visibility.
-					if (IsPointVisibleToAPlayer(flAreaCenter, false, false)) continue;
-					
-					AddVectors(flAreaCenter, flEyeOffset, flAreaCenter);
-					
-					if (IsPointVisibleToAPlayer(flAreaCenter, false, false)) continue;
-					
-					SubtractVectors(flAreaCenter, flEyeOffset, flAreaCenter);
-					
-					new iBoss = EntRefToEntIndex(g_iSlender[i]);
-					
-					// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
+					while (!IsStackEmpty(hAreas))
 					{
-						decl Float:flTraceStartPos[3];
-						flTraceStartPos[0] = flAreaCenter[0];
-						flTraceStartPos[1] = flAreaCenter[1];
-						flTraceStartPos[2] = flAreaCenter[2] + (HalfHumanHeight * 2.0);
+						PopStackCell(hAreas, iAreaIndex);
+						new iCostSoFar = NavMeshArea_GetCostSoFar(iAreaIndex);
 						
-						decl Float:flTraceMins[3];
-						flTraceMins[0] = g_flSlenderDetectMins[i][0];
-						flTraceMins[1] = g_flSlenderDetectMins[i][1];
-						flTraceMins[2] = 0.0;
-						
-						decl Float:flTraceMaxs[3];
-						flTraceMaxs[0] = g_flSlenderDetectMaxs[i][0];
-						flTraceMaxs[1] = g_flSlenderDetectMaxs[i][1];
-						flTraceMaxs[2] = 0.0;
-						
-						new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
-							flAreaCenter,
-							flTraceMins,
-							flTraceMaxs,
-							MASK_NPCSOLID,
-							TraceRayDontHitEntity,
-							iBoss);
-						
-						decl Float:flTraceHitPos[3];
-						TR_GetEndPosition(flTraceHitPos, hTrace);
-						CloseHandle(hTrace);
-						
-						if (IsSpaceOccupiedNPC(flTraceHitPos,
-							g_flSlenderDetectMins[i],
-							g_flSlenderDetectMaxs[i],
-							iBoss))
+						if (float(iCostSoFar) >= flTeleportMinRange)
 						{
-							continue;
+							new iIndex = PushArrayCell(hAreaArray, iAreaIndex);
+							SetArrayCell(hAreaArray, iIndex, float(iCostSoFar), 1);
+							iPoppedAreas++;
 						}
 					}
 					
-					new bool:bTooNear = false;
+					CloseHandle(hAreas);
 					
-					// Check minimum range.
-					for (new iClient = 1; iClient <= MaxClients; iClient++)
+					if (iPoppedAreas == 0)
 					{
-						if (!IsClientInGame(iClient) ||
-							!IsPlayerAlive(iClient) ||
-							g_bPlayerEliminated[iClient] ||
-							g_bPlayerEscaped[iClient])
+						// no areas to use!
+						CloseHandle(hAreaArray);
+
+#if defined DEBUG
+						SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d could not find any sufficient surrounding areas!", iBossIndex);
+#endif
+						
+						continue;
+					}
+#if defined DEBUG
+					else
+					{
+						SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d found %d surrounding areas", iBossIndex, iPoppedAreas);
+					}
+#endif
+				}
+				
+				new Handle:hAreaArrayClose = CreateArray();
+				new Handle:hAreaArrayAverage = CreateArray();
+				new Handle:hAreaArrayFar = CreateArray();
+				
+				for (new iRangeSection = 1; iRangeSection <= 3; iRangeSection++)
+				{
+					new Float:flRangeSectionMin = flTeleportMinRange + (g_flSlenderProxyTeleportMaxRange[iBossIndex] - flTeleportMinRange) * (float(iRangeSection - 1) / 3.0);
+					new Float:flRangeSectionMax = flTeleportMinRange + (g_flSlenderProxyTeleportMaxRange[iBossIndex] - flTeleportMinRange) * (float(iRangeSection) / 3.0);
+					
+					for (new i = 0, iSize = GetArraySize(hAreaArray); i < iSize; i++)
+					{
+						new iAreaIndex = GetArrayCell(hAreaArray, i);
+						
+						decl Float:flAreaCenter[3];
+						NavMeshArea_GetCenter(iAreaIndex, flAreaCenter);
+						
+						decl Float:flTestPos[3];
+						decl Float:flEyeOffset[3];
+						flEyeOffset[0] = 0.0;
+						flEyeOffset[1] = 0.0;
+						flEyeOffset[2] = HalfHumanHeight * 2.0;
+						
+						// Check visibility first.
+						if (IsPointVisibleToAPlayer(flAreaCenter, false, false)) 
 						{
+#if defined DEBUG
+							SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d rejected visible area index %d! (1)", iBossIndex, iAreaIndex);
+#endif
 							continue;
 						}
 						
-						decl Float:flTempPos[3];
-						GetClientAbsOrigin(iClient, flTempPos);
+						AddVectors(flAreaCenter, flEyeOffset, flTestPos);
 						
-						if (GetVectorDistance(flAreaCenter, flTempPos) <= g_flSlenderTeleportMinRange[i])
+						if (IsPointVisibleToAPlayer(flTestPos, false, false)) 
 						{
-							bTooNear = true;
-							break;
+#if defined DEBUG
+							SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d rejected visible area index %d! (2)", iBossIndex, iAreaIndex);
+#endif
+						
+							continue;
+						}
+						
+						new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+						
+						// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
+						{
+							decl Float:flTraceStartPos[3];
+							flTraceStartPos[0] = flAreaCenter[0];
+							flTraceStartPos[1] = flAreaCenter[1];
+							flTraceStartPos[2] = flAreaCenter[2] + (HalfHumanHeight * 2.0);
+							
+							decl Float:flTraceMins[3];
+							flTraceMins[0] = -20.0;
+							flTraceMins[1] = -20.0;
+							flTraceMins[2] = 0.0;
+							
+							decl Float:flTraceMaxs[3];
+							flTraceMaxs[0] = 20.0;
+							flTraceMaxs[1] = 20.0;
+							flTraceMaxs[2] = 0.0;
+							
+							new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+								flAreaCenter,
+								flTraceMins,
+								flTraceMaxs,
+								MASK_NPCSOLID,
+								TraceRayDontHitEntity,
+								iBoss);
+							
+							decl Float:flTraceHitPos[3];
+							TR_GetEndPosition(flTraceHitPos, hTrace);
+							flTraceHitPos[2] += 1.0;
+							CloseHandle(hTrace);
+							
+							static Float:flTraceSpaceMin[3] = { -20.0, -20.0, 0.0 };
+							static Float:flTraceSpaceMax[3] = { 20.0, 20.0, 72.0 };
+							
+							flTraceSpaceMax[2] = HalfHumanHeight * 2.0;
+							
+							if (IsSpaceOccupiedPlayer(flTraceHitPos,
+								flTraceSpaceMin,
+								flTraceSpaceMax,
+								iBoss == INVALID_ENT_REFERENCE ? -1 : iBoss))
+							{
+#if defined DEBUG
+								SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d rejected too small area index %d! (2)", iBossIndex, iAreaIndex);
+#endif
+							
+								continue;
+							}
+						}
+						
+						new bool:bTooNear = false;
+						
+						// Check minimum range.
+						for (new iClient = 1; iClient <= MaxClients; iClient++)
+						{
+							if (!IsClientInGame(iClient) ||
+								!IsPlayerAlive(iClient) ||
+								g_bPlayerEliminated[iClient] ||
+								g_bPlayerEscaped[iClient] ||
+								g_bPlayerProxy[iClient] ||
+								g_bPlayerGhostMode[iClient])
+							{
+								continue;
+							}
+							
+							decl Float:flTempPos[3];
+							GetClientAbsOrigin(iClient, flTempPos);
+							
+							if (GetVectorDistance(flAreaCenter, flTempPos) <= flTeleportMinRange)
+							{
+								bTooNear = true;
+								break;
+							}
+						}
+						
+						if (bTooNear) 
+						{
+#if defined DEBUG
+							SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d rejected near area index %d!", iBossIndex, iAreaIndex);
+#endif
+						
+							continue;	// This area is too close to a player.
+						}
+						
+						// Check travel distance.
+						new Float:flDist = Float:GetArrayCell(hAreaArray, i, 1);
+						if (flDist > flRangeSectionMin && flDist < flRangeSectionMax)
+						{
+							switch (iRangeSection)
+							{
+								case 1: PushArrayCell(hAreaArrayClose, iAreaIndex);
+								case 2: PushArrayCell(hAreaArrayAverage, iAreaIndex);
+								case 3: PushArrayCell(hAreaArrayFar, iAreaIndex);
+							}
 						}
 					}
+				}
+				
+				CloseHandle(hAreaArray);
+				
+				// Set the cooldown time!
+				new Float:flSpawnCooldownMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_cooldown_min");
+				new Float:flSpawnCooldownMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_cooldown_max");
+				
+				g_flSlenderTimeUntilNextProxy[iBossIndex] = GetGameTime() + GetRandomFloat(flSpawnCooldownMin, flSpawnCooldownMax);
+				
+				// Randomize the array.
+				SortADTArray(hProxyCandidates, Sort_Random, Sort_Integer);
+				
+				decl Float:flDestinationPos[3];
+				
+				for (new iNum = 0; iNum < iSpawnNum && iNum < iAvailableProxies; iNum++)
+				{
+					new iClient = GetArrayCell(hProxyCandidates, iNum);
+					new iBestAreaIndex = -1;
 					
-					if (bTooNear) continue;	// This area is not compatible.
-					
-					// Check travel distance.
-					new Float:flDist = Float:GetArrayCell(hAreaArray, i3, 1);
-					if (flDist > flRangeSectionMin && flDist < flRangeSectionMax)
+					if (GetArraySize(hAreaArrayClose) > 0)
 					{
-						switch (i2)
-						{
-							case 1: PushArrayCell(hAreaArrayClose, iAreaIndex);
-							case 2: PushArrayCell(hAreaArrayAverage, iAreaIndex);
-							case 3: PushArrayCell(hAreaArrayFar, iAreaIndex);
-						}
+						iBestAreaIndex = GetArrayCell(hAreaArrayClose, GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1));
+					}
+					else if (GetArraySize(hAreaArrayAverage) > 0)
+					{
+						iBestAreaIndex = GetArrayCell(hAreaArrayAverage, GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1));
+					}
+					else if (GetArraySize(hAreaArrayFar) > 0)
+					{
+						iBestAreaIndex = GetArrayCell(hAreaArrayFar, GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1));
+					}
+					
+					if (iBestAreaIndex == -1) 
+					{
+#if defined DEBUG
+						SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d could not find any areas to place proxies (spawned %d)!", iBossIndex, iNum);
+#endif
+						break;
+					}
+					
+					NavMeshArea_GetCenter(iBestAreaIndex, flDestinationPos);
+					
+					if (!GetConVarBool(g_cvPlayerProxyAsk))
+					{
+						ClientStartProxyForce(iClient, g_iSlenderID[iBossIndex], flDestinationPos);
+					}
+					else
+					{
+						DisplayProxyAskMenu(iClient, g_iSlenderID[iBossIndex], flDestinationPos);
 					}
 				}
+				
+				CloseHandle(hAreaArrayClose);
+				CloseHandle(hAreaArrayAverage);
+				CloseHandle(hAreaArrayFar);
+				
+#if defined DEBUG
+				SendDebugMessageToPlayers(DEBUG_BOSS_PROXIES, 0, "[PROXIES] Boss %d finished proxy process!", iBossIndex);
+#endif
 			}
 			
-			CloseHandle(hAreaArray);
-			
-			new Float:flSpawnCooldownMin = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_cooldown_min");
-			new Float:flSpawnCooldownMax = GetProfileFloat(g_strSlenderProfile[i], "proxies_spawn_cooldown_max");
-			
-			g_flSlenderTimeUntilNextProxy[i] = GetGameTime() + GetRandomFloat(flSpawnCooldownMin, flSpawnCooldownMax);
-			
-			SortADTArray(hAvailableProxies, Sort_Random, Sort_Integer);
-			
-			decl Float:flNewPos[3];
-			for (new iNum = 0; iNum < iSpawnNum && iNum < iAvailableProxies; iNum++)
-			{
-				new iClient = GetArrayCell(hAvailableProxies, iNum);
-				new iBestAreaIndex = -1;
-				
-				if (GetArraySize(hAreaArrayClose))
-				{
-					iBestAreaIndex = GetArrayCell(hAreaArrayClose, GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1));
-				}
-				else if (GetArraySize(hAreaArrayAverage))
-				{
-					iBestAreaIndex = GetArrayCell(hAreaArrayAverage, GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1));
-				}
-				else if (GetArraySize(hAreaArrayFar))
-				{
-					iBestAreaIndex = GetArrayCell(hAreaArrayFar, GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1));
-				}
-				
-				if (iBestAreaIndex == -1) break;
-				
-				if (!GetConVarBool(g_cvPlayerProxyAsk))
-				{
-					ClientStartProxyForce(iClient, g_iSlenderID[i], flNewPos);
-				}
-				else
-				{
-					DisplayProxyAskMenu(iClient, g_iSlenderID[i], flNewPos);
-				}
-			}
-			
-			CloseHandle(hAreaArrayClose);
-			CloseHandle(hAreaArrayAverage);
-			CloseHandle(hAreaArrayFar);
+			CloseHandle(hProxyCandidates);
 		}
-		
-		CloseHandle(hAvailableProxies);
 	}
 	
 	return Plugin_Continue;
@@ -6695,6 +6818,30 @@ stock SendDebugMessageToPlayers(iDebugFlags, iType, const String:sMessage[], any
 	}
 }
 
+// As time passes on, we have to get more aggressive in order to successfully peak the target's
+// stress level in the allotted duration we're given. Otherwise we'll be forced to place him
+// in a rest period.
+
+// Teleport progressively closer as time passes in attempt to increase the target's stress level.
+// Maximum minimum range is capped by the boss's anger level.
+
+stock Float:CalculateTeleportMinRange(iBossIndex, Float:flInitialMinRange, Float:flTeleportMaxRange)
+{
+	new Float:flTeleportTargetTimeLeft = g_flSlenderTeleportMaxTargetTime[iBossIndex] - GetGameTime();
+	new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[iBossIndex] - g_flSlenderTeleportTargetTime[iBossIndex];
+	new Float:flTeleportMinRange = flTeleportMaxRange - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (flTeleportMaxRange - flInitialMinRange);
+	
+	if (g_flSlenderAnger[iBossIndex] <= 1.0)
+	{
+		flTeleportMinRange += (g_flSlenderTeleportMinRange[iBossIndex] - flTeleportMaxRange) * Pow(g_flSlenderAnger[iBossIndex] - 1.0, 2.0 / g_flRoundDifficultyModifier);
+	}
+	
+	if (flTeleportMinRange < flInitialMinRange) flTeleportMinRange = flInitialMinRange;
+	if (flTeleportMinRange > flTeleportMaxRange) flTeleportMinRange = flTeleportMaxRange;
+	
+	return flTeleportMinRange;
+}
+
 public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 {
 	if (iBossIndex == -1) return Plugin_Stop;
@@ -6745,25 +6892,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 			}
 			else
 			{
-				// As time passes on, we have to get more aggressive in order to successfully peak the target's
-				// stress level in the allotted duration we're given. Otherwise we'll be forced to place him
-				// in a rest period.
-				
-				// Teleport progressively closer as time passes in attempt to increase the target's stress level.
-				// Maximum minimum range is capped by the boss's anger level.
-				
-				new Float:flTeleportTargetTimeLeft = g_flSlenderTeleportMaxTargetTime[iBossIndex] - GetGameTime();
-				new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[iBossIndex] - g_flSlenderTeleportTargetTime[iBossIndex];
-				
-				new Float:flTeleportMinRange = g_flSlenderTeleportMaxRange[iBossIndex] - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (g_flSlenderTeleportMaxRange[iBossIndex] - g_flSlenderTeleportMinRange[iBossIndex]);
-				
-				if (g_flSlenderAnger[iBossIndex] <= 1.0)
-				{
-					flTeleportMinRange += (g_flSlenderTeleportMinRange[iBossIndex] - g_flSlenderTeleportMaxRange[iBossIndex]) * Pow(g_flSlenderAnger[iBossIndex] - 1.0, 2.0 / g_flRoundDifficultyModifier);
-				}
-				
-				if (flTeleportMinRange < g_flSlenderTeleportMinRange[iBossIndex]) flTeleportMinRange = g_flSlenderTeleportMinRange[iBossIndex];
-				if (flTeleportMinRange > g_flSlenderTeleportMaxRange[iBossIndex]) flTeleportMinRange = g_flSlenderTeleportMaxRange[iBossIndex];
+				new Float:flTeleportMinRange = CalculateTeleportMinRange(iBossIndex, g_flSlenderTeleportMinRange[iBossIndex], g_flSlenderTeleportMaxRange[iBossIndex]);
 				
 				new iTeleportAreaIndex = -1;
 				decl Float:flTeleportPos[3];

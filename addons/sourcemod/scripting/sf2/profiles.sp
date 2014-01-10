@@ -203,6 +203,8 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	g_flSlenderPathNodeTolerance[iBossIndex] = GetProfileFloat(sProfile, "search_node_dist_tolerance", 32.0);
 	g_flSlenderPathNodeLookAhead[iBossIndex] = GetProfileFloat(sProfile, "search_node_dist_lookahead", 512.0);
 	g_flSlenderStepSize[iBossIndex] = GetProfileFloat(sProfile, "stepsize", 18.0)
+	g_flSlenderProxyTeleportMinRange[iBossIndex] = GetProfileFloat(sProfile, "proxies_teleport_range_min");
+	g_flSlenderProxyTeleportMaxRange[iBossIndex] = GetProfileFloat(sProfile, "proxies_teleport_range_max");
 	
 	// Parse through flags.
 	if (!(iFlags & SFF_HASSTATICSHAKE) && GetProfileNum(sProfile, "static_shake")) iFlags |= SFF_HASSTATICSHAKE;
@@ -391,6 +393,8 @@ RemoveProfile(iBossIndex)
 	g_flSlenderWakeRange[iBossIndex] = 0.0;
 	g_flSlenderInstaKillRange[iBossIndex] = 0.0;
 	g_flSlenderScareRadius[iBossIndex] = 0.0;
+	g_flSlenderProxyTeleportMinRange[iBossIndex] = 0.0;
+	g_flSlenderProxyTeleportMaxRange[iBossIndex] = 0.0;
 	
 	for (new i = 0; i < 3; i++)
 	{
