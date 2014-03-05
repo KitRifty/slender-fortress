@@ -1450,7 +1450,7 @@ public OnGameFrame()
 						{
 							decl Float:flMyEyeAng[3], Float:ang[3];
 							GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-							SubtractVectors(flMyEyeAng, g_flSlenderEyeAngOffset[i], flMyEyeAng);
+							AddVectors(flMyEyeAng, g_flSlenderEyeAngOffset[i], flMyEyeAng);
 							SubtractVectors(hisPos, myPos, ang);
 							GetVectorAngles(ang, ang);
 							ang[0] = 0.0;
@@ -3433,7 +3433,7 @@ ReloadRestrictedWeapons()
 public Action:Timer_RoundMessages(Handle:timer)
 {
 	if (!g_bEnabled) return Plugin_Stop;
-
+	
 	if (timer != g_hRoundMessagesTimer) return Plugin_Stop;
 	
 	switch (g_iRoundMessagesNum)
@@ -6480,7 +6480,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 					GetVectorAngles(flAng, flAng);
 					
 					// Take care of angle offsets.
-					AddVectors(flAng, g_flSlenderEyePosOffset[iBossIndex], flAng);
+					AddVectors(flAng, g_flSlenderEyeAngOffset[iBossIndex], flAng);
 					for (new i = 0; i < 3; i++) flAng[i] = AngleNormalize(flAng[i]);
 					
 					flAng[0] = 0.0;

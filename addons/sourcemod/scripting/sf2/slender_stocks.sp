@@ -456,10 +456,8 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 	decl Float:flSlenderPos[3], Float:flPos[3], Float:flReferenceAng[3], Float:hisEyeAng[3], Float:tempDir[3], Float:tempPos[3];
 	GetClientEyePosition(iBestPlayer, flPos);
 	
-	// Take care of angle offsets.
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_ang_offset", tempDir);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", hisEyeAng);
-	AddVectors(hisEyeAng, tempDir, hisEyeAng);
+	AddVectors(hisEyeAng, g_flSlenderEyeAngOffset[iBossIndex], hisEyeAng);
 	for (new i = 0; i < 3; i++) hisEyeAng[i] = AngleNormalize(hisEyeAng[i]);
 	
 	SlenderGetAbsOrigin(iBossIndex, flSlenderPos);
