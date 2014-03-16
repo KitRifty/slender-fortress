@@ -791,8 +791,8 @@ public OnPluginStart()
 	
 	// Hook onto existing console commands.
 	AddCommandListener(Hook_CommandBuild, "build");
-//	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
-//	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
+	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
 //	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server"); // defunct
 	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
 	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
