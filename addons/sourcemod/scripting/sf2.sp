@@ -9434,6 +9434,7 @@ public Action:Timer_IntroEnd(Handle:timer)
 	// Spawn the bosses!
 	SelectProfile(0, g_strRoundBossProfile);
 	
+	/*
 	KvRewind(g_hConfig);
 	KvJumpToKey(g_hConfig, g_strRoundBossProfile);
 	
@@ -9451,6 +9452,7 @@ public Action:Timer_IntroEnd(Handle:timer)
 			AddProfile(sProfile);
 		}
 	}
+	*/
 	
 	// Enable movement on players.
 	for (new i = 1; i <= MaxClients; i++)

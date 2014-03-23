@@ -146,7 +146,7 @@ LoadProfile(const String:strName[])
 	LogMessage("Successfully loaded boss %s", sBuffer);
 }
 
-bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1)
+bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1, bool:bSpawnCompanions=true, bool:bPlaySpawnSound=true)
 {
 	if (g_hConfig == INVALID_HANDLE) 
 	{
@@ -258,9 +258,43 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	}
 	else
 	{
-		decl String:sBuffer[PLATFORM_MAX_PATH];
-		GetRandomStringFromProfile(sProfile, "sound_spawn_all", sBuffer, sizeof(sBuffer));
-		if (sBuffer[0]) EmitSoundToAll(sBuffer, _, SNDCHAN_STATIC, SNDLEVEL_HELICOPTER);
+		if (bPlaySpawnSound)
+		{
+			decl String:sBuffer[PLATFORM_MAX_PATH];
+			GetRandomStringFromProfile(sProfile, "sound_spawn_all", sBuffer, sizeof(sBuffer));
+			if (sBuffer[0]) EmitSoundToAll(sBuffer, _, SNDCHAN_STATIC, SNDLEVEL_HELICOPTER);
+		}
+		
+		if (bSpawnCompanions)
+		{
+			KvRewind(g_hConfig);
+			KvJumpToKey(g_hConfig, sProfile);
+			
+			decl String:sCompProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			new Handle:hCompanions = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
+			
+			if (KvJumpToKey(g_hConfig, "companions"))
+			{
+				decl String:sNum[32];
+				
+				for (new i = 1;;i++)
+				{
+					IntToString(i, sNum, sizeof(sNum));
+					KvGetString(g_hConfig, sNum, sCompProfile, sizeof(sCompProfile));
+					if (!sCompProfile[0]) break;
+					
+					PushArrayString(hCompanions, sCompProfile);
+				}
+			}
+			
+			for (new i = 0, iSize = GetArraySize(hCompanions); i < iSize; i++)
+			{
+				GetArrayString(hCompanions, i, sCompProfile, sizeof(sCompProfile));
+				AddProfile(sCompProfile, _, _, false, false); // Prevent spam.
+			}
+			
+			CloseHandle(hCompanions);
+		}
 	}
 	
 	Call_StartForward(fOnBossAdded);
@@ -270,7 +304,7 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	return true;
 }
 
-AddProfile(const String:strName[], iFlags=0, iCopyMaster=-1)
+AddProfile(const String:strName[], iFlags=0, iCopyMaster=-1, bool:bSpawnCompanions=true, bool:bPlaySpawnSound=true)
 {
 	if (g_hConfig == INVALID_HANDLE) 
 	{
@@ -289,7 +323,7 @@ AddProfile(const String:strName[], iFlags=0, iCopyMaster=-1)
 	{
 		if (g_iSlenderID[i] == -1)
 		{
-			SelectProfile(i, strName, iFlags, iCopyMaster);
+			SelectProfile(i, strName, iFlags, iCopyMaster, bSpawnCompanions, bPlaySpawnSound);
 			return i;
 		}
 	}
