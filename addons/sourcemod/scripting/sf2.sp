@@ -7479,7 +7479,7 @@ SlenderPerformVoice(iBossIndex, const String:sSectionName[], iIndex=-1)
 	}
 }
 
-stock Handle:GetPageMusicRanges()
+stock GetPageMusicRanges()
 {
 	ClearArray(g_hPageMusicRanges);
 	
@@ -8442,6 +8442,10 @@ public Action:Timer_RoundStart(Handle:timer)
 				
 				ShowHudTextUsingTextEntity(iClients, iClientsNum, iGameText, g_hHudSync, sMessage);
 			}
+		}
+		else
+		{
+			CloseHandle(hArrayClients);
 		}
 	}
 }

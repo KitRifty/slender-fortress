@@ -54,6 +54,7 @@ SlenderSpawnEffects(iBossIndex, EffectEvent:iEvent)
 	if (!sEvent[0]) 
 	{
 		LogError("Could not spawn effects for boss %d: invalid event string!", iBossIndex);
+		CloseHandle(hArray);
 		return;
 	}
 	
