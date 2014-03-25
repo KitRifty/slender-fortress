@@ -118,8 +118,6 @@ public Hook_ClientPreThink(client)
 								if ((iState == STATE_CHASE || iState == STATE_ATTACK || iState == STATE_STUN) &&
 									((iBossTarget && iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0 || PlayerCanSeeSlender(client, i, false)))
 								{
-									if (!g_strPlayerChaseMusic[client][0]) continue;
-								
 									bDanger = true;
 									g_flPlayerDangerBoostTime[client] = GetGameTime() + 5.0;
 									
