@@ -969,6 +969,8 @@ public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
 		Call_StartForward(fOnClientBreakFlashlight);
 		Call_PushCell(client);
 		Call_Finish();
+		
+		return Plugin_Stop;
 	}
 	
 	return Plugin_Continue;
@@ -1119,7 +1121,6 @@ ClientDeactivateFlashlight(client)
 		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
 	}
 	
-	//ClientFlashlightTurnOff(client);
 	ClientActivateUltravision(client);
 	
 	if (bOld && !g_bPlayerFlashlight[client])
@@ -1221,7 +1222,7 @@ ClientActivateUltravision(client)
 	g_bPlayerUltravision[client] = true;
 	
 	// Fade in effect.
-	CreateTimer(0.05, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	CreateTimer(0.0, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
@@ -1796,7 +1797,7 @@ ClientProcessVisibility(client)
 			g_flPlayerLastStaticVolume[client] = g_flPlayerStaticAmount[client];
 			g_flPlayerLastStaticTime[client] = GetGameTime();
 			
-			g_hPlayerLastStaticTimer[client] = CreateTimer(0.05, 
+			g_hPlayerLastStaticTimer[client] = CreateTimer(0.0, 
 				Timer_ClientFadeOutLastStaticSound, 
 				GetClientUserId(client), 
 				TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
@@ -3374,7 +3375,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 		
 		if (GetConVarBool(g_cvCampingEnabled) && 
 			!g_bRoundGrace && 
-			!IsSpaceOccupied(flPos, flMins, flMaxs, client) && 
+			!IsSpaceOccupiedIgnorePlayers(flPos, flMins, flMaxs, client) && 
 			g_flPlayerStaticAmount[client] <= GetConVarFloat(g_cvCampingNoStrikeSanity) && 
 			(iClosestBoss == -1 || flDistFromClosestBoss >= GetConVarFloat(g_cvCampingNoStrikeBossDistance)) &&
 			flDistFromLastPosition <= GetConVarFloat(g_cvCampingMinDistance))
@@ -3657,7 +3658,11 @@ stock ClientResetOverlay(client)
 #endif
 	
 	g_hPlayerOverlayCheck[client] = INVALID_HANDLE;
-	ClientCommand(client, "r_screenoverlay \"\"");
+	
+	if (IsClientInGame(client))
+	{
+		ClientCommand(client, "r_screenoverlay \"\"");
+	}
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetOverlay(%d)", client);
@@ -4475,7 +4480,7 @@ public Action:Timer_PlayerFadeIn20DollarsMusic(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return Plugin_Stop;
-
+	
 	new iBossIndex = -1;
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{

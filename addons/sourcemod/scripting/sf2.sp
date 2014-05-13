@@ -420,6 +420,9 @@ new Float:g_flPlayerDangerBoostTime[MAXPLAYERS + 1];
 new Handle:g_hRoundMessagesTimer;
 new g_iRoundMessagesNum;
 
+new Handle:g_hBossCountUpdateTimer = INVALID_HANDLE;
+new Handle:g_hClientAverageUpdateTimer = INVALID_HANDLE;
+
 // Server variables.
 new Handle:g_cvEnabled;
 new Handle:g_cvSlenderMapsOnly;
@@ -562,7 +565,6 @@ new Handle:g_hSDKWeaponWrench;
 new Handle:g_hSDKGetMaxHealth;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
-//new Handle:g_hSDKClientCommandKeyValues;
 
 
 #include "sf2/stocks.sp"
@@ -1109,50 +1111,8 @@ SetupSDK()
 	
 	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
 	
-	/*
-	iOffset = GameConfGetOffset(hConfig, "CGameRules::ClientCommandKeyValues");
-	g_hSDKClientCommandKeyValues = DHookCreate(iOffset, HookType_GameRules, ReturnType_Void, ThisPointer_Ignore, Hook_ClientCommandKeyValues);
-	if (g_hSDKClientCommandKeyValues == INVALID_HANDLE)
-	{
-		SetFailState("Failed to create hook CGameRules::ClientCommandKeyValues offset from SF2 gamedata!");
-	}
-	
-	DHookAddParam(g_hSDKClientCommandKeyValues, HookParamType_Edict);
-	DHookAddParam(g_hSDKClientCommandKeyValues, HookParamType_ObjectPtr);
-	*/
-	
 	CloseHandle(hConfig);
 }
-
-// This is easily the most ridiculous hacky way of doing this. But it doesn't work. Surprise, surprise.
-/*
-public MRESReturn:Hook_ClientCommandKeyValues(Handle:hParams)
-{
-	new iEdict = DHookGetParam(hParams, 1);
-//	PrintToChatAll("CGameRules::ClientCommandKeyValues called by edict %d", iEdict);
-	
-	new iBytes = DHookGetParamObjectPtrVar(hParams, 2, 0, ObjectValueType_Int);
-	
-//	PrintToChatAll("Got KeyValues bytes %d", iBytes);
-	SendDebugMessageToPlayers(DEBUG_PLAYER_ACTION_SLOT, 0, "CGameRules::ClientCommandKeyValues(%d) got bytes %d", iEdict, iBytes);
-	
-	switch (iBytes)
-	{
-		case 232764: // +use_action_slot_item
-		{
-			new Action:iAction = Hook_CommandActionSlotItemOn(iEdict, "+use_action_slot_item", 0);
-			if (iAction == Plugin_Handled || iAction == Plugin_Stop) return MRES_Supercede;
-		}
-		case 232796: // -use_action_slot_item
-		{
-			new Action:iAction = Hook_CommandActionSlotItemOff(iEdict, "-use_action_slot_item", 0);
-			if (iAction == Plugin_Handled || iAction == Plugin_Stop) return MRES_Supercede;
-		}
-	}
-	
-	return MRES_Ignored;
-}
-*/
 
 SetupWeapons()
 {
@@ -1240,9 +1200,8 @@ public OnMapStart()
 	g_hRoundMessagesTimer = CreateTimer(200.0, Timer_RoundMessages, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	g_iRoundMessagesNum = 0;
 	g_iSpecialRoundCount = 0;
-	
-	// Hook gamerules.
-	//DHookGamerules(g_hSDKClientCommandKeyValues, false);
+	g_hBossCountUpdateTimer = INVALID_HANDLE;
+	g_hClientAverageUpdateTimer = INVALID_HANDLE;
 	
 	// Reset boss rounds.
 	g_bBossRound = false;
@@ -1291,8 +1250,8 @@ public OnConfigsExecuted()
 	ReloadRestrictedWeapons();
 	ReloadSpecialRounds();
 	
-	CreateTimer(0.2, Timer_ClientAverageUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	CreateTimer(2.0, Timer_BossCountUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	g_hClientAverageUpdateTimer = CreateTimer(0.2, Timer_ClientAverageUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	g_hBossCountUpdateTimer = CreateTimer(2.0, Timer_BossCountUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
 	// Reset special round.
 	SpecialRoundReset();
@@ -2870,6 +2829,10 @@ public Action:Hook_CommandBuild(client, const String:command[], argc)
 
 public Action:Timer_BossCountUpdate(Handle:timer)
 {
+	if (timer != g_hBossCountUpdateTimer) return Plugin_Stop;
+	
+	if (!g_bEnabled) return Plugin_Stop;
+
 	new iBossCount = SlenderGetCount();
 	new iBossPreferredCount;
 	
@@ -4149,6 +4112,7 @@ public OnClientDisconnect(client)
 	ClientDisableGhostMode(client);
 	ClientResetGlow(client);
 	ClientStopProxyForce(client);
+	ClientResetOverlay(client);
 	
 	if (!g_bRoundWarmup)
 	{
@@ -4222,7 +4186,10 @@ public TF2_OnWaitingForPlayersEnd()
 
 public Action:Timer_ClientAverageUpdate(Handle:timer)
 {
-	if (!g_bEnabled) return Plugin_Continue;
+	if (timer != g_hClientAverageUpdateTimer) return Plugin_Stop;
+	
+	if (!g_bEnabled) return Plugin_Stop;
+	
 	if (g_bRoundWarmup || g_bRoundEnded) return Plugin_Continue;
 	
 	// First, process through HUD stuff.
@@ -6551,144 +6518,6 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 	return Plugin_Continue;
 }
 
-
-
-/*
-public Action:Timer_SlenderTrueMasterThink(Handle:timer, any:iBossIndex)
-{
-	if (iBossIndex < 0 || iBossIndex >= MAX_BOSSES) return Plugin_Stop;
-	if (g_iSlenderID[iBossIndex] == -1) return Plugin_Stop;
-	
-	if (timer != g_hSlenderThink[iBossIndex]) return;
-	
-	if (!(g_iSlenderFlags[iBossIndex] & SFF_NOTELEPORT))
-	{
-	}
-}
-
-public Action:Timer_SlenderChaseBossTeleport(Handle:timer, any:iBossID)
-{
-	new iBossIndex = SlenderGetFromID(iBossID);
-	if (iBossIndex == -1) return Plugin_Stop;
-	
-	if (timer != g_hSlenderThink[iBossIndex]) return Plugin_Stop;
-	
-	new iBossFlags = g_iSlenderFlags[iBossIndex];
-	if (iBossFlags & SFF_MARKEDASFAKE ||
-		iBossFlags & SFF_FAKE ||
-		iBossFlags & SFF_NOTELEPORT) return Plugin_Stop;
-	
-	new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
-	
-	// We can only teleport if we are inactive.
-	new iState = g_iSlenderState[iBossIndex];
-	if (iBoss && iBoss != INVALID_ENT_REFERENCE && iState != STATE_IDLE && iState != STATE_WANDER) return Plugin_Continue;
-	
-	new Float:flCurTime = GetGameTime();
-	
-	if (iBoss && iBoss != INVALID_ENT_REFERENCE)
-	{
-		if (flCurTime < g_flSlenderNextTeleportTime[iBossIndex] ||
-			flCurTime < g_flSlenderTimeUntilKill[iBossIndex]) return Plugin_Continue;
-	}
-	
-	// Don't teleport until we have gone out of (potential) sight.
-	// Instead, make the boss queue a path towards the best player, so that the boss can actually be able to
-	// do something instead of just standing around.
-	
-	new bool:bPotentiallyVisibleToPlayers = PeopleCanSeeSlender(iBossIndex, _, false);
-	
-	new iMasterIndex = SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]);
-	if (iMasterIndex == -1) iMasterIndex = iBossIndex;
-	
-	// Get a list of players that can potentially be targeted to.
-	new Handle:hPlayers = CreateArray();
-	
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i) ||
-			!IsPlayerAlive(i) ||
-			g_bPlayerEliminated[i] ||
-			g_bPlayerEscaped[i]) continue;
-		
-		// Encounter times are entirely based on the copy master.
-		if (flCurTime >= (g_flPlayerLastChaseBossEncounterTime[i][iMasterIndex] + g_flPlayerNextChaseBossEncounterTimeAdd[i][iMasterIndex]))
-		{
-			PushArrayCell(hPlayers, i);
-		}
-	}
-	
-	if (GetArraySize(hPlayers))
-	{
-		// Pick the player with the most stress.
-		new iBestPlayer = -1;
-		new Float:flBestPlayerStress = -1.0;
-		
-		for (new i = 0, iSize = GetArraySize(hPlayers); i < iSize; i++)
-		{
-			new iClient = GetArrayCell(hPlayers, i);
-			new Float:flClientStress = g_flPlayerStress[iClient];
-			
-			if (flClientStress > flBestPlayerStress)
-			{
-				iBestPlayer = iClient;
-				flBestPlayerStress = flClientStress;
-			}
-		}
-		
-		if (iBestPlayer != -1)
-		{
-			PrintToChatAll("iBestPlayer: %d", iBestPlayer);
-		
-			new Float:flPageProgress = 0.0;
-			if (g_iPageMax) flPageProgress = float(g_iPageCount) / float(g_iPageMax);
-		
-			new Float:flTeleportMinDist = GetProfileFloat(g_strSlenderProfile[iMasterIndex], "teleport_range_min", 1024.0);
-			new Float:flTeleportMaxDist = GetProfileFloat(g_strSlenderProfile[iMasterIndex], "teleport_range_max", 3000.0);
-			
-			// Change the minimum distance dynamically based on game progression.
-			flTeleportMinDist += ((flTeleportMaxDist - flTeleportMinDist) * (1.0 - flPageProgress));
-			
-			decl Float:flActiveAreaCenterPos[3];
-			GetClientAbsOrigin(iBestPlayer, flActiveAreaCenterPos);
-			
-			decl Float:flTeleportPos[3];
-			if (SlenderChaseBossCalculateNewPlace(iMasterIndex, flActiveAreaCenterPos, flTeleportMinDist, flTeleportMaxDist, SlenderChaseBossPlaceFunctor, flTeleportPos))
-			{
-				PrintToChatAll("new place!", iBestPlayer);
-			
-				new Float:flTeleportCooldownMin = GetProfileFloat(g_strSlenderProfile[iMasterIndex], "teleport_cooldown_min", 10.0);
-				new Float:flTeleportCooldownMax = GetProfileFloat(g_strSlenderProfile[iMasterIndex], "teleport_cooldown_max", 23.0);
-				g_flSlenderNextTeleportTime[iBossIndex] = flCurTime + GetRandomFloat(flTeleportCooldownMin, flTeleportCooldownMax);
-				
-				if (!bPotentiallyVisibleToPlayers)
-				{
-					PrintToChatAll("not visible!", iBestPlayer);
-				
-					new Float:flEncounterTimeCooldownMin = GetProfileFloat(g_strSlenderProfile[iMasterIndex], "encounter_time_cooldown_min", 20.0);
-					new Float:flEncounterTimeCooldownMax = GetProfileFloat(g_strSlenderProfile[iMasterIndex], "encounter_time_cooldown_max", 35.0);
-					
-					SpawnSlender(iBossIndex, flTeleportPos);
-					
-					g_flPlayerLastChaseBossEncounterTime[iBestPlayer][iMasterIndex] = flCurTime;
-					g_flPlayerNextChaseBossEncounterTimeAdd[iBestPlayer][iMasterIndex] = GetRandomFloat(flEncounterTimeCooldownMin, flEncounterTimeCooldownMax);
-				}
-				else
-				{
-					// Force the boss to target the best player, no matter where he's at.
-					// This will force the boss to queue for a new path towards its target.
-					
-					g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestPlayer);
-				}
-			}
-		}
-	}
-	
-	CloseHandle(hPlayers);
-	
-	return Plugin_Continue;
-}
-*/
 
 SlenderOnClientStressUpdate(client)
 {

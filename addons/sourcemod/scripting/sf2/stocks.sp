@@ -84,6 +84,15 @@ stock bool:IsSpaceOccupied(const Float:pos[3], const Float:mins[3], const Float:
 	return bHit;
 }
 
+stock bool:IsSpaceOccupiedIgnorePlayers(const Float:pos[3], const Float:mins[3], const Float:maxs[3], entity=-1, &ref=-1)
+{
+	new Handle:hTrace = TR_TraceHullFilterEx(pos, pos, mins, maxs, MASK_VISIBLE, TraceRayDontHitPlayersOrEntity, entity);
+	new bool:bHit = TR_DidHit(hTrace);
+	ref = TR_GetEntityIndex(hTrace);
+	CloseHandle(hTrace);
+	return bHit;
+}
+
 stock bool:IsSpaceOccupiedPlayer(const Float:pos[3], const Float:mins[3], const Float:maxs[3], entity=-1, &ref=-1)
 {
 	new Handle:hTrace = TR_TraceHullFilterEx(pos, pos, mins, maxs, MASK_PLAYERSOLID, TraceRayDontHitEntity, entity);
