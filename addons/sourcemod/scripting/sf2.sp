@@ -4888,7 +4888,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					bDiscardMasterPos)
 				{
 					if (bDiscardMasterPos) g_iSlenderTargetSoundCount[iBossIndex] = 0;
-				
+					
 					g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_sound_pos_discard_time", 2.0);
 					g_flSlenderTargetSoundMasterPos[iBossIndex][0] = g_flSlenderTargetSoundTempPos[iBossIndex][0];
 					g_flSlenderTargetSoundMasterPos[iBossIndex][1] = g_flSlenderTargetSoundTempPos[iBossIndex][1];

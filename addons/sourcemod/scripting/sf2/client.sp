@@ -2863,7 +2863,7 @@ ClientOnButtonPress(client, button)
 						{
 							g_iPlayerSprintPoints[client] -= 7;
 							if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
-							
+							ClientStopSprint(client);
 						}
 					}
 				}
