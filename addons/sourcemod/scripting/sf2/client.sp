@@ -2268,6 +2268,7 @@ ClientStartSprint(client)
 	if (g_bPlayerSprint[client]) return;
 	
 	g_bPlayerSprint[client] = true;
+	g_hPlayerSprintTimer[client] = INVALID_HANDLE;
 	ClientSprintTimer(client);
 	TriggerTimer(g_hPlayerSprintTimer[client], true);
 	
@@ -2306,6 +2307,7 @@ ClientStopSprint(client)
 	if (!g_bPlayerSprint[client]) return;
 	
 	g_bPlayerSprint[client] = false;
+	g_hPlayerSprintTimer[client] = INVALID_HANDLE;
 	ClientSprintTimer(client, true);
 	
 	SDKHook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
@@ -2402,7 +2404,6 @@ public Hook_ClientRechargeSprintPreThink(client)
 	else if (iFOV <= g_iPlayerDesiredFOV[client])
 	{
 		ClientSetFOV(client, g_iPlayerDesiredFOV[client]);
-		//SDKUnhook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
 	}
 }
 
@@ -2413,11 +2414,16 @@ public Action:Timer_ClientRechargeSprint(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerSprintTimer[client]) return;
 	
-	if (g_bPlayerSprint[client]) return;
+	if (g_bPlayerSprint[client]) 
+	{
+		g_hPlayerSprintTimer[client] = INVALID_HANDLE;
+		return;
+	}
 	
 	if (g_iPlayerSprintPoints[client] >= 100)
 	{
 		g_iPlayerSprintPoints[client] = 100;
+		g_hPlayerSprintTimer[client] = INVALID_HANDLE;
 		return;
 	}
 	
@@ -2863,7 +2869,14 @@ ClientOnButtonPress(client, button)
 						{
 							g_iPlayerSprintPoints[client] -= 7;
 							if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
-							ClientStopSprint(client);
+							
+							if (!g_bPlayerSprint[client])
+							{
+								if (g_hPlayerSprintTimer[client] == INVALID_HANDLE)
+								{
+									ClientSprintTimer(client, true);
+								}
+							}
 						}
 					}
 				}
