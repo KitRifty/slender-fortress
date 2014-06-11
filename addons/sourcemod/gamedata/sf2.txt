@@ -18,5 +18,25 @@
 				"mac"	"19"
 			}
 		}
+		"Signatures"
+		{
+			/*
+				Found by jumping to CTFGameRules::ClientCommandKeyValues(edict_t *, KeyValues *) via string search for "FreezeCamTaunt".
+				The call itself is located before the string, since KeyValues::GetName(void)'s value is used for comparison for other
+				commands as well.
+				
+				If that doesn't help (which most likely it won't), if it's any hint it's also a very small function. And I mean SMALL. 
+				Smallest I've ever seen! (the whole binary pattern below IS the entirety of the function)
+			*/
+			"KeyValues::GetName"
+			{
+				"library"	"server"
+				"windows"	"\xFF\x31\xFF\x15\x2A\x2A\x2A\x2A\x83\xC4\x04\xC3"
+				// FF 31 FF 15 ? ? ? ? 83 C4 04 C3
+				
+				"linux"	"@_ZNK9KeyValues7GetNameEv"
+				"mac"	"@_ZNK9KeyValues7GetNameEv"
+			}
+		}
 	}
 }

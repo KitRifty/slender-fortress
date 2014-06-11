@@ -566,6 +566,9 @@ new Handle:g_hSDKGetMaxHealth;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
 
+// Temp. fix
+static Handle:CMultiplayRules_OnClientCommandKeyValues;
+static Handle:KeyValues_GetName;
 
 #include "sf2/stocks.sp"
 #include "sf2/profiles.sp"
@@ -793,11 +796,11 @@ public OnPluginStart()
 	
 	// Hook onto existing console commands.
 	AddCommandListener(Hook_CommandBuild, "build");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
-	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
+//	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
+//	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
 //	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server"); // defunct
-	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
-	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
+//	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
+//	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
 	AddCommandListener(Hook_CommandSuicideAttempt, "kill");
 	AddCommandListener(Hook_CommandSuicideAttempt, "explode");
 	AddCommandListener(Hook_CommandSuicideAttempt, "joinclass");
@@ -1111,6 +1114,29 @@ SetupSDK()
 	
 	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
 	
+	// START OF TEMP FIX
+	StartPrepSDKCall(SDKCall_Raw);
+	PrepSDKCall_SetFromConf(hConfig, SDKConf_Signature, "KeyValues::GetName");
+	PrepSDKCall_SetReturnInfo(SDKType_String, SDKPass_Pointer);
+	if ((KeyValues_GetName = EndPrepSDKCall()) == INVALID_HANDLE)
+	{
+		CloseHandle(hConfig);
+		SetFailState("KeyValues::GetName signature failed!");
+	}
+	
+	iOffset = GameConfGetOffset(hConfig, "CMultiplayRules::ClientCommandKeyValues"); 
+	CMultiplayRules_OnClientCommandKeyValues = DHookCreate(iOffset, HookType_GameRules, ReturnType_Void, ThisPointer_Ignore, Hook_CGameRulesClientCommandKeyValues);
+	if (CMultiplayRules_OnClientCommandKeyValues == INVALID_HANDLE)
+	{
+		CloseHandle(hConfig);
+		SetFailState("Failed to create hook from CMultiplayRules::ClientCommandKeyValues offset from gamedata!");
+	}
+	
+	DHookAddParam(CMultiplayRules_OnClientCommandKeyValues, HookParamType_Edict);
+	DHookAddParam(CMultiplayRules_OnClientCommandKeyValues, HookParamType_Int);
+	
+	// END OF TEMP FIX
+	
 	CloseHandle(hConfig);
 }
 
@@ -1257,6 +1283,13 @@ public OnConfigsExecuted()
 	SpecialRoundReset();
 	InitializeNewGame();
 	
+	// START OF TEMP FIX
+	if (CMultiplayRules_OnClientCommandKeyValues != INVALID_HANDLE)
+	{
+		DHookGamerules(CMultiplayRules_OnClientCommandKeyValues, false);
+	}
+	// END OF TEMP FIX
+	
 	// Late load compensation.
 	for (new i = 1; i <= MaxClients; i++)
 	{
@@ -1264,6 +1297,42 @@ public OnConfigsExecuted()
 		OnClientPutInServer(i);
 	}
 }
+
+// START OF TEMP FIX
+public MRESReturn:Hook_CGameRulesClientCommandKeyValues(Handle:hParams)
+{
+	new iEdict = DHookGetParam(hParams, 1);
+	new Address:pKeyValues = Address:DHookGetParam(hParams, 2);
+	if (pKeyValues >= Address_MinimumValid)
+	{
+		new String:sName[64];
+		KeyValuesGetName(pKeyValues, sName, sizeof(sName));
+		
+		if (StrEqual(sName, "+use_action_slot_item", false))
+		{
+			if (Hook_CommandActionSlotItemOn(iEdict, "+use_action_slot_item", 0) == Plugin_Handled)
+			{
+				return MRES_Supercede;
+			}
+		}
+		else if (StrEqual(sName, "-use_action_slot_item", false))
+		{
+			if (Hook_CommandActionSlotItemOff(iEdict, "-use_action_slot_item", 0) == Plugin_Handled)
+			{
+				return MRES_Supercede;
+			}
+		}
+	}
+	
+	return MRES_Ignored;
+}
+
+static KeyValuesGetName(Address:pKeyValues, String:buffer[], bufferlen)
+{
+	if (KeyValues_GetName == INVALID_HANDLE) return;
+	SDKCall(KeyValues_GetName, pKeyValues, buffer, bufferlen);
+}
+// END OF TEMP FIX
 
 PrecacheStuff()
 {
