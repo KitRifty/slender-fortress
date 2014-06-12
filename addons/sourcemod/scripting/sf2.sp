@@ -1308,16 +1308,16 @@ public MRESReturn:Hook_CGameRulesClientCommandKeyValues(Handle:hParams)
 		new String:sName[64];
 		KeyValuesGetName(pKeyValues, sName, sizeof(sName));
 		
-		if (StrEqual(sName, "+use_action_slot_item", false))
+		if (StrEqual(sName, "+use_action_slot_item_server", false))
 		{
-			if (Hook_CommandActionSlotItemOn(iEdict, "+use_action_slot_item", 0) == Plugin_Handled)
+			if (Hook_CommandActionSlotItemOn(iEdict, "+use_action_slot_item_server", 0) == Plugin_Handled)
 			{
 				return MRES_Supercede;
 			}
 		}
-		else if (StrEqual(sName, "-use_action_slot_item", false))
+		else if (StrEqual(sName, "-use_action_slot_item_server", false))
 		{
-			if (Hook_CommandActionSlotItemOff(iEdict, "-use_action_slot_item", 0) == Plugin_Handled)
+			if (Hook_CommandActionSlotItemOff(iEdict, "-use_action_slot_item_server", 0) == Plugin_Handled)
 			{
 				return MRES_Supercede;
 			}
