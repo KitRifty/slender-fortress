@@ -18,7 +18,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.1"
+#define PLUGIN_VERSION "0.2.2"
 
 public Plugin:myinfo = 
 {
@@ -566,10 +566,6 @@ new Handle:g_hSDKGetMaxHealth;
 new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
 
-// Temp. fix
-static Handle:CMultiplayRules_OnClientCommandKeyValues;
-static Handle:KeyValues_GetName;
-
 #include "sf2/stocks.sp"
 #include "sf2/profiles.sp"
 #include "sf2/effects.sp"
@@ -777,6 +773,8 @@ public OnPluginStart()
 	RegConsoleCmd("sm_slsettings", Command_Settings);
 	RegConsoleCmd("sm_slcredits", Command_Credits);
 	RegConsoleCmd("sm_flashlight", Command_ToggleFlashlight);
+	RegConsoleCmd("+sprint", Command_SprintOn);
+	RegConsoleCmd("-sprint", Command_SprintOff);
 	
 	RegAdminCmd("sm_sf2_scare", Command_ClientPerformScare, ADMFLAG_SLAY);
 	RegAdminCmd("sm_sf2_spawn_boss", Command_SpawnSlender, ADMFLAG_SLAY);
@@ -796,11 +794,6 @@ public OnPluginStart()
 	
 	// Hook onto existing console commands.
 	AddCommandListener(Hook_CommandBuild, "build");
-//	AddCommandListener(Hook_CommandBlockInGhostMode, "taunt");
-//	AddCommandListener(Hook_CommandBlockInGhostMode, "+taunt");
-//	AddCommandListener(Hook_CommandBlockInGhostMode, "use_action_slot_item_server"); // defunct
-//	AddCommandListener(Hook_CommandActionSlotItemOn, "+taunt");
-//	AddCommandListener(Hook_CommandActionSlotItemOff, "-taunt");
 	AddCommandListener(Hook_CommandSuicideAttempt, "kill");
 	AddCommandListener(Hook_CommandSuicideAttempt, "explode");
 	AddCommandListener(Hook_CommandSuicideAttempt, "joinclass");
@@ -835,6 +828,34 @@ public OnPluginStart()
 	// Hook sounds.
 	AddNormalSoundHook(Hook_NormalSound);
 	
+	g_hHudSync = CreateHudSynchronizer();
+	g_hHudSync2 = CreateHudSynchronizer();
+	g_hRoundTimerSync = CreateHudSynchronizer();
+	g_hCookie = RegClientCookie("slender_cookie", "", CookieAccess_Private);
+	
+	AddTempEntHook("Fire Bullets", Hook_TEFireBullets);
+	
+	SetupMenus();
+	
+	SetupAdminMenu();
+	
+	SetupClassDefaultWeapons();
+	
+	SetupPlayerGroups();
+}
+
+public OnAllPluginsLoaded()
+{
+	SetupHooks();
+}
+
+public OnPluginEnd()
+{
+	StopPlugin();
+}
+
+static SetupMenus()
+{
 	decl String:buffer[512];
 	
 	// Create menus.
@@ -988,17 +1009,97 @@ public OnPluginStart()
 	
 	SetMenuTitle(g_hMenuCredits2, buffer);
 	AddMenuItem(g_hMenuCredits2, "0", "Back");
+}
+
+static SetupHooks()
+{
+	// Check SDKHooks gamedata.
+	new Handle:hConfig = LoadGameConfigFile("sdkhooks.games");
+	if (hConfig == INVALID_HANDLE) SetFailState("Couldn't find SDKHooks gamedata!");
 	
-	g_hHudSync = CreateHudSynchronizer();
-	g_hHudSync2 = CreateHudSynchronizer();
-	g_hRoundTimerSync = CreateHudSynchronizer();
-	g_hCookie = RegClientCookie("slender_cookie", "", CookieAccess_Private);
+	StartPrepSDKCall(SDKCall_Entity);
+	PrepSDKCall_SetFromConf(hConfig, SDKConf_Virtual, "GetMaxHealth");
+	PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_Plain);
+	if ((g_hSDKGetMaxHealth = EndPrepSDKCall()) == INVALID_HANDLE)
+	{
+		SetFailState("Failed to retrieve GetMaxHealth offset from SDKHooks gamedata!");
+	}
 	
-	AddTempEntHook("Fire Bullets", Hook_TEFireBullets);
+	CloseHandle(hConfig);
 	
-	SetupWeapons();
-	SetupAdminMenu();
-	SetupPlayerGroups();
+	// Check our own gamedata.
+	hConfig = LoadGameConfigFile("sf2");
+	if (hConfig == INVALID_HANDLE) SetFailState("Could not find SF2 gamedata!");
+	
+	new iOffset = GameConfGetOffset(hConfig, "CTFPlayer::WantsLagCompensationOnEntity"); 
+	g_hSDKWantsLagCompensationOnEntity = DHookCreate(iOffset, HookType_Entity, ReturnType_Bool, ThisPointer_CBaseEntity, Hook_ClientWantsLagCompensationOnEntity); 
+	if (g_hSDKWantsLagCompensationOnEntity == INVALID_HANDLE)
+	{
+		SetFailState("Failed to create hook CTFPlayer::WantsLagCompensationOnEntity offset from SF2 gamedata!");
+	}
+	
+	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_CBaseEntity);
+	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_ObjectPtr);
+	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_Unknown);
+	
+	iOffset = GameConfGetOffset(hConfig, "CBaseEntity::ShouldTransmit");
+	g_hSDKShouldTransmit = DHookCreate(iOffset, HookType_Entity, ReturnType_Int, ThisPointer_CBaseEntity, Hook_EntityShouldTransmit);
+	if (g_hSDKShouldTransmit == INVALID_HANDLE)
+	{
+		SetFailState("Failed to create hook CBaseEntity::ShouldTransmit offset from SF2 gamedata!");
+	}
+	
+	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
+	
+	CloseHandle(hConfig);
+}
+
+SetupClassDefaultWeapons()
+{
+	// Scout
+	g_hSDKWeaponScattergun = PrepareItemHandle("tf_weapon_scattergun", 13, 0, 0, "");
+	g_hSDKWeaponPistolScout = PrepareItemHandle("tf_weapon_pistol", 23, 0, 0, "");
+	g_hSDKWeaponBat = PrepareItemHandle("tf_weapon_bat", 0, 0, 0, "");
+	
+	// Sniper
+	g_hSDKWeaponSniperRifle = PrepareItemHandle("tf_weapon_sniperrifle", 14, 0, 0, "");
+	g_hSDKWeaponPistolScout = PrepareItemHandle("tf_weapon_smg", 16, 0, 0, "");
+	g_hSDKWeaponKukri = PrepareItemHandle("tf_weapon_club", 3, 0, 0, "");
+	
+	// Soldier
+	g_hSDKWeaponRocketLauncher = PrepareItemHandle("tf_weapon_rocketlauncher", 18, 0, 0, "");
+	g_hSDKWeaponShotgunSoldier = PrepareItemHandle("tf_weapon_shotgun", 10, 0, 0, "");
+	g_hSDKWeaponShovel = PrepareItemHandle("tf_weapon_shovel", 6, 0, 0, "");
+	
+	// Demoman
+	g_hSDKWeaponGrenadeLauncher = PrepareItemHandle("tf_weapon_grenadelauncher", 19, 0, 0, "");
+	g_hSDKWeaponStickyLauncher = PrepareItemHandle("tf_weapon_pipebomblauncher", 20, 0, 0, "");
+	g_hSDKWeaponBottle = PrepareItemHandle("tf_weapon_bottle", 1, 0, 0, "");
+	
+	// Heavy
+	g_hSDKWeaponMinigun = PrepareItemHandle("tf_weapon_minigun", 15, 0, 0, "");
+	g_hSDKWeaponShotgunHeavy = PrepareItemHandle("tf_weapon_shotgun", 11, 0, 0, "");
+	g_hSDKWeaponFists = PrepareItemHandle("tf_weapon_fists", 5, 0, 0, "");
+	
+	// Medic
+	g_hSDKWeaponSyringeGun = PrepareItemHandle("tf_weapon_syringegun_medic", 17, 0, 0, "");
+	g_hSDKWeaponMedigun = PrepareItemHandle("tf_weapon_medigun", 29, 0, 0, "");
+	g_hSDKWeaponBonesaw = PrepareItemHandle("tf_weapon_bonesaw", 8, 0, 0, "");
+	
+	// Pyro
+	g_hSDKWeaponFlamethrower = PrepareItemHandle("tf_weapon_flamethrower", 21, 0, 0, "254 ; 4.0");
+	g_hSDKWeaponShotgunPyro = PrepareItemHandle("tf_weapon_shotgun", 12, 0, 0, "");
+	g_hSDKWeaponFireaxe = PrepareItemHandle("tf_weapon_fireaxe", 2, 0, 0, "");
+	
+	// Spy
+	g_hSDKWeaponRevolver = PrepareItemHandle("tf_weapon_revolver", 24, 0, 0, "");
+	g_hSDKWeaponKnife = PrepareItemHandle("tf_weapon_knife", 4, 0, 0, "");
+	g_hSDKWeaponInvis = PrepareItemHandle("tf_weapon_invis", 297, 0, 0, "");
+	
+	// Engineer
+	g_hSDKWeaponShotgunPrimary = PrepareItemHandle("tf_weapon_shotgun", 9, 0, 0, "");
+	g_hSDKWeaponPistol = PrepareItemHandle("tf_weapon_pistol", 22, 0, 0, "");
+	g_hSDKWeaponWrench = PrepareItemHandle("tf_weapon_wrench", 7, 0, 0, "");
 }
 
 public Action:Command_DebugBossTeleport(client, args)
@@ -1069,155 +1170,6 @@ public Action:Command_DebugBossProxies(client, args)
 	return Plugin_Handled;
 }
 
-public OnAllPluginsLoaded()
-{
-	SetupSDK();
-}
-
-SetupSDK()
-{
-	// Check SDKHooks gamedata.
-	new Handle:hConfig = LoadGameConfigFile("sdkhooks.games");
-	if (hConfig == INVALID_HANDLE) SetFailState("Couldn't find SDKHooks gamedata!");
-	
-	StartPrepSDKCall(SDKCall_Entity);
-	PrepSDKCall_SetFromConf(hConfig, SDKConf_Virtual, "GetMaxHealth");
-	PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_Plain);
-	if ((g_hSDKGetMaxHealth = EndPrepSDKCall()) == INVALID_HANDLE)
-	{
-		SetFailState("Failed to retrieve GetMaxHealth offset from SDKHooks gamedata!");
-	}
-	
-	CloseHandle(hConfig);
-	
-	// Check our own gamedata.
-	hConfig = LoadGameConfigFile("sf2");
-	if (hConfig == INVALID_HANDLE) SetFailState("Could not find SF2 gamedata!");
-	
-	new iOffset = GameConfGetOffset(hConfig, "CTFPlayer::WantsLagCompensationOnEntity"); 
-	g_hSDKWantsLagCompensationOnEntity = DHookCreate(iOffset, HookType_Entity, ReturnType_Bool, ThisPointer_CBaseEntity, Hook_ClientWantsLagCompensationOnEntity); 
-	if (g_hSDKWantsLagCompensationOnEntity == INVALID_HANDLE)
-	{
-		SetFailState("Failed to create hook CTFPlayer::WantsLagCompensationOnEntity offset from SF2 gamedata!");
-	}
-	
-	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_CBaseEntity);
-	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_ObjectPtr);
-	DHookAddParam(g_hSDKWantsLagCompensationOnEntity, HookParamType_Unknown);
-	
-	iOffset = GameConfGetOffset(hConfig, "CBaseEntity::ShouldTransmit");
-	g_hSDKShouldTransmit = DHookCreate(iOffset, HookType_Entity, ReturnType_Int, ThisPointer_CBaseEntity, Hook_EntityShouldTransmit);
-	if (g_hSDKShouldTransmit == INVALID_HANDLE)
-	{
-		SetFailState("Failed to create hook CBaseEntity::ShouldTransmit offset from SF2 gamedata!");
-	}
-	
-	DHookAddParam(g_hSDKShouldTransmit, HookParamType_ObjectPtr);
-	
-	// START OF TEMP FIX
-	StartPrepSDKCall(SDKCall_Raw);
-	PrepSDKCall_SetFromConf(hConfig, SDKConf_Signature, "KeyValues::GetName");
-	PrepSDKCall_SetReturnInfo(SDKType_String, SDKPass_Pointer);
-	if ((KeyValues_GetName = EndPrepSDKCall()) == INVALID_HANDLE)
-	{
-		CloseHandle(hConfig);
-		SetFailState("KeyValues::GetName signature failed!");
-	}
-	
-	iOffset = GameConfGetOffset(hConfig, "CMultiplayRules::ClientCommandKeyValues"); 
-	CMultiplayRules_OnClientCommandKeyValues = DHookCreate(iOffset, HookType_GameRules, ReturnType_Void, ThisPointer_Ignore, Hook_CGameRulesClientCommandKeyValues);
-	if (CMultiplayRules_OnClientCommandKeyValues == INVALID_HANDLE)
-	{
-		CloseHandle(hConfig);
-		SetFailState("Failed to create hook from CMultiplayRules::ClientCommandKeyValues offset from gamedata!");
-	}
-	
-	DHookAddParam(CMultiplayRules_OnClientCommandKeyValues, HookParamType_Edict);
-	DHookAddParam(CMultiplayRules_OnClientCommandKeyValues, HookParamType_Int);
-	
-	// END OF TEMP FIX
-	
-	CloseHandle(hConfig);
-}
-
-SetupWeapons()
-{
-	// Scout
-	g_hSDKWeaponScattergun = PrepareItemHandle("tf_weapon_scattergun", 13, 0, 0, "");
-	g_hSDKWeaponPistolScout = PrepareItemHandle("tf_weapon_pistol", 23, 0, 0, "");
-	g_hSDKWeaponBat = PrepareItemHandle("tf_weapon_bat", 0, 0, 0, "");
-	
-	// Sniper
-	g_hSDKWeaponSniperRifle = PrepareItemHandle("tf_weapon_sniperrifle", 14, 0, 0, "");
-	g_hSDKWeaponPistolScout = PrepareItemHandle("tf_weapon_smg", 16, 0, 0, "");
-	g_hSDKWeaponKukri = PrepareItemHandle("tf_weapon_club", 3, 0, 0, "");
-	
-	// Soldier
-	g_hSDKWeaponRocketLauncher = PrepareItemHandle("tf_weapon_rocketlauncher", 18, 0, 0, "");
-	g_hSDKWeaponShotgunSoldier = PrepareItemHandle("tf_weapon_shotgun", 10, 0, 0, "");
-	g_hSDKWeaponShovel = PrepareItemHandle("tf_weapon_shovel", 6, 0, 0, "");
-	
-	// Demoman
-	g_hSDKWeaponGrenadeLauncher = PrepareItemHandle("tf_weapon_grenadelauncher", 19, 0, 0, "");
-	g_hSDKWeaponStickyLauncher = PrepareItemHandle("tf_weapon_pipebomblauncher", 20, 0, 0, "");
-	g_hSDKWeaponBottle = PrepareItemHandle("tf_weapon_bottle", 1, 0, 0, "");
-	
-	// Heavy
-	g_hSDKWeaponMinigun = PrepareItemHandle("tf_weapon_minigun", 15, 0, 0, "");
-	g_hSDKWeaponShotgunHeavy = PrepareItemHandle("tf_weapon_shotgun", 11, 0, 0, "");
-	g_hSDKWeaponFists = PrepareItemHandle("tf_weapon_fists", 5, 0, 0, "");
-	
-	// Medic
-	g_hSDKWeaponSyringeGun = PrepareItemHandle("tf_weapon_syringegun_medic", 17, 0, 0, "");
-	g_hSDKWeaponMedigun = PrepareItemHandle("tf_weapon_medigun", 29, 0, 0, "");
-	g_hSDKWeaponBonesaw = PrepareItemHandle("tf_weapon_bonesaw", 8, 0, 0, "");
-	
-	// Pyro
-	g_hSDKWeaponFlamethrower = PrepareItemHandle("tf_weapon_flamethrower", 21, 0, 0, "254 ; 4.0");
-	g_hSDKWeaponShotgunPyro = PrepareItemHandle("tf_weapon_shotgun", 12, 0, 0, "");
-	g_hSDKWeaponFireaxe = PrepareItemHandle("tf_weapon_fireaxe", 2, 0, 0, "");
-	
-	// Spy
-	g_hSDKWeaponRevolver = PrepareItemHandle("tf_weapon_revolver", 24, 0, 0, "");
-	g_hSDKWeaponKnife = PrepareItemHandle("tf_weapon_knife", 4, 0, 0, "");
-	g_hSDKWeaponInvis = PrepareItemHandle("tf_weapon_invis", 297, 0, 0, "");
-	
-	// Engineer
-	g_hSDKWeaponShotgunPrimary = PrepareItemHandle("tf_weapon_shotgun", 9, 0, 0, "");
-	g_hSDKWeaponPistol = PrepareItemHandle("tf_weapon_pistol", 22, 0, 0, "");
-	g_hSDKWeaponWrench = PrepareItemHandle("tf_weapon_wrench", 7, 0, 0, "");
-}
-
-CheckGamemodeEnable()
-{
-	if (!GetConVarBool(g_cvEnabled))
-	{
-		g_bEnabled = false;
-	}
-	else
-	{
-		if (GetConVarBool(g_cvSlenderMapsOnly))
-		{
-			decl String:sMap[256];
-			GetCurrentMap(sMap, sizeof(sMap));
-			
-			if (!StrContains(sMap, "slender_", false) || !StrContains(sMap, "sf2_", false))
-			{
-				g_bEnabled = true;
-			}
-			else
-			{
-				LogMessage("Current map is not a Slender Fortress map. Plugin disabled!");
-				g_bEnabled = false;
-			}
-		}
-		else
-		{
-			g_bEnabled = true;
-		}
-	}
-}
-
 public OnMapStart()
 {
 	g_iSlenderGlobalID = -1;
@@ -1240,10 +1192,40 @@ public OnMapStart()
 
 public OnConfigsExecuted()
 {
-	CheckGamemodeEnable();
+	if (!GetConVarBool(g_cvEnabled))
+	{
+		StopPlugin();
+	}
+	else
+	{
+		if (GetConVarBool(g_cvSlenderMapsOnly))
+		{
+			decl String:sMap[256];
+			GetCurrentMap(sMap, sizeof(sMap));
+			
+			if (!StrContains(sMap, "slender_", false) || !StrContains(sMap, "sf2_", false))
+			{
+				StartPlugin();
+			}
+			else
+			{
+				LogMessage("Current map is not a Slender Fortress map. Plugin disabled!");
+				StopPlugin();
+			}
+		}
+		else
+		{
+			StartPlugin();
+		}
+	}
+}
 
-	if (!g_bEnabled) return;
+static StartPlugin()
+{
+	if (g_bEnabled) return;
 	
+	g_bEnabled = true;
+
 	// Handle ConVars.
 	new Handle:hCvar = FindConVar("mp_friendlyfire");
 	if (hCvar != INVALID_HANDLE) SetConVarBool(hCvar, true);
@@ -1283,13 +1265,6 @@ public OnConfigsExecuted()
 	SpecialRoundReset();
 	InitializeNewGame();
 	
-	// START OF TEMP FIX
-	if (CMultiplayRules_OnClientCommandKeyValues != INVALID_HANDLE)
-	{
-		DHookGamerules(CMultiplayRules_OnClientCommandKeyValues, false);
-	}
-	// END OF TEMP FIX
-	
 	// Late load compensation.
 	for (new i = 1; i <= MaxClients; i++)
 	{
@@ -1298,43 +1273,7 @@ public OnConfigsExecuted()
 	}
 }
 
-// START OF TEMP FIX
-public MRESReturn:Hook_CGameRulesClientCommandKeyValues(Handle:hParams)
-{
-	new iEdict = DHookGetParam(hParams, 1);
-	new Address:pKeyValues = Address:DHookGetParam(hParams, 2);
-	if (pKeyValues >= Address_MinimumValid)
-	{
-		new String:sName[64];
-		KeyValuesGetName(pKeyValues, sName, sizeof(sName));
-		
-		if (StrEqual(sName, "+use_action_slot_item_server", false))
-		{
-			if (Hook_CommandActionSlotItemOn(iEdict, "+use_action_slot_item_server", 0) == Plugin_Handled)
-			{
-				return MRES_Supercede;
-			}
-		}
-		else if (StrEqual(sName, "-use_action_slot_item_server", false))
-		{
-			if (Hook_CommandActionSlotItemOff(iEdict, "-use_action_slot_item_server", 0) == Plugin_Handled)
-			{
-				return MRES_Supercede;
-			}
-		}
-	}
-	
-	return MRES_Ignored;
-}
-
-static KeyValuesGetName(Address:pKeyValues, String:buffer[], bufferlen)
-{
-	if (KeyValues_GetName == INVALID_HANDLE) return;
-	SDKCall(KeyValues_GetName, pKeyValues, buffer, bufferlen);
-}
-// END OF TEMP FIX
-
-PrecacheStuff()
+static PrecacheStuff()
 {
 	// Initialize particles.
 	g_iParticleCriticalHit = PrecacheParticleSystem(CRIT_PARTICLENAME);
@@ -1400,10 +1339,13 @@ PrecacheStuff()
 	AddFileToDownloadsTable("materials/models/Jason278/Slender/Sheets/Sheet_8.vmt");
 }
 
-public OnMapEnd()
+static StopPlugin()
 {
 	if (!g_bEnabled) return;
 	
+	g_bEnabled = false;
+	
+	// Reset CVars.
 	new Handle:hCvar = FindConVar("mp_friendlyfire");
 	if (hCvar != INVALID_HANDLE) SetConVarBool(hCvar, false);
 	
@@ -1412,16 +1354,16 @@ public OnMapEnd()
 	
 	hCvar = FindConVar("mat_supportflashlight");
 	if (hCvar != INVALID_HANDLE) SetConVarBool(hCvar, false);
-}
-
-public OnPluginEnd()
-{
-	if (!g_bEnabled) return;
 	
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		ClientDeactivateFlashlight(i);
 	}
+}
+
+public OnMapEnd()
+{
+	StopPlugin();
 }
 
 public OnGameFrame()
@@ -2247,6 +2189,30 @@ public Action:Command_ToggleFlashlight(client, args)
 	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return Plugin_Handled;
 	
 	ClientToggleFlashlight(client);
+	
+	return Plugin_Handled;
+}
+
+public Action:Command_SprintOn(client, args)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if (IsPlayerAlive(client) && !g_bPlayerEliminated[client])
+	{
+		ClientHandleSprint(client, true);
+	}
+	
+	return Plugin_Handled;
+}
+
+public Action:Command_SprintOff(client, args)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+	
+	if (IsPlayerAlive(client) && !g_bPlayerEliminated[client])
+	{
+		ClientHandleSprint(client, false);
+	}
 	
 	return Plugin_Handled;
 }
@@ -4053,12 +4019,10 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
 				ClientOnButtonPress(client, button);
 			}
 		}
-		/*
 		else if ((g_iPlayerLastButtons[client] & button))
 		{
 			ClientOnButtonRelease(client, button);
 		}
-		*/
 	}
 	
 	g_iPlayerLastButtons[client] = buttons;
@@ -7963,7 +7927,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 							flDelay = GetClientLatency(client, NetFlow_Outgoing);
 						}
 						
-						CreateTimer(flDelay * 2.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+						CreateTimer(flDelay * 4.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 					}
 				}
 			}
@@ -7979,19 +7943,6 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			
 			CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 			CreateTimer(0.12, Timer_TeleportPlayerToPvP, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
-			
-			/*
-			// Remove any conditions that linger due to mediguns.
-			TF2_RemoveCondition(client, TFCond_MegaHeal); // Quick-Fix
-			TF2_RemoveCondition(client, TFCond_UberBulletResist); // Vaccinator
-			TF2_RemoveCondition(client, TFCond_UberBlastResist);
-			TF2_RemoveCondition(client, TFCond_UberFireResist);
-			TF2_RemoveCondition(client, TFCond_SmallBulletResist);
-			TF2_RemoveCondition(client, TFCond_SmallBlastResist);
-			TF2_RemoveCondition(client, TFCond_SmallFireResist);
-			
-			SetEntProp(client, Prop_Send, "m_CollisionGroup", 3) // COLLISION_GROUP_INTERACTIVE_DEBRIS
-			*/
 		}
 	}
 	

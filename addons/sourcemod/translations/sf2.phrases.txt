@@ -172,7 +172,7 @@
 	
 	"SF2 Help Controls Description"
 	{
-		"en"	"Primary attack - Grab page\nSecondary attack - Toggle flashlight\nReload - Blink\nSprint - Hold action slot item key"
+		"en"	"Primary attack - Grab page\nSecondary attack - Toggle flashlight\nReload - Blink\nHOLD Special attack - Sprint"
 	}
 	
 	"SF2 Help Sprinting And Stamina Menu Title"
@@ -182,7 +182,7 @@
 	
 	"SF2 Help Sprinting And Stamina Description"
 	{
-		"en"	"You have the ability to sprint, which can be\ndone via holding down your action item slot key.\nHowever, sprinting does not last forever,\nso it's best to conserve your stamina for\nemergencies only. Jumping also decreases your stamina.\n \nIn addition, sprinting makes more sound\nthan walking or crouching, so sprinting is not\nan option in stealth."
+		"en"	"You have the ability to sprint, which can be\ndone via holding down your special attack key\n(default bind is L, you can change this in Options).\nHowever, sprinting does not last forever,\nso it's best to conserve your stamina for\nemergencies only. Jumping also decreases your stamina.\n \nIn addition, sprinting makes more sound\nthan walking or crouching, so sprinting is not\nan option in stealth."
 	}
 	
 	"SF2 Help Class Info Menu Title"
@@ -396,7 +396,7 @@
 	
 	"SF2 Hint Sprint"
 	{
-		"en"	"Sprint - HOLD Action slot item key"
+		"en"	"Sprint - HOLD Special Attack"
 	}
 	
 	"SF2 Hint Flashlight"
