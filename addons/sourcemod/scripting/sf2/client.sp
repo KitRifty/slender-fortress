@@ -413,36 +413,41 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 	
 	if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
 	{
-		if (StrEqual(sWeaponName, "tf_weapon_sniperrifle"))
+		if (!GetConVarBool(g_cvPlayerFakeLagCompensation))
 		{
-			// TRACE!
-			decl Float:flStartPos[3], Float:flEyeAng[3];
-			GetClientEyePosition(client, flStartPos);
-			GetClientEyeAngles(client, flEyeAng);
-			
-			new Handle:hTrace = TR_TraceRayFilterEx(flStartPos, flEyeAng, MASK_SHOT, RayType_Infinite, TraceRayDontHitEntity, client);
-			new iHitEntity = TR_GetEntityIndex(hTrace);
-			new iHitGroup = TR_GetHitGroup(hTrace);
-			CloseHandle(hTrace);
-			
-			if (IsValidClient(iHitEntity))
+			// Fake lag compensation isn't enabled; we'll deal the damage ourselves.
+			if (StrEqual(sWeaponName, "tf_weapon_sniperrifle"))
 			{
-				if (GetClientTeam(iHitEntity) == GetClientTeam(client))
+				// TRACE!
+				decl Float:flStartPos[3], Float:flEyeAng[3];
+				GetClientEyePosition(client, flStartPos);
+				GetClientEyeAngles(client, flEyeAng);
+				
+				new Handle:hTrace = TR_TraceRayFilterEx(flStartPos, flEyeAng, MASK_SHOT, RayType_Infinite, TraceRayDontHitEntity, client);
+				new iHitEntity = TR_GetEntityIndex(hTrace);
+				new iHitGroup = TR_GetHitGroup(hTrace);
+				CloseHandle(hTrace);
+				
+				if (IsValidClient(iHitEntity))
 				{
-					if (g_bRoundWarmup || IsClientInPvP(iHitEntity))
+					if (GetClientTeam(iHitEntity) == GetClientTeam(client))
 					{
-						new Float:flDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
-						if (flDamage < 50.0) flDamage = 50.0;
-						new iDamageType = DMG_BULLET;
-						
-						if (ClientHasCrits(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
+						if (g_bRoundWarmup || IsClientInPvP(iHitEntity))
 						{
-							result = true;
-							iDamageType |= DMG_ACID;
+							new Float:flDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
+							if (flDamage < 50.0) flDamage = 50.0;
+							new iDamageType = DMG_BULLET;
+							
+							if (ClientHasCrits(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
+							{
+								// Set damagetype to crit, and also play the crit sound for the weapon.
+								result = true;
+								iDamageType |= DMG_ACID;
+							}
+							
+							SDKHooks_TakeDamage(iHitEntity, client, client, flDamage, iDamageType);
+							return Plugin_Changed;
 						}
-						
-						SDKHooks_TakeDamage(iHitEntity, client, client, flDamage, iDamageType);
-						return Plugin_Changed;
 					}
 				}
 			}
@@ -472,8 +477,8 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 						GetEdictClassname(weapon, sWeaponClass, sizeof(sWeaponClass));
 						
 						// Backstab check!
-						if (StrEqual(sWeaponClass, "tf_weapon_knife", false) ||
-						(TF2_GetPlayerClass(attacker) == TFClass_Spy && StrEqual(sWeaponClass, "saxxy", false)))
+						if ((StrEqual(sWeaponClass, "tf_weapon_knife", false) || (TF2_GetPlayerClass(attacker) == TFClass_Spy && StrEqual(sWeaponClass, "saxxy", false))) &&
+							(damagecustom != TF_CUSTOM_TAUNT_FENCING))
 						{
 							decl Float:flMyPos[3], Float:flHisPos[3], Float:flMyDirection[3];
 							GetClientAbsOrigin(victim, flMyPos);
@@ -590,9 +595,12 @@ public Action:Hook_TEFireBullets(const String:te_name[], const Players[], numCli
 	new client = TE_ReadNum("m_iPlayer") + 1;
 	if (IsValidClient(client))
 	{
-		if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
+		if (GetConVarBool(g_cvPlayerFakeLagCompensation))
 		{
-			ClientEnableFakeLagCompensation(client);
+			if ((g_bRoundWarmup || IsClientInPvP(client)))
+			{
+				ClientEnableFakeLagCompensation(client);
+			}
 		}
 	}
 	
@@ -762,8 +770,6 @@ stock Float:ClientGetDistanceFromEntity(client, entity)
 
 ClientEnableFakeLagCompensation(client)
 {
-	if (!GetConVarBool(g_cvPlayerFakeLagCompensation)) return;
-	
 	if (!IsValidClient(client) || !IsPlayerAlive(client) || g_bPlayerLagCompensation[client]) return;
 	
 	// Can only enable lag compensation if we're in either of these two teams only.
@@ -1474,6 +1480,7 @@ ClientProcessStaticShake(client)
 		if (flAngVelocityScalar < 1.0) flAngVelocityScalar = 1.0;
 		ScaleVector(flNewPunchAng, flAngVelocityScalar);
 		
+		/*
 		if (!IsFakeClient(client))
 		{
 			// Latency compensation.
@@ -1482,6 +1489,7 @@ ClientProcessStaticShake(client)
 			
 			for (new i = 0; i < 2; i++) flNewPunchAng[i] += (flNewPunchAng[i] * flLatencyCalcDiff);
 		}
+		*/
 		
 		for (new i = 0; i < 2; i++) flNewPunchAngVel[i] = 0.0;
 		
@@ -2816,6 +2824,33 @@ ClientResetJumpScare(client)
 #endif
 }
 
+ /**
+  *	Handles sprinting upon player input.
+  */
+ClientHandleSprint(client, bool:bSprint)
+{
+	if (!IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] || g_bPlayerProxy[client] || g_bPlayerGhostMode[client]) return;
+	
+	if (bSprint)
+	{
+		if (g_iPlayerSprintPoints[client] > 0)
+		{
+			ClientStartSprint(client);
+		}
+		else
+		{
+			EmitSoundToClient(client, FLASHLIGHT_NOSOUND, _, SNDCHAN_ITEM, SNDLEVEL_NONE);
+		}
+	}
+	else
+	{
+		if (g_bPlayerSprint[client])
+		{
+			ClientStopSprint(client);
+		}
+	}
+}
+
 ClientOnButtonPress(client, button)
 {
 	switch (button)
@@ -2835,6 +2870,17 @@ ClientOnButtonPress(client, button)
 						ClientToggleFlashlight(client);
 					}
 				}
+			}
+		}
+		case IN_ATTACK3:
+		{
+			if (g_bPlayerGhostMode[client])
+			{
+				ClientGhostModeNextTarget(client);
+			}
+			else
+			{
+				ClientHandleSprint(client, true);
 			}
 		}
 		case IN_RELOAD:
@@ -2857,28 +2903,43 @@ ClientOnButtonPress(client, button)
 		{
 			if (IsPlayerAlive(client))
 			{
-				if (!g_bPlayerEliminated[client])
+				if (!bool:GetEntProp(client, Prop_Send, "m_bDucked") && 
+					(GetEntityFlags(client) & FL_ONGROUND) &&
+					GetEntProp(client, Prop_Send, "m_nWaterLevel") < 2)
 				{
-					if (!g_bRoundEnded && 
-					!g_bRoundWarmup &&
-					!g_bPlayerEscaped[client])
-					{
-						if (!bool:GetEntProp(client, Prop_Send, "m_bDucked") && 
-							(GetEntityFlags(client) & FL_ONGROUND) &&
-							GetEntProp(client, Prop_Send, "m_nWaterLevel") < 2)
-						{
-							g_iPlayerSprintPoints[client] -= 7;
-							if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
-							
-							if (!g_bPlayerSprint[client])
-							{
-								if (g_hPlayerSprintTimer[client] == INVALID_HANDLE)
-								{
-									ClientSprintTimer(client, true);
-								}
-							}
-						}
-					}
+					ClientOnJump(client);
+				}
+			}
+		}
+	}
+}
+
+ClientOnButtonRelease(client, button)
+{
+	switch (button)
+	{
+		case IN_ATTACK3:
+		{
+			ClientHandleSprint(client, false);
+		}
+	}
+}
+
+ClientOnJump(client)
+{
+	if (!g_bPlayerEliminated[client])
+	{
+		if (!g_bRoundEnded && !g_bRoundWarmup && !g_bPlayerEscaped[client])
+		{
+			g_iPlayerSprintPoints[client] -= 7;
+			if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
+			
+			if (!g_bPlayerSprint[client])
+			{
+				if (g_hPlayerSprintTimer[client] == INVALID_HANDLE)
+				{
+					// If the player hasn't sprinted recently, force us to regenerate the stamina.
+					ClientSprintTimer(client, true);
 				}
 			}
 		}
@@ -3085,42 +3146,8 @@ ClientEnableGhostMode(client)
 	
 	g_bPlayerGhostMode[client] = true;
 	
-	/*
-	// Set solid flags.
-	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
-	if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
-	if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
-	
-	SetEntProp(client, Prop_Send, "m_usSolidFlags", iFlags);
-	SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
-	SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", -1);
-	SetEntPropEnt(client, Prop_Send, "m_hLastWeapon", -1);
-	*/
-	
 	TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
 	SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
-	
-	/*
-	if (strlen(GHOST_MODEL) > 0)
-	{
-		SetVariantString(GHOST_MODEL);
-		AcceptEntityInput(client, "SetCustomModel");
-		SetEntProp(client, Prop_Send, "m_bUseClassAnimations", true);
-	}
-	
-	SetEntityRenderMode(client, RENDER_TRANSCOLOR);
-	SetEntityRenderColor(client, 155, 255, 155, 125);
-	
-	// Remove hats.
-	new ent = -1;
-	while ((ent = FindEntityByClassname(ent, "tf_wearable")) != -1)
-	{
-		if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
-		{
-			AcceptEntityInput(ent, "Kill");
-		}
-	}
-	*/
 	
 	// Set first observer target.
 	ClientGhostModeNextTarget(client);
@@ -3137,34 +3164,6 @@ ClientDisableGhostMode(client)
 	
 	TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
 	SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
-	
-	/*
-	// Set solid flags.
-	new iFlags = GetEntProp(client, Prop_Send, "m_usSolidFlags");
-	if (iFlags & FSOLID_NOT_SOLID) iFlags &= ~FSOLID_NOT_SOLID;
-	if (iFlags & FSOLID_TRIGGER) iFlags &= ~FSOLID_TRIGGER;
-	
-	SetEntProp(client, Prop_Send, "m_usSolidFlags", iFlags);
-	SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
-	
-	SetVariantString("");
-	AcceptEntityInput(client, "SetCustomModel");
-	
-	SetEntityRenderMode(client, RENDER_NORMAL);
-	SetEntityRenderColor(client, 255, 255, 255, 255);
-	
-	// Set viewmodel visible.
-	new ent = -1;
-	while ((ent = FindEntityByClassname(ent, "tf_viewmodel")) != -1)
-	{
-		if (GetEntPropEnt(ent, Prop_Send, "m_hOwner") == client)
-		{
-			iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
-			iFlags &= ~32;
-			SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
-		}
-	}
-	*/
 }
 
 ClientGhostModeNextTarget(client)
@@ -5041,6 +5040,7 @@ stock ClientViewPunch(client, const Float:angleOffset[3])
 	for (new i = 0; i < 3; i++) flOffset[i] = angleOffset[i];
 	ScaleVector(flOffset, 20.0);
 	
+	/*
 	if (!IsFakeClient(client))
 	{
 		// Latency compensation.
@@ -5049,6 +5049,7 @@ stock ClientViewPunch(client, const Float:angleOffset[3])
 		
 		for (new i = 0; i < 3; i++) flOffset[i] += (flOffset[i] * flLatencyCalcDiff);
 	}
+	*/
 	
 	decl Float:flAngleVel[3];
 	GetEntDataVector(client, g_offsPlayerPunchAngleVel, flAngleVel);
@@ -5302,49 +5303,16 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 				bRestrictWeapons = false;
 			}
 			
-			/*
 			if (g_bPlayerGhostMode[client]) 
 			{
 				bRemoveWeapons = true;
-				
-				// Set viewmodel invisible.
-				new ent = -1;
-				while ((ent = FindEntityByClassname(ent, "tf_viewmodel")) != -1)
-				{
-					if (GetEntPropEnt(ent, Prop_Send, "m_hOwner") == client)
-					{
-						new iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
-						iFlags |= 32;
-						SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
-					}
-				}
 			}
-			
-			if (bRemoveActionSlotItem)
-			{
-				new ent = -1;
-				while ((ent = FindEntityByClassname(ent, "tf_wearable")) != -1)
-				{
-					if (GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity") == client)
-					{
-						new iItemDef = GetEntProp(ent, Prop_Send, "m_iItemDefinitionIndex");
-						switch (iItemDef)
-						{
-							case 167, 438, 463, 477:
-							{
-								AcceptEntityInput(ent, "Kill");
-							}
-						}
-					}
-				}
-			}
-			*/
 			
 			if (bRemoveWeapons)
 			{
 				for (new i = 0; i <= 5; i++)
 				{
-					if (i == TFWeaponSlot_Melee) continue;
+					if (i == TFWeaponSlot_Melee && !g_bPlayerGhostMode[client]) continue;
 					TF2_RemoveWeaponSlotAndWearables(client, i);
 				}
 				
