@@ -18,7 +18,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.2"
+#define PLUGIN_VERSION "0.2.4"
 
 public Plugin:myinfo = 
 {
@@ -2333,65 +2333,14 @@ public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 	return Plugin_Continue;
 }
 
-public Action:Hook_CommandActionSlotItemOn(client, const String:command[], argc)
+public Action:Hook_CommandVoiceMenu(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	
 	if (g_bPlayerGhostMode[client])
 	{
 		ClientGhostModeNextTarget(client);
 		return Plugin_Handled;
 	}
-	else if (g_bPlayerProxy[client])
-	{
-	}
-	else if (IsPlayerAlive(client))
-	{
-		if (!g_bPlayerEliminated[client])
-		{
-			if (!g_bPlayerSprint[client] && !g_bPlayerEscaped[client])
-			{
-				if (g_iPlayerSprintPoints[client] > 0)
-				{
-					ClientStartSprint(client);
-				}
-				else
-				{
-					EmitSoundToClient(client, FLASHLIGHT_NOSOUND, _, SNDCHAN_ITEM, SNDLEVEL_NONE);
-				}
-				
-				return Plugin_Handled;
-			}
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Hook_CommandActionSlotItemOff(client, const String:command[], argc)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (IsPlayerAlive(client))
-	{
-		if (!g_bPlayerEliminated[client])
-		{
-			if (g_bPlayerSprint[client])
-			{
-				ClientStopSprint(client);
-			}
-			
-			return Plugin_Handled;
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Hook_CommandVoiceMenu(client, const String:command[], argc)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
 	
 	if (g_bPlayerProxy[client])
 	{
@@ -4375,6 +4324,8 @@ public Action:Timer_ClientAverageUpdate(Handle:timer)
 stock bool:IsClientParticipating(client)
 {
 	if (!IsValidClient(client)) return false;
+	
+	if (bool:GetEntProp(client, Prop_Send, "m_bIsCoaching")) return false;
 	
 	new iTeam = GetClientTeam(client);
 	
@@ -7811,7 +7762,12 @@ public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 			g_bPlayerEliminated[client] = true;
 			g_bPlayerEscaped[client] = false;
 			ClientDisableGhostMode(client);
-			TF2_RespawnPlayer(client);
+			
+			if (!bool:GetEntProp(client, Prop_Send, "m_bIsCoaching"))
+			{
+				// This is to prevent player spawn spam when someone is coaching. Who coaches in SF2, anyway?
+				TF2_RespawnPlayer(client);
+			}
 			
 			// Special round.
 			if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
@@ -7867,15 +7823,31 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
 	if (client > 0)
 	{
-		InitializeClient(client);
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 0) 
+		{
+			new bool:bIsCoaching = bool:GetEntProp(client, Prop_Send, "m_bIsCoaching");
+			new iTeam = GetClientTeam(client);
+			DebugMessage("client->m_bIsCoaching = %d", bIsCoaching);
+			DebugMessage("client->GetClientTeam() = %d", iTeam);
+			DebugMessage("client->IsPlayerAlive() = %d", IsPlayerAlive(client));
+			DebugMessage("client->IsClientParticipating() = %d", IsClientParticipating(client));
+		}
+#endif
 		
 		if (!IsClientParticipating(client))
 		{
 			ClientDisableGhostMode(client);
 		}
 		
-		if (IsPlayerAlive(client))
+		if (IsPlayerAlive(client) && IsClientParticipating(client))
 		{
+#if defined DEBUG
+			DebugMessage("client->InitializePlayerSpawn()");
+#endif
+			
+			InitializeClient(client);
+		
 			SetVariantString("");
 			AcceptEntityInput(client, "SetCustomModel");
 			

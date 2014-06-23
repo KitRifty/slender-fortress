@@ -97,7 +97,7 @@
 	
 	"SF2 Ghost Mode Enabled"
 	{
-		"en"	"You are now in Ghost Mode. Use your Special Attack button to teleport to a RED player."
+		"en"	"You are now in Ghost Mode. Use a voice command to teleport to a RED player."
 	}
 	
 	"SF2 Ghost Mode Disabled"

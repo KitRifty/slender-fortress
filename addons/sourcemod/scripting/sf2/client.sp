@@ -2874,14 +2874,7 @@ ClientOnButtonPress(client, button)
 		}
 		case IN_ATTACK3:
 		{
-			if (g_bPlayerGhostMode[client])
-			{
-				ClientGhostModeNextTarget(client);
-			}
-			else
-			{
-				ClientHandleSprint(client, true);
-			}
+			ClientHandleSprint(client, true);
 		}
 		case IN_RELOAD:
 		{
