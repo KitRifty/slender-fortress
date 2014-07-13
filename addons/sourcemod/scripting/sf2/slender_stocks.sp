@@ -40,7 +40,7 @@ bool:SlenderCanRemove(iBossIndex)
 					if (!IsClientInGame(i) || 
 					!IsPlayerAlive(i) || 
 					g_bPlayerEliminated[i] || 
-					g_bPlayerGhostMode[i] || 
+					IsClientInGhostMode(i) || 
 					g_bPlayerDeathCam[i]) continue;
 					
 					if (!IsPointVisibleToPlayer(i, flSlenderPos, false, false)) continue;
@@ -976,7 +976,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			
 			for (new i2 = 1; i2 <= MaxClients; i2++)
 			{
-				if (!IsClientInGame(i2) || !IsPlayerAlive(i2) || g_bPlayerEliminated[i2] || g_bPlayerGhostMode[i2]) continue;
+				if (!IsClientInGame(i2) || !IsPlayerAlive(i2) || g_bPlayerEliminated[i2] || IsClientInGhostMode(i2)) continue;
 				GetClientAbsOrigin(i2, flBuffer);
 				if (GetVectorDistance(flBuffer, tempPos) < flMinRange)
 				{

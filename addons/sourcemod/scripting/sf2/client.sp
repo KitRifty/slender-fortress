@@ -23,25 +23,6 @@
 #define SF2_PLAYER_BREATH_COOLDOWN_MIN 0.8
 #define SF2_PLAYER_BREATH_COOLDOWN_MAX 2.0
 
-new String:g_sPlayerProjectileClasses[][] = 
-{
-	"tf_projectile_rocket", 
-	"tf_projectile_sentryrocket", 
-	"tf_projectile_arrow", 
-	"tf_projectile_stun_ball",
-	"tf_projectile_ball_ornament",
-	"tf_projectile_cleaver",
-	"tf_projectile_energy_ball",
-	"tf_projectile_energy_ring",
-	"tf_projectile_flare",
-	"tf_projectile_healing_bolt",
-	"tf_projectile_jar",
-	"tf_projectile_jar_milk",
-	"tf_projectile_pipe",
-	"tf_projectile_pipe_remote",
-	"tf_projectile_syringe"
-};
-
 new String:g_strPlayerBreathSounds[][] = 
 {
 	"slender/fastbreath1.wav"
@@ -81,7 +62,7 @@ public Hook_ClientPreThink(client)
 	ClientProcessFlashlight(client);
 	ClientProcessGlow(client);
 	
-	if (g_bPlayerGhostMode[client])
+	if (IsClientInGhostMode(client))
 	{
 		SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime() + 2.0);
 		SetEntPropFloat(client, Prop_Send, "m_flMaxspeed", 520.0);
@@ -313,42 +294,6 @@ public Hook_ClientPreThink(client)
 			UTIL_ScreenShake(client, flAmplitude, 0.5, flFrequency);
 		}
 	}
-	
-	/*
-	// Moved this section of code to OnGameFrame().
-	if (IsClientInPvP(client))
-	{
-		for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
-		{
-			new ent = -1;
-			while ((ent = FindEntityByClassname(ent, g_sPlayerProjectileClasses[i])) != -1)
-			{
-				new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
-				new bool:bMine = false;
-				
-				new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
-				if (iOwnerEntity == client)
-				{
-					bMine = true;
-				}
-				else if (iThrowerOffset != -1)
-				{
-					iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
-					if (iOwnerEntity == client)
-					{
-						bMine = true;
-					}
-				}
-				
-				if (bMine)
-				{
-					SetEntProp(ent, Prop_Data, "m_iInitialTeamNum", 0);
-					SetEntProp(ent, Prop_Send, "m_iTeamNum", 0);
-				}
-			}
-		}
-	}
-	*/
 }
 
 public Action:Hook_ClientSetTransmit(client, other)
@@ -357,16 +302,18 @@ public Action:Hook_ClientSetTransmit(client, other)
 	
 	if (other != client)
 	{
-		if (g_bPlayerGhostMode[client] && !g_bPlayerGhostMode[other]) return Plugin_Handled;
+		if (IsClientInGhostMode(client) && !IsClientInGhostMode(other)) return Plugin_Handled;
 		
 		if (!g_bRoundEnded)
 		{
+			// SPECIAL ROUND: Singleplayer
 			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
 			{
 				if (!g_bPlayerEliminated[client] && !g_bPlayerEliminated[other] && !g_bPlayerEscaped[other]) return Plugin_Handled; 
 			}
 			
-			if (g_bPlayerInPvP[client] && g_bPlayerInPvP[other]) 
+			// pvp
+			if (IsClientInPvP(client) && IsClientInPvP(other)) 
 			{
 				if (TF2_IsPlayerInCondition(client, TFCond_Cloaked) &&
 					!TF2_IsPlayerInCondition(client, TFCond_CloakFlicker) &&
@@ -382,29 +329,6 @@ public Action:Hook_ClientSetTransmit(client, other)
 	}
 	
 	return Plugin_Continue;
-}
-
-public Hook_ClientProjectileSpawnPost(ent)
-{
-	decl String:sClass[64];
-	GetEntityClassname(ent, sClass, sizeof(sClass));
-	
-	new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
-	new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
-	
-	if (iOwnerEntity == -1 && iThrowerOffset != -1)
-	{
-		iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
-	}
-	
-	if (IsValidClient(iOwnerEntity))
-	{
-		if (IsClientInPvP(iOwnerEntity))
-		{
-			SetEntProp(ent, Prop_Data, "m_iInitialTeamNum", 0);
-			SetEntProp(ent, Prop_Send, "m_iTeamNum", 0);
-		}
-	}
 }
 
 public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bool:result)
@@ -504,6 +428,7 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 					}
 				}
 			}
+			/*
 			else if (g_bPlayerProxy[victim] || g_bPlayerProxy[attacker])
 			{
 				if (g_bPlayerEliminated[attacker] == g_bPlayerEliminated[victim])
@@ -563,6 +488,7 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 					return Plugin_Changed;
 				}
 			}
+			*/
 			else
 			{
 				damage = 0.0;
@@ -578,7 +504,7 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 			}
 		}
 		
-		if (g_bPlayerGhostMode[victim])
+		if (IsClientInGhostMode(victim))
 		{
 			damage = 0.0;
 			return Plugin_Changed;
@@ -640,7 +566,6 @@ InitializeClient(client)
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeClient(%d)", client);
 #endif
 
-	g_iPlayerGhostModeTarget[client] = INVALID_ENT_REFERENCE;
 	g_iPlayerStaticMaster[client] = -1;
 	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
 	
@@ -661,7 +586,7 @@ InitializeClient(client)
 	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
 #endif
 	
-	
+	PvP_SetPlayerPvPState(client, false, false, false);
 	
 	g_iPlayerPageCount[client] = 0;
 	
@@ -680,7 +605,6 @@ InitializeClient(client)
 	Client20DollarsMusicReset(client);
 	ClientMusicReset(client);
 	ClientResetGlow(client);
-	ClientResetPvP(client);
 	ClientResetProxy(client);
 	ClientResetProxyGlow(client);
 	ClientResetSprint(client);
@@ -862,38 +786,6 @@ stock bool:ClientHasCrits(client)
 	}
 	
 	return false;
-}
-
-FakeHook_TFFlameStartTouchPost(flame, other)
-{
-	if (IsValidClient(other))
-	{
-		if ((g_bRoundWarmup || IsClientInPvP(other)) && !g_bRoundEnded)
-		{
-			new iFlamethrower = GetEntPropEnt(flame, Prop_Data, "m_hOwnerEntity");
-			if (IsValidEdict(iFlamethrower))
-			{
-				new iOwnerEntity = GetEntPropEnt(iFlamethrower, Prop_Data, "m_hOwnerEntity");
-				if (iOwnerEntity != other && IsValidClient(iOwnerEntity))
-				{
-					if (g_bRoundWarmup || IsClientInPvP(iOwnerEntity))
-					{
-						if (GetClientTeam(other) == GetClientTeam(iOwnerEntity))
-						{
-							TF2_IgnitePlayer(other, iOwnerEntity);
-							SDKHooks_TakeDamage(other, iOwnerEntity, iOwnerEntity, 7.0, ClientHasCrits(iOwnerEntity) ? (DMG_BURN | DMG_PREVENT_PHYSICS_FORCE | DMG_ACID) : DMG_BURN | DMG_PREVENT_PHYSICS_FORCE); 
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-public bool:Hook_ClientPvPShouldCollide(ent, collisiongroup, contentsmask, bool:originalResult)
-{
-	if (!g_bEnabled) return originalResult;
-	return true;
 }
 
 //	==========================================================
@@ -1139,7 +1031,7 @@ ClientDeactivateFlashlight(client)
 
 ClientToggleFlashlight(client)
 {
-	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
+	if (!IsValidClient(client) || !IsPlayerAlive(client)) return;
 	
 	if (g_bPlayerFlashlight[client]) 
 	{
@@ -1171,7 +1063,7 @@ ClientActivateUltravision(client)
 {
 	ClientDeactivateUltravision(client);
 	
-	if (!IsClientInGame(client) || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) return;
+	if (!IsClientInGame(client) || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) return;
 	
 	new ent = CreateEntityByName("light_dynamic");
 	if (ent == -1) return;
@@ -1540,7 +1432,7 @@ ClientProcessVisibility(client)
 			for (new i2 = 0; i2 < 3; i2++) flSlenderOBBCenterPos[i2] = flSlenderPos[i2] + ((flSlenderMins[i2] + flSlenderMaxs[i2]) / 2.0);
 		}
 		
-		if (g_bPlayerGhostMode[client])
+		if (IsClientInGhostMode(client))
 		{
 		}
 		else if (!g_bPlayerDeathCam[client])
@@ -2051,7 +1943,7 @@ stock ClientResetUltravision(client)
 
 ClientProcessGlow(client)
 {
-	if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_bPlayerEliminated[client] && !g_bPlayerProxy[client]) || g_bPlayerGhostMode[client]) return;
+	if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_bPlayerEliminated[client] && !g_bPlayerProxy[client]) || IsClientInGhostMode(client)) return;
 	
 	new iOldLookEntity = EntRefToEntIndex(g_iPlayerGlowLookAtEntity[client]);
 	
@@ -2665,9 +2557,12 @@ ClientEnableProxy(client, iBossIndex)
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
 	
-	ClientDisableGhostMode(client);
-	ClientDisablePvP(client);
+	PvP_SetPlayerPvPState(client, false, false, false);
+	
+	ClientSetGhostModeState(client, false);
+	
 	ClientStopProxyForce(client);
+	
 	ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
 	if (!IsPlayerAlive(client)) TF2_RespawnPlayer(client);
 	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
@@ -2829,7 +2724,7 @@ ClientResetJumpScare(client)
   */
 ClientHandleSprint(client, bool:bSprint)
 {
-	if (!IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] || g_bPlayerProxy[client] || g_bPlayerGhostMode[client]) return;
+	if (!IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] || g_bPlayerProxy[client] || IsClientInGhostMode(client)) return;
 	
 	if (bSprint)
 	{
@@ -3133,30 +3028,54 @@ public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
 //	GHOST MODE FUNCTIONS
 //	==========================================================
 
-ClientEnableGhostMode(client)
+static bool:g_bPlayerGhostMode[MAXPLAYERS + 1] = { false, ... };
+static g_iPlayerGhostModeTarget[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+
+/**
+ *	Enables/Disables ghost mode on the player.
+ */
+ClientSetGhostModeState(client, bool:bState)
 {
-	if (!IsClientInGame(client)) return;
+	if (bState == g_bPlayerGhostMode[client]) return;
 	
-	g_bPlayerGhostMode[client] = true;
+	if (bState && !IsClientInGame(client)) return;
 	
-	TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
-	SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
+	g_bPlayerGhostMode[client] = bState;
+	g_iPlayerGhostModeTarget[client] = INVALID_ENT_REFERENCE;
 	
-	// Set first observer target.
-	ClientGhostModeNextTarget(client);
-	ClientActivateUltravision(client);
+	if (bState)
+	{
+		ClientHandleGhostMode(client, true);
+	
+		PvP_OnClientGhostModeEnable(client);
+	}
+	else
+	{
+		if (IsClientInGame(client))
+		{
+			TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
+			SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
+		}
+	}
 }
 
-ClientDisableGhostMode(client)
+/**
+ *	Makes sure that the player is a ghost when ghost mode is activated.
+ */
+ClientHandleGhostMode(client, bool:bForceSpawn=false)
 {
-	if (!g_bPlayerGhostMode[client]) return;
-	
-	g_bPlayerGhostMode[client] = false;
-	
-	if (!IsClientInGame(client)) return;
-	
-	TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
-	SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
+	if (g_bPlayerGhostMode[client])
+	{
+		if (!TF2_IsPlayerInCondition(client, TFCond_HalloweenGhostMode) || bForceSpawn)
+		{
+			TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
+			SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
+			
+			// Set first observer target.
+			ClientGhostModeNextTarget(client);
+			ClientActivateUltravision(client);
+		}
+	}
 }
 
 ClientGhostModeNextTarget(client)
@@ -3166,7 +3085,7 @@ ClientGhostModeNextTarget(client)
 	new iFirstTarget = -1;
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (IsClientInGame(i) && (!g_bPlayerEliminated[i] || g_bPlayerProxy[i]) && !g_bPlayerGhostMode[i] && !g_bPlayerEscaped[i] && IsPlayerAlive(i))
+		if (IsClientInGame(i) && (!g_bPlayerEliminated[i] || g_bPlayerProxy[i]) && !IsClientInGhostMode(i) && !g_bPlayerEscaped[i] && IsPlayerAlive(i))
 		{
 			if (iFirstTarget == -1) iFirstTarget = i;
 			if (i > iLastTarget) 
@@ -3191,6 +3110,11 @@ ClientGhostModeNextTarget(client)
 		GetEntPropVector(iTarget, Prop_Data, "m_vecAbsVelocity", flVelocity);
 		TeleportEntity(client, flPos, flAng, flVelocity);
 	}
+}
+
+bool:IsClientInGhostMode(client)
+{
+	return g_bPlayerGhostMode[client];
 }
 
 //	==========================================================
@@ -3418,108 +3342,6 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 }
 
 //	==========================================================
-//	PVP FUNCTIONS
-//	==========================================================
-
-stock bool:IsClientInPvP(client)
-{
-	return g_bPlayerInPvP[client];
-}
-
-stock ClientEnablePvP(client)
-{
-	if (!IsValidClient(client)) return;
-	
-	new bool:bWasInPvP = g_bPlayerInPvP[client];
-	g_bPlayerInPvP[client] = true;
-	g_hPlayerPvPTimer[client] = INVALID_HANDLE;
-	g_iPlayerPvPTimerCount[client] = 0;
-	
-	if (!bWasInPvP)
-	{
-		ClientRemoveAllProjectiles(client);
-		
-		new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
-		TF2_RegeneratePlayer(client);
-		SetEntProp(client, Prop_Data, "m_iHealth", iHealth);
-		SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
-		
-		SDKHook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
-	}
-}
-
-stock ClientDisablePvP(client)
-{
-	new bool:bWasInPvP = g_bPlayerInPvP[client];
-	
-	if (bWasInPvP)
-	{
-		if (IsValidClient(client))
-		{
-			ClientRemoveAllProjectiles(client);
-			
-			TF2_RemoveCondition(client, TFCond_Zoomed);
-			
-			new iHealth = GetEntProp(client, Prop_Send, "m_iHealth");
-			TF2_RegeneratePlayer(client);
-			SetEntProp(client, Prop_Data, "m_iHealth", iHealth);
-			SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
-			
-			SDKUnhook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
-		}
-	}
-	
-	g_bPlayerInPvP[client] = false;
-	g_hPlayerPvPTimer[client] = INVALID_HANDLE;
-	g_iPlayerPvPTimerCount[client] = 0;
-}
-
-stock ClientResetPvP(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetPvP(%d)", client);
-#endif
-
-	ClientDisablePvP(client);
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetPvP(%d)", client);
-#endif
-}
-
-public Action:Timer_ClientDisablePvP(Handle:timer, any:userid)
-{
-	new client = GetClientOfUserId(userid);
-	if (client <= 0) return Plugin_Stop;
-	
-	if (timer != g_hPlayerPvPTimer[client]) return Plugin_Stop;
-	
-	if (!IsClientInPvP(client)) return Plugin_Stop;
-	
-	if (g_iPlayerPvPTimerCount[client] <= 0)
-	{
-		ClientDisablePvP(client);
-		return Plugin_Stop;
-	}
-	
-	g_iPlayerPvPTimerCount[client]--;
-	
-	if (!g_bPlayerProxyAvailableInForce[client])
-	{
-		SetHudTextParams(-1.0, 0.75, 
-			1.0,
-			255, 255, 255, 255,
-			_,
-			_,
-			0.25, 1.25);
-		
-		ShowSyncHudText(client, g_hHudSync, "%T", "SF2 Exiting PvP Arena", client, g_iPlayerPvPTimerCount[client]);
-	}
-	
-	return Plugin_Continue;
-}
-
-//	==========================================================
 //	BLINK FUNCTIONS
 //	==========================================================
 
@@ -3563,7 +3385,7 @@ public Action:Timer_BlinkTimer(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerBlinkTimer[client]) return Plugin_Stop;
 	
-	if (IsPlayerAlive(client) && !g_bPlayerDeathCam[client] && !g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bRoundEnded)
+	if (IsPlayerAlive(client) && !g_bPlayerDeathCam[client] && !g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bRoundEnded)
 	{
 		if (!g_bRoundInfiniteBlink) g_flPlayerBlinkMeter[client] -= 0.05;
 		
@@ -3690,7 +3512,7 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	{
 		GetRandomStringFromProfile(g_strSlenderProfile[g_iPlayerJumpScareMaster[client]], "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
 	}
-	else if (g_bRoundWarmup || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !g_bPlayerGhostMode[client])
+	else if (g_bRoundWarmup || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !IsClientInGhostMode(client))
 	{
 		return Plugin_Continue;
 	}
@@ -3716,7 +3538,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 	new iAlertBoss = -1;
 	new i20DollarsBoss = -1;
 	
-	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && !g_bPlayerProxy[client])) 
+	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) 
 	{
 		g_iPlayerMusicFlags[client] = 0;
 		g_iPlayerPageMusicMaster[client] = INVALID_ENT_REFERENCE;
@@ -4145,7 +3967,7 @@ stock ClientMusicReset(client)
 	new String:sOldMusic[PLATFORM_MAX_PATH];
 	strcopy(sOldMusic, sizeof(sOldMusic), g_strPlayerMusic[client]);
 	strcopy(g_strPlayerMusic[client], sizeof(g_strPlayerMusic[]), "");
-	if (IsClientInGame(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+	if (IsValidClient(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 	
 	g_iPlayerMusicFlags[client] = 0;
 	g_flPlayerMusicVolume[client] = 0.0;
@@ -4156,7 +3978,7 @@ stock ClientMusicReset(client)
 
 stock ClientMusicStart(client, const String:sNewMusic[], Float:flVolume=-1.0, Float:flTargetVolume=-1.0, bool:bCopyOnly=false)
 {
-	if (!IsClientInGame(client)) return;
+	if (!IsValidClient(client)) return;
 	if (!sNewMusic[0]) return;
 	
 	new String:sOldMusic[PLATFORM_MAX_PATH];
@@ -4193,7 +4015,7 @@ stock Client20DollarsMusicReset(client)
 	new String:sOldMusic[PLATFORM_MAX_PATH];
 	strcopy(sOldMusic, sizeof(sOldMusic), g_strPlayer20DollarsMusic[client]);
 	strcopy(g_strPlayer20DollarsMusic[client], sizeof(g_strPlayer20DollarsMusic[]), "");
-	if (IsClientInGame(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+	if (IsValidClient(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 	
 	g_iPlayer20DollarsMusicMaster[client] = -1;
 	
@@ -4204,7 +4026,7 @@ stock Client20DollarsMusicReset(client)
 		
 		if (g_strSlenderProfile[i][0])
 		{
-			if (IsClientInGame(client))
+			if (IsValidClient(client))
 			{
 				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_20dollars_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
@@ -4215,7 +4037,7 @@ stock Client20DollarsMusicReset(client)
 
 stock Client20DollarsMusicStart(client, iBossIndex)
 {
-	if (!IsClientInGame(client)) return;
+	if (!IsValidClient(client)) return;
 	
 	new iOldMaster = g_iPlayer20DollarsMusicMaster[client];
 	if (iOldMaster == iBossIndex) return;
@@ -4238,7 +4060,7 @@ stock Client20DollarsMusicStart(client, iBossIndex)
 
 stock Client20DollarsMusicStop(client, iBossIndex)
 {
-	if (!IsClientInGame(client)) return;
+	if (!IsValidClient(client)) return;
 	if (iBossIndex == -1) return;
 	
 	if (iBossIndex == g_iPlayer20DollarsMusicMaster[client])
@@ -4256,7 +4078,7 @@ stock ClientAlertMusicReset(client)
 	new String:sOldMusic[PLATFORM_MAX_PATH];
 	strcopy(sOldMusic, sizeof(sOldMusic), g_strPlayerAlertMusic[client]);
 	strcopy(g_strPlayerAlertMusic[client], sizeof(g_strPlayerAlertMusic[]), "");
-	if (IsClientInGame(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+	if (IsValidClient(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 	
 	g_iPlayerAlertMusicMaster[client] = -1;
 	
@@ -4267,7 +4089,7 @@ stock ClientAlertMusicReset(client)
 		
 		if (g_strSlenderProfile[i][0])
 		{
-			if (IsClientInGame(client))
+			if (IsValidClient(client))
 			{
 				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
@@ -4278,7 +4100,7 @@ stock ClientAlertMusicReset(client)
 
 stock ClientAlertMusicStart(client, iBossIndex)
 {
-	if (!IsClientInGame(client)) return;
+	if (!IsValidClient(client)) return;
 	
 	new iOldMaster = g_iPlayerAlertMusicMaster[client];
 	if (iOldMaster == iBossIndex) return;
@@ -4301,7 +4123,7 @@ stock ClientAlertMusicStart(client, iBossIndex)
 
 stock ClientAlertMusicStop(client, iBossIndex)
 {
-	if (!IsClientInGame(client)) return;
+	if (!IsValidClient(client)) return;
 	if (iBossIndex == -1) return;
 	
 	if (iBossIndex == g_iPlayerAlertMusicMaster[client])
@@ -4319,7 +4141,7 @@ stock ClientChaseMusicReset(client)
 	new String:sOldMusic[PLATFORM_MAX_PATH];
 	strcopy(sOldMusic, sizeof(sOldMusic), g_strPlayerChaseMusic[client]);
 	strcopy(g_strPlayerChaseMusic[client], sizeof(g_strPlayerChaseMusic[]), "");
-	if (IsClientInGame(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
+	if (IsValidClient(client) && sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 	
 	g_iPlayerChaseMusicMaster[client] = -1;
 	
@@ -4330,7 +4152,7 @@ stock ClientChaseMusicReset(client)
 		
 		if (g_strSlenderProfile[i][0])
 		{
-			if (IsClientInGame(client))
+			if (IsValidClient(client))
 			{
 				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
@@ -4341,7 +4163,7 @@ stock ClientChaseMusicReset(client)
 
 stock ClientMusicChaseStart(client, iBossIndex)
 {
-	if (!IsClientInGame(client)) return;
+	if (!IsValidClient(client)) return;
 	
 	new iOldMaster = g_iPlayerChaseMusicMaster[client];
 	if (iOldMaster == iBossIndex) return;
@@ -4830,15 +4652,17 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 			continue;
 		}
 		
+		new MuteMode:iMuteMode = g_iPlayerPreferences[client][PlayerPreference_MuteMode];
+		
 		if (g_bPlayerEliminated[client])
 		{
 			if (!g_bPlayerEliminated[i])
 			{
-				if (g_iPlayerMuteMode[client] == MuteMode_DontHearOtherTeam)
+				if (iMuteMode == MuteMode_DontHearOtherTeam)
 				{
 					SetListenOverride(client, i, Listen_No);
 				}
-				else if (g_iPlayerMuteMode[client] == MuteMode_DontHearOtherTeamIfNotProxy && !g_bPlayerProxy[client])
+				else if (iMuteMode == MuteMode_DontHearOtherTeamIfNotProxy && !g_bPlayerProxy[client])
 				{
 					SetListenOverride(client, i, Listen_No);
 				}
@@ -4911,10 +4735,10 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 							bCanHear = true;
 						}
 					}
-						
+					
 					if (bCanHear)
 					{
-						if (g_bPlayerGhostMode[i] != g_bPlayerGhostMode[client] &&
+						if (IsClientInGhostMode(i) != IsClientInGhostMode(client) &&
 							g_bPlayerEscaped[i] != g_bPlayerEscaped[client])
 						{
 							bCanHear = false;
@@ -4992,37 +4816,12 @@ ClientSaveCookies(client)
 	
 	// Save and reset our queue points.
 	decl String:s[64];
-	Format(s, sizeof(s), "%d ; %d ; %d ; 0 ; %d", g_iPlayerQueuePoints[client], g_bPlayerShowHints[client], g_iPlayerMuteMode[client], g_bPlayerWantsTheP[client]);
-	SetClientCookie(client, g_hCookie, s);
-}
-
-stock ClientRemoveAllProjectiles(client)
-{
-	for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
-	{
-		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, g_sPlayerProjectileClasses[i])) != -1)
-		{
-			new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
-			new bool:bMine = false;
+	Format(s, sizeof(s), "%d ; %d ; %d ; 0 ; %d", g_iPlayerQueuePoints[client], 
+		g_iPlayerPreferences[client][PlayerPreference_ShowHints], 
+		g_iPlayerPreferences[client][PlayerPreference_MuteMode], 
+		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection]);
 		
-			new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
-			if (iOwnerEntity == client)
-			{
-				bMine = true;
-			}
-			else if (iThrowerOffset != -1)
-			{
-				iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
-				if (iOwnerEntity == client)
-				{
-					bMine = true;
-				}
-			}
-			
-			if (bMine) AcceptEntityInput(ent, "Kill");
-		}
-	}
+	SetClientCookie(client, g_hCookie, s);
 }
 
 stock ClientViewPunch(client, const Float:angleOffset[3])
@@ -5068,7 +4867,7 @@ public Action:Hook_ProxyGlowSetTransmit(ent, other)
 	if (iOwner != -1)
 	{
 		if (!IsPlayerAlive(iOwner) || g_bPlayerEliminated[iOwner]) return Plugin_Handled;
-		if (!IsPlayerAlive(other) || (!g_bPlayerProxy[other] && !g_bPlayerGhostMode[other])) return Plugin_Handled;
+		if (!IsPlayerAlive(other) || (!g_bPlayerProxy[other] && !IsClientInGhostMode(other))) return Plugin_Handled;
 	}
 	
 	return Plugin_Continue;
@@ -5144,7 +4943,7 @@ stock bool:IsPointVisibleToAPlayer(const Float:pos[3], bool:bCheckFOV=true, bool
 
 stock bool:IsPointVisibleToPlayer(client, const Float:pos[3], bool:bCheckFOV=true, bool:bCheckBlink=false, bool:bCheckEliminated=true)
 {
-	if (!IsValidClient(client) || !IsPlayerAlive(client) || g_bPlayerGhostMode[client]) return false;
+	if (!IsValidClient(client) || !IsPlayerAlive(client) || IsClientInGhostMode(client)) return false;
 	
 	if (bCheckEliminated && g_bPlayerEliminated[client]) return false;
 	
@@ -5284,6 +5083,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 				}
 			}
 			
+			// pvp
 			if (IsClientInPvP(client)) 
 			{
 				bRemoveWeapons = false;
@@ -5296,7 +5096,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 				bRestrictWeapons = false;
 			}
 			
-			if (g_bPlayerGhostMode[client]) 
+			if (IsClientInGhostMode(client)) 
 			{
 				bRemoveWeapons = true;
 			}
@@ -5305,7 +5105,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			{
 				for (new i = 0; i <= 5; i++)
 				{
-					if (i == TFWeaponSlot_Melee && !g_bPlayerGhostMode[client]) continue;
+					if (i == TFWeaponSlot_Melee && !IsClientInGhostMode(client)) continue;
 					TF2_RemoveWeaponSlotAndWearables(client, i);
 				}
 				
@@ -5466,7 +5266,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 			}
 			
 			// Remove all hats.
-			if (g_bPlayerGhostMode[client])
+			if (IsClientInGhostMode(client))
 			{
 				new ent = -1;
 				while ((ent = FindEntityByClassname(ent, "tf_wearable")) != -1)
@@ -5578,7 +5378,7 @@ public Action:Timer_RespawnPlayer(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return;
-
+	
 	if (IsPlayerAlive(client)) return;
 	
 	TF2_RespawnPlayer(client);

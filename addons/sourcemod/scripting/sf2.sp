@@ -7,6 +7,7 @@
 #include <dhooks>
 #include <navmesh>
 
+#include <tf2>
 #include <tf2_stocks>
 #include <morecolors>
 #include <sf2>
@@ -18,7 +19,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.3"
+#define PLUGIN_VERSION "0.2.3a"
 
 public Plugin:myinfo = 
 {
@@ -51,8 +52,6 @@ public Plugin:myinfo =
 #define MUSIC_GOTPAGES3_SOUND "slender/newambience_3.wav"
 #define MUSIC_GOTPAGES4_SOUND "slender/newambience_4.wav"
 #define MUSIC_PAGE_VOLUME 1.0
-
-#define PVP_SPAWN_SOUND "items/spawn_item.wav"
 
 #define INTRO_MUSIC "slender/intro.mp3"
 
@@ -269,7 +268,16 @@ enum
 	PlayerHint_MaxNum
 };
 
+enum PlayerPreferences
+{
+	bool:PlayerPreference_PvPAutoSpawn,
+	MuteMode:PlayerPreference_MuteMode,
+	bool:PlayerPreference_ShowHints,
+	bool:PlayerPreference_EnableProxySelection
+};
+
 new bool:g_bPlayerHints[MAXPLAYERS + 1][PlayerHint_MaxNum];
+new g_iPlayerPreferences[MAXPLAYERS + 1][PlayerPreferences];
 
 // Ultravision data.
 new bool:g_bPlayerUltravision[MAXPLAYERS + 1];
@@ -294,8 +302,6 @@ new Float:g_flPlayerJumpScareLifeTime[MAXPLAYERS + 1] = { -1.0, ... };
 // Player data. Holy crap this is a lot of data.
 new g_iPlayerLastButtons[MAXPLAYERS + 1];
 new bool:g_bPlayerChoseTeam[MAXPLAYERS + 1];
-new bool:g_bPlayerGhostMode[MAXPLAYERS + 1];
-new g_iPlayerGhostModeTarget[MAXPLAYERS + 1];
 new bool:g_bPlayerEliminated[MAXPLAYERS + 1];
 new bool:g_bPlayerEscaped[MAXPLAYERS + 1];
 new g_iPlayerPageCount[MAXPLAYERS + 1];
@@ -315,14 +321,6 @@ new bool:g_bPlayerBlink[MAXPLAYERS + 1];
 new Float:g_flPlayerBlinkMeter[MAXPLAYERS + 1];
 new g_iPlayerBlinkCount[MAXPLAYERS + 1];
 new Handle:g_hPlayerSwitchBlueTimer[MAXPLAYERS + 1];
-
-// Player PVP data.
-new bool:g_bPlayerInPvP[MAXPLAYERS + 1];
-new bool:g_bPlayerInPvPSpawning[MAXPLAYERS + 1];
-new bool:g_bPlayerInPvPTrigger[MAXPLAYERS + 1];
-new Handle:g_hPlayerPvPTimer[MAXPLAYERS + 1];
-new g_iPlayerPvPTimerCount[MAXPLAYERS + 1];
-new Handle:g_hPlayerFlames;
 
 // Player stress data.
 new Float:g_flPlayerStress[MAXPLAYERS + 1];
@@ -344,10 +342,6 @@ new Handle:g_flPlayerProxyVoiceTimer[MAXPLAYERS + 1];
 new g_iPlayerProxyAskMaster[MAXPLAYERS + 1] = { -1, ... };
 new Float:g_iPlayerProxyAskPosition[MAXPLAYERS + 1][3];
 
-new bool:g_bPlayerWantsTheP[MAXPLAYERS + 1];
-
-new bool:g_bPlayerShowHints[MAXPLAYERS + 1];
-new MuteMode:g_iPlayerMuteMode[MAXPLAYERS + 1];
 new g_iPlayerDesiredFOV[MAXPLAYERS + 1];
 
 // Music system.
@@ -464,7 +458,6 @@ new Handle:g_cvIntroDefaultFadeTime;
 new Handle:g_cvTimeLimit;
 new Handle:g_cvTimeLimitEscape;
 new Handle:g_cvTimeGainFromPageGrab;
-new Handle:g_cvPvPArenaLeaveTime;
 new Handle:g_cvWarmupRound;
 new Handle:g_cvPlayerViewbobHurtEnabled;
 new Handle:g_cvPlayerViewbobSprintEnabled;
@@ -501,7 +494,6 @@ new Handle:g_hMenuHelpSprinting;
 new Handle:g_hMenuHelpControls;
 new Handle:g_hMenuHelpClassInfo;
 new Handle:g_hMenuSettings;
-new Handle:g_hMenuSettingsPvP;
 new Handle:g_hMenuCredits;
 new Handle:g_hMenuCredits2;
 
@@ -569,6 +561,7 @@ new Handle:g_hSDKShouldTransmit;
 #include "sf2/stocks.sp"
 #include "sf2/profiles.sp"
 #include "sf2/effects.sp"
+#include "sf2/pvp.sp"
 #include "sf2/client.sp"
 #include "sf2/slender_stocks.sp"
 #include "sf2/specialround.sp"
@@ -614,7 +607,6 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	CreateNative("SF2_GetDifficultyModifier", Native_GetDifficultyModifier);
 	CreateNative("SF2_IsClientEliminated", Native_IsClientEliminated);
 	CreateNative("SF2_IsClientInGhostMode", Native_IsClientInGhostMode);
-	CreateNative("SF2_IsClientInPvP", Native_IsClientInPvP);
 	CreateNative("SF2_IsClientProxy", Native_IsClientProxy);
 	CreateNative("SF2_GetClientBlinkCount", Native_GetClientBlinkCount);
 	CreateNative("SF2_GetClientProxyMaster", Native_GetClientProxyMaster);
@@ -641,6 +633,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	CreateNative("SF2_GetBossProfileVector", Native_GetBossProfileVector);
 	CreateNative("SF2_GetRandomStringFromBossProfile", Native_GetRandomStringFromBossProfile);
 	
+	PvP_InitializeAPI();
+	
 	return APLRes_Success;
 }
 
@@ -649,8 +643,6 @@ public OnPluginStart()
 	LoadTranslations("core.phrases");
 	LoadTranslations("common.phrases");
 	LoadTranslations("sf2.phrases");
-	
-	g_hPlayerFlames = CreateArray(2);
 	
 	// Get offsets.
 	g_offsPlayerFOV = FindSendPropInfo("CBasePlayer", "m_iFOV");
@@ -753,8 +745,6 @@ public OnPluginStart()
 	g_cvTimeLimitEscape = CreateConVar("sf2_timelimit_escape_default", "90", "The time limit to escape. Maps can change the time limit.");
 	g_cvTimeGainFromPageGrab = CreateConVar("sf2_time_gain_page_grab", "12", "The time gained from grabbing a page. Maps can change the time gain amount.");
 	
-	g_cvPvPArenaLeaveTime = CreateConVar("sf2_player_pvparena_leavetime", "3");
-	
 	g_cvWarmupRound = CreateConVar("sf2_warmupround", "1");
 	
 	g_cvPlayerProxyWaitTime = CreateConVar("sf2_player_proxy_waittime", "35", "How long (in seconds) after a player was chosen to be a Proxy must the system wait before choosing him again.");
@@ -842,6 +832,8 @@ public OnPluginStart()
 	SetupClassDefaultWeapons();
 	
 	SetupPlayerGroups();
+	
+	PvP_Initialize();
 }
 
 public OnAllPluginsLoaded()
@@ -965,11 +957,6 @@ static SetupMenus()
 	AddMenuItem(g_hMenuSettings, "0", buffer);
 	SetMenuExitBackButton(g_hMenuSettings, true);
 	
-	g_hMenuSettingsPvP = CreateMenu(Menu_SettingsPvP);
-	SetMenuTitle(g_hMenuSettingsPvP, "%t%t\n \n", "SF2 Prefix", "SF2 Settings PvP Menu Title");
-	AddMenuItem(g_hMenuSettingsPvP, "0", "Toggle automatic spawning");
-	SetMenuExitBackButton(g_hMenuSettingsPvP, true);
-	
 	g_hMenuCredits = CreateMenu(Menu_Credits);
 	
 	Format(buffer, sizeof(buffer), "%tCredits\n \n", "SF2 Prefix");
@@ -1009,6 +996,8 @@ static SetupMenus()
 	
 	SetMenuTitle(g_hMenuCredits2, buffer);
 	AddMenuItem(g_hMenuCredits2, "0", "Back");
+	
+	PvP_SetupMenus();
 }
 
 static SetupHooks()
@@ -1186,8 +1175,7 @@ public OnMapStart()
 	g_iBossRoundCount = 0;
 	strcopy(g_strBossRoundProfile, sizeof(g_strBossRoundProfile), "");
 	
-	// Reset PvP stuff.
-	ClearArray(g_hPlayerFlames);
+	PvP_OnMapStart();
 }
 
 public OnConfigsExecuted()
@@ -1310,9 +1298,6 @@ static PrecacheStuff()
 	
 	PrecacheMaterial2(BLACK_OVERLAY);
 	
-	// PvP Arena
-	PrecacheSound2(PVP_SPAWN_SOUND);
-	
 	AddFileToDownloadsTable("models/slender/sheet.mdl");
 	AddFileToDownloadsTable("models/slender/sheet.dx80.vtx");
 	AddFileToDownloadsTable("models/slender/sheet.dx90.vtx");
@@ -1337,6 +1322,9 @@ static PrecacheStuff()
 	AddFileToDownloadsTable("materials/models/Jason278/Slender/Sheets/Sheet_7.vmt");
 	AddFileToDownloadsTable("materials/models/Jason278/Slender/Sheets/Sheet_8.vtf");
 	AddFileToDownloadsTable("materials/models/Jason278/Slender/Sheets/Sheet_8.vmt");
+	
+	// pvp
+	PvP_Precache();
 }
 
 static StopPlugin()
@@ -1364,6 +1352,18 @@ static StopPlugin()
 public OnMapEnd()
 {
 	StopPlugin();
+}
+
+public TF2_OnConditionAdded(client, TFCond:cond)
+{
+	if (cond == TFCond_Taunting)
+	{
+		if (IsClientInGhostMode(client))
+		{
+			// Stop ghosties from taunting.
+			TF2_RemoveCondition(client, TFCond_Taunting);
+		}
+	}
 }
 
 public OnGameFrame()
@@ -1394,7 +1394,7 @@ public OnGameFrame()
 				
 				for (new iClient = 1; iClient <= MaxClients; iClient++)
 				{
-					if (!IsClientInGame(iClient) || !IsPlayerAlive(iClient) || g_bPlayerGhostMode[iClient] || g_bPlayerDeathCam[iClient]) continue;
+					if (!IsClientInGame(iClient) || !IsPlayerAlive(iClient) || IsClientInGhostMode(iClient) || g_bPlayerDeathCam[iClient]) continue;
 					if (!IsPointVisibleToPlayer(iClient, myPos, false, false)) continue;
 					
 					GetClientAbsOrigin(iClient, hisPos);
@@ -1443,86 +1443,7 @@ public OnGameFrame()
 		}
 	}
 	
-	// Process through PvP projectiles.
-	for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
-	{
-		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, g_sPlayerProjectileClasses[i])) != -1)
-		{
-			new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
-			new bool:bChangeProjectileTeam = false;
-			
-			new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
-			if (IsValidClient(iOwnerEntity) && IsClientInPvP(iOwnerEntity))
-			{
-				bChangeProjectileTeam = true;
-			}
-			else if (iThrowerOffset != -1)
-			{
-				iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
-				if (IsValidClient(iOwnerEntity) && IsClientInPvP(iOwnerEntity))
-				{
-					bChangeProjectileTeam = true;
-				}
-			}
-			
-			if (bChangeProjectileTeam)
-			{
-				SetEntProp(ent, Prop_Data, "m_iInitialTeamNum", 0);
-				SetEntProp(ent, Prop_Send, "m_iTeamNum", 0);
-			}
-		}
-	}
-	
-	// Process through PvP flame entities.
-	{
-		static Float:flMins[3] = { -6.0, ... };
-		static Float:flMaxs[3] = { 6.0, ... };
-		
-		decl Float:flOrigin[3];
-		
-		new Handle:hTrace = INVALID_HANDLE;
-		new ent = -1;
-		new iOwnerEntity = INVALID_ENT_REFERENCE; 
-		new iHitEntity = INVALID_ENT_REFERENCE;
-		
-		while ((ent = FindEntityByClassname(ent, "tf_flame")) != -1)
-		{
-			iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
-			
-			if (IsValidEdict(iOwnerEntity))
-			{
-				// tf_flame's initial owner SHOULD be the flamethrower that it originates from.
-				// If not, then something's completely bogus.
-				
-				iOwnerEntity = GetEntPropEnt(iOwnerEntity, Prop_Data, "m_hOwnerEntity");
-			}
-			
-			if (IsValidClient(iOwnerEntity) && (g_bRoundWarmup || IsClientInPvP(iOwnerEntity)))
-			{
-				GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flOrigin);
-				
-				hTrace = TR_TraceHullFilterEx(flOrigin, flOrigin, flMins, flMaxs, MASK_PLAYERSOLID, TraceRayDontHitEntity, iOwnerEntity);
-				iHitEntity = TR_GetEntityIndex(hTrace);
-				CloseHandle(hTrace);
-				
-				if (IsValidEntity(iHitEntity))
-				{
-					new entref = EntIndexToEntRef(ent);
-					
-					new iIndex = FindValueInArray(g_hPlayerFlames, entref);
-					if (iIndex != -1)
-					{
-						if (iHitEntity != EntRefToEntIndex(GetArrayCell(g_hPlayerFlames, iIndex, 1)))
-						{
-							SetArrayCell(g_hPlayerFlames, iIndex, EntIndexToEntRef(iHitEntity), 1);
-							FakeHook_TFFlameStartTouchPost(ent, iHitEntity);
-						}
-					}
-				}
-			}
-		}
-	}
+	PvP_OnGameFrame();
 }
 
 //	==========================================================
@@ -1598,6 +1519,7 @@ public Menu_GhostMode(Handle:menu, MenuAction:action, param1, param2)
 		if (g_bRoundEnded ||
 			g_bRoundWarmup ||
 			!g_bPlayerEliminated[param1] ||
+			!IsClientParticipating(param1) ||
 			g_bPlayerProxy[param1])
 		{
 			CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Not Allowed", param1);
@@ -1608,21 +1530,21 @@ public Menu_GhostMode(Handle:menu, MenuAction:action, param1, param2)
 			{
 				case 0:
 				{
-					if (g_bPlayerGhostMode[param1]) CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Enabled Already", param1);
+					if (IsClientInGhostMode(param1)) CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Enabled Already", param1);
 					else
 					{
 						TF2_RespawnPlayer(param1);
-						ClientEnableGhostMode(param1);
+						ClientSetGhostModeState(param1, true);
 						
 						CPrintToChat(param1, "{olive}%T", "SF2 Ghost Mode Enabled", param1);
 					}
 				}
 				case 1:
 				{
-					if (!g_bPlayerGhostMode[param1]) CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Disabled Already", param1);
+					if (!IsClientInGhostMode(param1)) CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Disabled Already", param1);
 					else
 					{
-						ClientDisableGhostMode(param1);
+						ClientSetGhostModeState(param1, false);
 						TF2_RespawnPlayer(param1);
 						
 						CPrintToChat(param1, "{olive}%T", "SF2 Ghost Mode Disabled", param1);
@@ -1805,61 +1727,6 @@ public Menu_Settings(Handle:menu, MenuAction:action, param1, param2)
 	}
 }
 
-public Menu_SettingsPvP(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0:
-			{
-				decl String:sBuffer[512];
-				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings PvP Spawn Menu Title", param1);
-				
-				new Handle:hPanel = CreatePanel();
-				SetPanelTitle(hPanel, sBuffer);
-				
-				Format(sBuffer, sizeof(sBuffer), "%T", "Yes", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				Format(sBuffer, sizeof(sBuffer), "%T", "No", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				
-				SendPanelToClient(hPanel, param1, Panel_SettingsPvPSpawn, 30);
-				CloseHandle(hPanel);
-			}
-		}
-	}
-	else if (action == MenuAction_Cancel)
-	{
-		if (param2 == MenuCancel_ExitBack)
-		{
-			DisplayMenu(g_hMenuSettings, param1, 30);
-		}
-	}
-}
-
-public Panel_SettingsPvPSpawn(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 1:
-			{
-				g_bPlayerInPvPSpawning[param1] = true;
-				CPrintToChat(param1, "%T", "SF2 PvP Spawn Accept", param1);
-			}
-			case 2:
-			{
-				g_bPlayerInPvPSpawning[param1] = false;
-				CPrintToChat(param1, "%T", "SF2 PvP Spawn Decline", param1);
-			}
-		}
-		
-		DisplayMenu(g_hMenuSettings, param1, 30);
-	}
-}
-
 public Panel_SettingsHints(Handle:menu, MenuAction:action, param1, param2)
 {
 	if (action == MenuAction_Select)
@@ -1868,13 +1735,13 @@ public Panel_SettingsHints(Handle:menu, MenuAction:action, param1, param2)
 		{
 			case 1:
 			{
-				g_bPlayerShowHints[param1] = true;
+				g_iPlayerPreferences[param1][PlayerPreference_ShowHints] = true;
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "%T", "SF2 Enabled Hints", param1);
 			}
 			case 2:
 			{
-				g_bPlayerShowHints[param1] = false;
+				g_iPlayerPreferences[param1][PlayerPreference_ShowHints] = false;
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "%T", "SF2 Disabled Hints", param1);
 			}
@@ -1892,13 +1759,13 @@ public Panel_SettingsProxy(Handle:menu, MenuAction:action, param1, param2)
 		{
 			case 1:
 			{
-				g_bPlayerWantsTheP[param1] = true;
+				g_iPlayerPreferences[param1][PlayerPreference_EnableProxySelection] = true;
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "%T", "SF2 Enabled Proxy", param1);
 			}
 			case 2:
 			{
-				g_bPlayerWantsTheP[param1] = false;
+				g_iPlayerPreferences[param1][PlayerPreference_EnableProxySelection] = false;
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "%T", "SF2 Disabled Proxy", param1);
 			}
@@ -1916,21 +1783,21 @@ public Panel_SettingsMuteMode(Handle:menu, MenuAction:action, param1, param2)
 		{
 			case 1:
 			{
-				g_iPlayerMuteMode[param1] = MuteMode_Normal;
+				g_iPlayerPreferences[param1][PlayerPreference_MuteMode] = MuteMode_Normal;
 				ClientUpdateListeningFlags(param1);
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "{lightgreen}Mute mode set to normal.");
 			}
 			case 2:
 			{
-				g_iPlayerMuteMode[param1] = MuteMode_DontHearOtherTeam;
+				g_iPlayerPreferences[param1][PlayerPreference_MuteMode] = MuteMode_DontHearOtherTeam;
 				ClientUpdateListeningFlags(param1);
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "{lightgreen}Muted opposing team.");
 			}
 			case 3:
 			{
-				g_iPlayerMuteMode[param1] = MuteMode_DontHearOtherTeamIfNotProxy;
+				g_iPlayerPreferences[param1][PlayerPreference_MuteMode] = MuteMode_DontHearOtherTeamIfNotProxy;
 				ClientUpdateListeningFlags(param1);
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "{lightgreen}Muted opposing team, but settings will be automatically set to normal if you're a proxy.");
@@ -2315,7 +2182,7 @@ public Action:Hook_CommandSay(client, const String:command[], argc)
 public Action:Hook_CommandSuicideAttempt(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
+	if (IsClientInGhostMode(client)) return Plugin_Handled;
 	
 	if (g_bRoundIntro && !g_bPlayerEliminated[client]) return Plugin_Handled;
 	
@@ -2327,7 +2194,7 @@ public Action:Hook_CommandSuicideAttempt(client, const String:command[], argc)
 public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	if (g_bPlayerGhostMode[client]) return Plugin_Handled;
+	if (IsClientInGhostMode(client)) return Plugin_Handled;
 	if (g_bRoundIntro && !g_bPlayerEliminated[client]) return Plugin_Handled;
 	
 	return Plugin_Continue;
@@ -2336,7 +2203,7 @@ public Action:Hook_CommandBlockInGhostMode(client, const String:command[], argc)
 public Action:Hook_CommandVoiceMenu(client, const String:command[], argc)
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	if (g_bPlayerGhostMode[client])
+	if (IsClientInGhostMode(client))
 	{
 		ClientGhostModeNextTarget(client);
 		return Plugin_Handled;
@@ -2837,7 +2704,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 		if (!IsValidClient(i) ||
 		!IsPlayerAlive(i) ||
 		g_bPlayerEliminated[i] ||
-		g_bPlayerGhostMode[i] ||
+		IsClientInGhostMode(i) ||
 		g_bPlayerDeathCam[i] ||
 		g_bPlayerEscaped[i]) continue;
 		
@@ -2870,7 +2737,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			if (!IsValidClient(iClient) ||
 			!IsPlayerAlive(iClient) ||
 			g_bPlayerEliminated[iClient] ||
-			g_bPlayerGhostMode[iClient] ||
+			IsClientInGhostMode(iClient) ||
 			g_bPlayerDeathCam[iClient] ||
 			g_bPlayerEscaped[iClient]) continue;
 			
@@ -3037,7 +2904,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 					if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 					if (g_bPlayerProxy[iClient]) continue;
 					
-					if (!g_bPlayerWantsTheP[iClient])
+					if (!g_iPlayerPreferences[iClient][PlayerPreference_EnableProxySelection])
 					{
 #if defined DEBUG
 						SendDebugMessageToPlayer(iClient, DEBUG_BOSS_PROXIES, 0, "[PROXIES] You were rejected for being a proxy for boss %d because of your preferences.", iBossIndex);
@@ -3249,7 +3116,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 								g_bPlayerEliminated[iClient] ||
 								g_bPlayerEscaped[iClient] ||
 								g_bPlayerProxy[iClient] ||
-								g_bPlayerGhostMode[iClient])
+								IsClientInGhostMode(iClient))
 							{
 								continue;
 							}
@@ -3471,62 +3338,35 @@ public OnEntityCreated(ent, const String:classname[])
 	{
 		SDKHook(ent, SDKHook_SpawnPost, Hook_BreakableSpawnPost);
 	}
-	else if (StrEqual(classname, "tf_flame", false))
-	{
-		new iIndex = PushArrayCell(g_hPlayerFlames, EntIndexToEntRef(ent));
-		if (iIndex != -1)
-		{
-			SetArrayCell(g_hPlayerFlames, iIndex, INVALID_ENT_REFERENCE, 1);
-		}
-	}
-	else
-	{
-		for (new i = 0; i < sizeof(g_sPlayerProjectileClasses); i++)
-		{
-			if (StrEqual(classname, g_sPlayerProjectileClasses[i], false))
-			{
-				SDKHook(ent, SDKHook_SpawnPost, Hook_ClientProjectileSpawnPost);
-				break;
-			}
-		}
-	}
+	
+	PvP_OnEntityCreated(ent, classname);
 }
 
 public OnEntityDestroyed(ent)
 {
 	if (!g_bEnabled) return;
 
-	if (ent <= 0) return;
+	if (!IsValidEntity(ent) || ent <= 0) return;
 	
-	if (IsValidEntity(ent) && ent > MaxClients)
+	decl String:sClassname[64];
+	GetEntityClassname(ent, sClassname, sizeof(sClassname));
+	
+	if (StrEqual(sClassname, "light_dynamic", false))
 	{
-		decl String:sClassname[64];
-		GetEntityClassname(ent, sClassname, sizeof(sClassname));
+		AcceptEntityInput(ent, "TurnOff");
 		
-		if (StrEqual(sClassname, "light_dynamic", false))
+		new iEnd = INVALID_ENT_REFERENCE;
+		while ((iEnd = FindEntityByClassname(iEnd, "spotlight_end")) != -1)
 		{
-			AcceptEntityInput(ent, "TurnOff");
-			
-			new iEnd = INVALID_ENT_REFERENCE;
-			while ((iEnd = FindEntityByClassname(iEnd, "spotlight_end")) != -1)
+			if (GetEntPropEnt(iEnd, Prop_Data, "m_hOwnerEntity") == ent)
 			{
-				if (GetEntPropEnt(iEnd, Prop_Data, "m_hOwnerEntity") == ent)
-				{
-					AcceptEntityInput(iEnd, "Kill");
-					break;
-				}
-			}
-		}
-		else if (StrEqual(sClassname, "tf_flame", false))
-		{
-			new entref = EntIndexToEntRef(ent);
-			new iIndex = FindValueInArray(g_hPlayerFlames, entref);
-			if (iIndex != -1)
-			{
-				RemoveFromArray(g_hPlayerFlames, iIndex);
+				AcceptEntityInput(iEnd, "Kill");
+				break;
 			}
 		}
 	}
+	
+	PvP_OnEntityDestroyed(ent, sClassname);
 }
 
 public Action:Hook_BlockUserMessage(UserMsg:msg_id, Handle:bf, const players[], playersNum, bool:reliable, bool:init) 
@@ -3541,7 +3381,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 	
 	if (IsValidClient(entity))
 	{
-		if (g_bPlayerGhostMode[entity])
+		if (IsClientInGhostMode(entity))
 		{
 			switch (channel)
 			{
@@ -3649,7 +3489,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 	for (new i = 0; i < numClients; i++)
 	{
 		new iClient = clients[i];
-		if (IsValidClient(iClient) && IsPlayerAlive(iClient) && !g_bPlayerGhostMode[iClient])
+		if (IsValidClient(iClient) && IsPlayerAlive(iClient) && !IsClientInGhostMode(iClient))
 		{
 			new bool:bCanHearSound = true;
 			
@@ -3695,7 +3535,7 @@ public Action:Hook_BreakableOnTouch(breakable, other)
 	
 	if (IsValidClient(other))
 	{
-		if (g_bPlayerGhostMode[other]) return Plugin_Handled;
+		if (IsClientInGhostMode(other)) return Plugin_Handled;
 	}
 	
 	return Plugin_Continue;
@@ -3868,35 +3708,15 @@ public Hook_TriggerOnStartTouch(const String:output[], caller, activator, Float:
 			}
 		}
 	}
-	else if (!StrContains(sName, "sf2_pvp_trigger", false))
-	{
-		if (IsValidClient(activator) && IsPlayerAlive(activator))
-		{
-			g_bPlayerInPvPTrigger[activator] = true;
-			ClientEnablePvP(activator);
-		}
-	}
+	
+	PvP_OnTriggerStartTouch(caller, activator);
 }
 
 public Hook_TriggerOnEndTouch(const String:sOutput[], caller, activator, Float:flDelay)
 {
 	if (!g_bEnabled) return;
-
-	decl String:sName[64];
-	GetEntPropString(caller, Prop_Data, "m_iName", sName, sizeof(sName));
-	if (!StrContains(sName, "sf2_pvp_trigger", false))
-	{
-		if (IsValidClient(activator))
-		{
-			g_bPlayerInPvPTrigger[activator] = false;
-			
-			if (IsClientInPvP(activator))
-			{
-				g_iPlayerPvPTimerCount[activator] = GetConVarInt(g_cvPvPArenaLeaveTime);
-				g_hPlayerPvPTimer[activator] = CreateTimer(1.0, Timer_ClientDisablePvP, GetClientUserId(activator), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
-			}
-		}
-	}
+	
+	PvP_OnTriggerEndTouch(caller, activator);
 }
 
 public Action:Hook_PageOnTakeDamage(page, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
@@ -3950,7 +3770,7 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
 		}
 		case 201:
 		{
-			if (g_bPlayerGhostMode[client])
+			if (IsClientInGhostMode(client))
 			{
 				impulse = 0;
 			}
@@ -3990,10 +3810,10 @@ public OnClientCookiesCached(client)
 	if (!sCookie[0])
 	{
 		g_iPlayerQueuePoints[client] = 0;
-		g_bPlayerShowHints[client] = true;
-		g_iPlayerMuteMode[client] = MuteMode_Normal;
-		//g_bPlayerFlashlightProjected[client] = false;
-		g_bPlayerWantsTheP[client] = true;
+		
+		g_iPlayerPreferences[client][PlayerPreference_ShowHints] = true;
+		g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode_Normal;
+		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = true;
 	}
 	else
 	{
@@ -4001,10 +3821,10 @@ public OnClientCookiesCached(client)
 		ExplodeString(sCookie, " ; ", s2, 12, 32);
 		
 		g_iPlayerQueuePoints[client] = StringToInt(s2[0]);
-		g_bPlayerShowHints[client] = bool:StringToInt(s2[1]);
-		g_iPlayerMuteMode[client] = MuteMode:StringToInt(s2[2]);
-		//g_bPlayerFlashlightProjected[client] = bool:StringToInt(s2[3]);
-		g_bPlayerWantsTheP[client] = bool:StringToInt(s2[4]);
+		
+		g_iPlayerPreferences[client][PlayerPreference_ShowHints] = bool:StringToInt(s2[1]);
+		g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode:StringToInt(s2[2]);
+		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = bool:StringToInt(s2[4]);
 	}
 }
 
@@ -4025,9 +3845,10 @@ public OnClientPutInServer(client)
 	g_bPlayerChoseTeam[client] = false;
 	g_bPlayerDidSpecialRound[client] = true;
 	g_bPlayerDidBossRound[client] = true;
-	g_bPlayerInPvPSpawning[client] = false;
 	g_bPlayerFlashlightProjected[client] = false;
 	g_iPlayerDebugFlags[client] = 0;
+	
+	g_iPlayerPreferences[client][PlayerPreference_PvPAutoSpawn] = false;
 	
 	SDKHook(client, SDKHook_PreThink, Hook_ClientPreThink);
 	SDKHook(client, SDKHook_SetTransmit, Hook_ClientSetTransmit);
@@ -4052,6 +3873,8 @@ public OnClientPutInServer(client)
 		// See if the player is using the custom flashlight.
 		QueryClientConVar(client, "mat_supportflashlight", QueryClientFlashlight);
 	}
+	
+	PvP_OnClientPutInServer(client);
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END OnClientPutInServer(%d)", client);
@@ -4084,14 +3907,18 @@ public OnClientDisconnect(client)
 	// Save and reset settings for the next client.
 	ClientSaveCookies(client);
 	ClientSetPlayerGroup(client, -1);
-	g_iPlayerQueuePoints[client] = 0;
-	g_bPlayerShowHints[client] = true;
-	g_bPlayerWantsTheP[client] = true;
 	
-	ClientResetPvP(client);
+	g_iPlayerQueuePoints[client] = 0;
+	
+	g_iPlayerPreferences[client][PlayerPreference_ShowHints] = true;
+	g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode_Normal;
+	g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = true;
+	
 	ClientResetFlashlight(client);
 	ClientDeactivateUltravision(client);
-	ClientDisableGhostMode(client);
+	
+	ClientSetGhostModeState(client, false);
+	
 	ClientResetGlow(client);
 	ClientStopProxyForce(client);
 	ClientResetOverlay(client);
@@ -4118,6 +3945,8 @@ public OnClientDisconnect(client)
 	
 	g_bPlayerEscaped[client] = false;
 	
+	PvP_OnClientDisconnect(client);
+	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END OnClientDisconnect(%d)", client);
 #endif
@@ -4132,7 +3961,7 @@ public Action:TF2Footprints_ShouldAppear(client, &bool:bAppear)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 
-	if (g_bPlayerGhostMode[client])
+	if (IsClientInGhostMode(client))
 	{
 		bAppear = false;
 		return Plugin_Changed;
@@ -4371,8 +4200,10 @@ stock ClientForcePlay(client, bool:bEnablePlay=true)
 	if (bEnablePlay) g_bPlayerPlaying[client] = true;
 	g_bPlayerEliminated[client] = false;
 	g_hPlayerSwitchBlueTimer[client] = INVALID_HANDLE;
-	ClientDisableGhostMode(client);
-	ClientDisablePvP(client);
+	
+	ClientSetGhostModeState(client, false);
+	
+	PvP_SetPlayerPvPState(client, false, false, false);
 	
 	if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
 	if (g_bBossRound) g_bPlayerDidBossRound[client] = true;
@@ -4401,7 +4232,7 @@ stock ForceInNextPlayersInQueue(iAmount, bool:bShowMessage=false)
 		if (!GetArrayCell(hArray, i, 2))
 		{
 			new iClient = GetArrayCell(hArray, i);
-			if (g_bPlayerPlaying[iClient] || !g_bPlayerEliminated[iClient]) continue;
+			if (g_bPlayerPlaying[iClient] || !g_bPlayerEliminated[iClient] || !IsClientParticipating(iClient)) continue;
 			
 			PushArrayCell(hPlayers, iClient);
 			iAmountLeft--;
@@ -4416,7 +4247,7 @@ stock ForceInNextPlayersInQueue(iAmount, bool:bShowMessage=false)
 			{
 				for (new iClient = 1; iClient <= MaxClients; iClient++)
 				{
-					if (!IsValidClient(iClient)) continue;
+					if (!IsValidClient(iClient) || g_bPlayerPlaying[iClient] || !g_bPlayerEliminated[iClient] || !IsClientParticipating(iClient)) continue;
 					if (ClientGetPlayerGroup(iClient) == iGroupIndex)
 					{
 						PushArrayCell(hPlayers, iClient);
@@ -4561,7 +4392,7 @@ stock bool:IsTargetValidForSlender(iTarget, bool:bIncludeEliminated=false)
 			!IsPlayerAlive(iTarget) || 
 			g_bPlayerDeathCam[iTarget] || 
 			(!bIncludeEliminated && g_bPlayerEliminated[iTarget]) ||
-			g_bPlayerGhostMode[iTarget] || 
+			IsClientInGhostMode(iTarget) || 
 			g_bPlayerEscaped[iTarget]) return false;
 	}
 	
@@ -6390,7 +6221,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 				
 				for (new i = 1; i <= MaxClients; i++)
 				{
-					if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerDeathCam[i] || g_bPlayerEliminated[i] || g_bPlayerEscaped[i] || g_bPlayerGhostMode[i] || !PlayerCanSeeSlender(i, iBossIndex, false, false)) continue;
+					if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerDeathCam[i] || g_bPlayerEliminated[i] || g_bPlayerEscaped[i] || IsClientInGhostMode(i) || !PlayerCanSeeSlender(i, iBossIndex, false, false)) continue;
 					PushArrayCell(hArray, i);
 				}
 				
@@ -6555,7 +6386,7 @@ SlenderOnClientStressUpdate(client)
 				if (!IsClientInGame(i) ||
 					!IsPlayerAlive(i) ||
 					g_bPlayerEliminated[i] ||
-					g_bPlayerGhostMode[i] ||
+					IsClientInGhostMode(i) ||
 					g_bPlayerEscaped[i])
 				{
 					continue;
@@ -6825,7 +6656,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 									if (!IsClientInGame(iClient) ||
 										!IsPlayerAlive(iClient) ||
 										g_bPlayerEliminated[iClient] ||
-										g_bPlayerGhostMode[iClient] || 
+										IsClientInGhostMode(iClient) || 
 										g_bPlayerEscaped[iClient])
 									{
 										continue;
@@ -6971,7 +6802,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 						
 						for (new i = 1; i <= MaxClients; i++)
 						{
-							if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || g_bPlayerGhostMode[i]) continue;
+							if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i)) continue;
 							
 							if (PlayerCanSeeSlender(i, iBossIndex, false))
 							{
@@ -7078,7 +6909,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerGhostMode[i]) continue;
+		if (!IsClientInGame(i) || !IsPlayerAlive(i) || IsClientInGhostMode(i)) continue;
 		
 		if (!bAttackEliminated && g_bPlayerEliminated[i]) continue;
 		
@@ -7348,7 +7179,7 @@ SetPageCount(iNum)
 		for (new i = 1; i <= MaxClients; i++)
 		{
 			if (!IsClientInGame(i)) continue;
-			if (!g_bPlayerEliminated[i] || g_bPlayerGhostMode[i])
+			if (!g_bPlayerEliminated[i] || IsClientInGhostMode(i))
 			{
 				if (g_iPageCount)
 				{
@@ -7685,9 +7516,10 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 			}
 		}
 		
-		if (g_bPlayerGhostMode[i])
+		if (IsClientInGhostMode(i))
 		{
-			ClientDisableGhostMode(i);
+			ClientSetGhostModeState(i, false);
+			
 			TF2_RespawnPlayer(i);
 		}
 		else if (g_bPlayerProxy[i])
@@ -7761,7 +7593,8 @@ public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 			g_bPlayerPlaying[client] = false;
 			g_bPlayerEliminated[client] = true;
 			g_bPlayerEscaped[client] = false;
-			ClientDisableGhostMode(client);
+			
+			ClientSetGhostModeState(client, false);
 			
 			if (!bool:GetEntProp(client, Prop_Send, "m_bIsCoaching"))
 			{
@@ -7837,7 +7670,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 		
 		if (!IsClientParticipating(client))
 		{
-			ClientDisableGhostMode(client);
+			ClientSetGhostModeState(client, false);
 		}
 		
 		if (IsPlayerAlive(client) && IsClientParticipating(client))
@@ -7856,15 +7689,12 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			g_hPlayerOverlayCheck[client] = CreateTimer(0.1, Timer_PlayerOverlayCheck, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 			TriggerTimer(g_hPlayerOverlayCheck[client], true);
 			
-			if (g_bPlayerGhostMode[client])
-			{
-				ClientEnableGhostMode(client);
-			}
+			ClientHandleGhostMode(client);
 			
 			if ((g_bRoundWarmup || 
 				g_bPlayerEliminated[client] || 
 				g_bPlayerEscaped[client]) && 
-				!g_bPlayerGhostMode[client] &&
+				!IsClientInGhostMode(client) &&
 				!g_bPlayerProxy[client])
 			{
 				SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
@@ -7914,8 +7744,9 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 			}
 			
 			CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
-			CreateTimer(0.12, Timer_TeleportPlayerToPvP, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 		}
+		
+		PvP_OnPlayerSpawn(client);
 	}
 	
 #if defined DEBUG
@@ -8005,7 +7836,7 @@ public Action:Event_PlayerDeathPre(Handle:event, const String:name[], bool:dB)
 		{
 			if (!g_bRoundEnded)
 			{
-				if (g_bRoundGrace || g_bPlayerEliminated[client] || g_bPlayerGhostMode[client])
+				if (g_bRoundGrace || g_bPlayerEliminated[client] || IsClientInGhostMode(client))
 				{
 					SetEventBroadcast(event, true);
 				}
@@ -8077,7 +7908,9 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
 	if (client > 0)
 	{
-		if (!(GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER))
+		new bool:bFake = bool:(GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER);
+		
+		if (!bFake)
 		{
 			ClientDisableFakeLagCompensation(client);
 			
@@ -8097,11 +7930,12 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 			Client20DollarsMusicReset(client);
 			ClientMusicReset(client);
 			ClientResetDeathCam(client);
-			ClientResetPvP(client);
 			ClientResetSprint(client);
 			ClientResetBreathing(client);
 			
 			ClientUpdateMusicSystem(client);
+			
+			PvP_SetPlayerPvPState(client, false, false, false);
 			
 			if (g_bRoundWarmup)
 			{
@@ -8115,11 +7949,6 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 				}
 				else
 				{
-					if (g_bPlayerEliminated[client] && !g_bPlayerGhostMode[client] && g_bPlayerInPvPSpawning[client])
-					{
-						CreateTimer(0.3, Timer_RespawnPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
-					}
-					
 					g_bPlayerEliminated[client] = true;
 					g_bPlayerEscaped[client] = false;
 					
@@ -8185,6 +8014,8 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 				}
 			}
 		}
+		
+		PvP_OnPlayerDeath(client, bFake);
 	}
 	
 #if defined DEBUG
@@ -8276,80 +8107,6 @@ public Action:Timer_CheckRoundState(Handle:timer)
 	CheckRoundState();
 }
 
-public Action:Timer_TeleportPlayerToPvP(Handle:timer, any:userid)
-{
-	new client = GetClientOfUserId(userid);
-	if (client <= 0) return;
-
-	if (!g_bPlayerEliminated[client] && !g_bPlayerEscaped[client]) return;
-	
-	if (g_bPlayerGhostMode[client]) return;
-	
-	if (g_bPlayerProxy[client]) return; // Proxy mode not allowed.
-	
-	if (!g_bPlayerInPvPSpawning[client]) return;
-	
-	if (!IsClientParticipating(client)) return;
-	
-	new Handle:hArray = CreateArray();
-	
-	new ent = -1;
-	while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
-	{
-		decl String:sName[32];
-		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-		if (!StrContains(sName, "sf2_pvp_spawnpoint", false))
-		{
-			PushArrayCell(hArray, ent);
-		}
-	}
-	
-	decl Float:flMins[3], Float:flMaxs[3];
-	GetEntPropVector(client, Prop_Send, "m_vecMins", flMins);
-	GetEntPropVector(client, Prop_Send, "m_vecMaxs", flMaxs);
-	
-	new Handle:hArrayHull = CloneArray(hArray);
-	for (new i = 0; i < GetArraySize(hArray); i++)
-	{
-		new iEnt = GetArrayCell(hArray, i);
-		
-		decl Float:flMyPos[3];
-		GetEntPropVector(iEnt, Prop_Data, "m_vecAbsOrigin", flMyPos);
-		
-		if (IsSpaceOccupiedPlayer(flMyPos, flMins, flMaxs, client))
-		{
-			new iIndex = FindValueInArray(hArrayHull, iEnt);
-			if (iIndex != -1)
-			{
-				RemoveFromArray(hArrayHull, iIndex);
-			}
-		}
-	}
-	
-	new iNum;
-	if ((iNum = GetArraySize(hArrayHull)) > 0)
-	{
-		ent = GetArrayCell(hArrayHull, GetRandomInt(0, iNum - 1));
-	}
-	else if ((iNum = GetArraySize(hArray)) > 0)
-	{
-		ent = GetArrayCell(hArray, GetRandomInt(0, iNum - 1));
-	}
-	
-	if (iNum > 0)
-	{
-		decl Float:flPos[3], Float:flAng[3];
-		GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
-		GetEntPropVector(ent, Prop_Data, "m_angAbsRotation", flAng);
-		TeleportEntity(client, flPos, flAng, Float:{ 0.0, 0.0, 0.0 });
-		
-		EmitAmbientSound(PVP_SPAWN_SOUND, flPos, _, SNDLEVEL_NORMAL, _, 1.0);
-	}
-	
-	CloseHandle(hArray);
-	CloseHandle(hArrayHull);
-}
-
 public Action:Timer_RoundGrace(Handle:timer)
 {
 	if (timer != g_hRoundGraceTimer) return;
@@ -8384,7 +8141,7 @@ public Action:Timer_RoundTime(Handle:timer)
 	{
 		for (new i = 1; i <= MaxClients; i++)
 		{
-			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || g_bPlayerGhostMode[i]) continue;
+			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i)) continue;
 			
 			decl Float:flBuffer[3];
 			GetClientAbsOrigin(i, flBuffer);
@@ -8408,7 +8165,7 @@ public Action:Timer_RoundTime(Handle:timer)
 	
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (!IsClientInGame(i) || IsFakeClient(i) || (g_bPlayerEliminated[i] && !g_bPlayerGhostMode[i])) continue;
+		if (!IsClientInGame(i) || IsFakeClient(i) || (g_bPlayerEliminated[i] && !IsClientInGhostMode(i))) continue;
 		ShowSyncHudText(i, g_hRoundTimerSync, "%d/%d\n%d:%02d", g_iPageCount, g_iPageMax, minutes, seconds);
 	}
 	
@@ -8423,7 +8180,7 @@ public Action:Timer_RoundTimeEscape(Handle:timer)
 	{
 		for (new i = 1; i <= MaxClients; i++)
 		{
-			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || g_bPlayerGhostMode[i] || g_bPlayerEscaped[i]) continue;
+			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i) || g_bPlayerEscaped[i]) continue;
 			
 			decl Float:flBuffer[3];
 			GetClientAbsOrigin(i, flBuffer);
@@ -8448,7 +8205,7 @@ public Action:Timer_RoundTimeEscape(Handle:timer)
 	
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (!IsClientInGame(i) || IsFakeClient(i) || (g_bPlayerEliminated[i] && !g_bPlayerGhostMode[i])) continue;
+		if (!IsClientInGame(i) || IsFakeClient(i) || (g_bPlayerEliminated[i] && !IsClientInGhostMode(i))) continue;
 		ShowSyncHudText(i, g_hRoundTimerSync, "%T\n%d:%02d", "SF2 Default Escape Message", i, minutes, seconds);
 	}
 	
@@ -9043,7 +8800,8 @@ InitializeNewGame()
 	// Refresh players.
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		ClientDisableGhostMode(i);
+		ClientSetGhostModeState(i, false);
+		
 		g_bPlayerPlaying[i] = false;
 		g_bPlayerEliminated[i] = true;
 		g_bPlayerEscaped[i] = false;
@@ -9413,12 +9171,7 @@ public Native_IsClientEliminated(Handle:plugin, numParams)
 
 public Native_IsClientInGhostMode(Handle:plugin, numParams)
 {
-	return g_bPlayerGhostMode[GetNativeCell(1)];
-}
-
-public Native_IsClientInPvP(Handle:plugin, numParams)
-{
-	return IsClientInPvP(GetNativeCell(1));
+	return IsClientInGhostMode(GetNativeCell(1));
 }
 
 public Native_IsClientProxy(Handle:plugin, numParams)

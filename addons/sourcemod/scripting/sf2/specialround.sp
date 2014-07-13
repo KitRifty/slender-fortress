@@ -10,8 +10,17 @@
 
 #define FILE_SPECIALROUNDS "configs/sf2/specialrounds.cfg"
 
+static Handle:g_hSpecialRoundCycleNames = INVALID_HANDLE;
+
 ReloadSpecialRounds()
 {
+	if (g_hSpecialRoundCycleNames == INVALID_HANDLE)
+	{
+		g_hSpecialRoundCycleNames = CreateArray(128);
+	}
+	
+	ClearArray(g_hSpecialRoundCycleNames);
+
 	if (g_hSpecialRoundsConfig != INVALID_HANDLE)
 	{
 		CloseHandle(g_hSpecialRoundsConfig);
@@ -30,6 +39,42 @@ ReloadSpecialRounds()
 	{
 		g_hSpecialRoundsConfig = kv;
 		LogMessage("Loaded special rounds file!");
+		
+		// Load names for the cycle.
+		decl String:sBuffer[128];
+		SpecialRoundGetDescriptionHud(SPECIALROUND_DOUBLETROUBLE, sBuffer, sizeof(sBuffer));
+		PushArrayString(g_hSpecialRoundCycleNames, sBuffer);
+		
+		SpecialRoundGetDescriptionHud(SPECIALROUND_DOUBLETROUBLE, sBuffer, sizeof(sBuffer));
+		PushArrayString(g_hSpecialRoundCycleNames, sBuffer);
+		
+		SpecialRoundGetDescriptionHud(SPECIALROUND_SINGLEPLAYER, sBuffer, sizeof(sBuffer));
+		PushArrayString(g_hSpecialRoundCycleNames, sBuffer);
+		
+		SpecialRoundGetDescriptionHud(SPECIALROUND_DOUBLEMAXPLAYERS, sBuffer, sizeof(sBuffer));
+		PushArrayString(g_hSpecialRoundCycleNames, sBuffer);
+		
+		SpecialRoundGetDescriptionHud(SPECIALROUND_LIGHTSOUT, sBuffer, sizeof(sBuffer));
+		PushArrayString(g_hSpecialRoundCycleNames, sBuffer);
+		
+		KvRewind(kv);
+		if (KvJumpToKey(kv, "jokes"))
+		{
+			if (KvGotoFirstSubKey(kv, false))
+			{
+				do
+				{
+					KvGetString(kv, NULL_STRING, sBuffer, sizeof(sBuffer));
+					if (strlen(sBuffer) > 0)
+					{
+						PushArrayString(g_hSpecialRoundCycleNames, sBuffer);
+					}
+				}
+				while (KvGotoNextKey(kv, false));
+			}
+		}
+		
+		SortADTArray(g_hSpecialRoundCycleNames, Sort_Random, Sort_String);
 	}
 }
 
@@ -78,6 +123,19 @@ stock SpecialRoundGetIconHud(iSpecialRound, String:buffer[], bufferlen)
 	KvGetString(g_hSpecialRoundsConfig, "display_icon_hud", buffer, bufferlen);
 }
 
+stock bool:SpecialRoundCanBeSelected(iSpecialRound)
+{
+	if (g_hSpecialRoundsConfig == INVALID_HANDLE) return false;
+	
+	KvRewind(g_hSpecialRoundsConfig);
+	decl String:sSpecialRound[32];
+	IntToString(iSpecialRound, sSpecialRound, sizeof(sSpecialRound));
+	
+	if (!KvJumpToKey(g_hSpecialRoundsConfig, sSpecialRound)) return false;
+	
+	return bool:KvGetNum(g_hSpecialRoundsConfig, "enabled", 1);
+}
+
 public Action:Timer_SpecialRoundCycle(Handle:timer)
 {
 	if (timer != g_hSpecialRoundTimer) return Plugin_Stop;
@@ -88,20 +146,16 @@ public Action:Timer_SpecialRoundCycle(Handle:timer)
 		return Plugin_Stop;
 	}
 	
-	g_iSpecialRoundCycleNum++;
-	if (g_iSpecialRoundCycleNum >= SPECIALROUND_MAXROUNDS)
-	{
-		g_iSpecialRoundCycleNum = 1;
-	}
-	else if (g_iSpecialRoundCycleNum < 1)
-	{
-		g_iSpecialRoundCycleNum = 1;
-	}
-	
-	decl String:sBuffer[64];
-	SpecialRoundGetDescriptionHud(g_iSpecialRoundCycleNum, sBuffer, sizeof(sBuffer));
+	decl String:sBuffer[128];
+	GetArrayString(g_hSpecialRoundCycleNames, g_iSpecialRoundCycleNum, sBuffer, sizeof(sBuffer));
 	
 	GameTextTFMessage(sBuffer);
+	
+	g_iSpecialRoundCycleNum++;
+	if (g_iSpecialRoundCycleNum >= GetArraySize(g_hSpecialRoundCycleNames))
+	{
+		g_iSpecialRoundCycleNum = 0;
+	}
 	
 	return Plugin_Continue;
 }
@@ -164,7 +218,15 @@ SpecialRoundCycleFinish()
 	}
 	else
 	{
-		g_iSpecialRound = GetRandomInt(1, SPECIALROUND_MAXROUNDS - 1);
+		new Handle:hEnabledRounds = CreateArray();
+		PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLETROUBLE);
+		PushArrayCell(hEnabledRounds, SPECIALROUND_INSANEDIFFICULTY);
+		PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLEMAXPLAYERS);
+		PushArrayCell(hEnabledRounds, SPECIALROUND_LIGHTSOUT);
+	
+		g_iSpecialRound = GetArrayCell(hEnabledRounds, GetRandomInt(0, GetArraySize(hEnabledRounds) - 1));
+		
+		CloseHandle(hEnabledRounds);
 	}
 	
 	SetConVarInt(g_cvSpecialRoundOverride, -1);
