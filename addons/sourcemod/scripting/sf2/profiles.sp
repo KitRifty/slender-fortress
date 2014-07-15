@@ -544,3 +544,46 @@ stock bool:GetRandomStringFromProfile(const String:strName[], const String:strKe
 	KvGetString(g_hConfig, s, buffer, bufferlen);
 	return true;
 }
+
+/**
+ *	Returns an array of strings of the profile names of every valid boss.
+ */
+Handle:GetBossProfileList()
+{
+	decl String:buffer[SF2_MAX_PROFILE_NAME_LENGTH];
+	
+	new Handle:hArray = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
+	KvRewind(g_hConfig);
+	KvGotoFirstSubKey(g_hConfig);
+	do
+	{
+		KvGetSectionName(g_hConfig, buffer, sizeof(buffer));
+		PushArrayString(hArray, buffer);
+	}
+	while (KvGotoNextKey(g_hConfig));
+	
+	return hArray;
+}
+
+/**
+ *	Returns an array of strings of the profile names of every valid boss that can be randomly selected.
+ */
+Handle:GetSelectableBossProfileList()
+{
+	decl String:buffer[SF2_MAX_PROFILE_NAME_LENGTH];
+	
+	new Handle:hArray = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
+	KvRewind(g_hConfig);
+	KvGotoFirstSubKey(g_hConfig);
+	do
+	{
+		if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1))
+		{
+			KvGetSectionName(g_hConfig, buffer, sizeof(buffer));
+			PushArrayString(hArray, buffer);
+		}
+	}
+	while (KvGotoNextKey(g_hConfig));
+	
+	return hArray;
+}

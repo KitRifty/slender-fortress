@@ -19,7 +19,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.3a"
+#define PLUGIN_VERSION "0.2.3b"
 
 public Plugin:myinfo = 
 {
@@ -372,6 +372,7 @@ new Float:g_flPlayer20DollarsMusicVolumes[MAXPLAYERS + 1][MAX_BOSSES];
 new Handle:g_hPlayer20DollarsMusicTimer[MAXPLAYERS + 1][MAX_BOSSES];
 new g_iPlayer20DollarsMusicMaster[MAXPLAYERS + 1] = { -1, ... };
 
+new SF2RoundState:g_iRoundState = SF2RoundState_Invalid;
 new bool:g_bRoundGrace;
 new bool:g_bRoundWaitingForPlayers;
 new bool:g_bRoundWarmup;
@@ -404,10 +405,12 @@ new Float:g_flSpecialRoundCycleEndTime;
 new g_iSpecialRoundCount;
 new bool:g_bPlayerDidSpecialRound[MAXPLAYERS + 1];
 
-new bool:g_bBossRound;
-new g_iBossRoundCount;
-new bool:g_bPlayerDidBossRound[MAXPLAYERS + 1];
-new String:g_strBossRoundProfile[64];
+new bool:g_bNewBossRound;
+new bool:g_bNewBossRoundNew;
+new bool:g_bNewBossRoundContinuous;
+new g_iNewBossRoundCount;
+new bool:g_bPlayerPlayedNewBossRound[MAXPLAYERS + 1];
+new String:g_strNewBossRoundProfile[64];
 
 new Float:g_flPlayerDangerBoostTime[MAXPLAYERS + 1];
 
@@ -443,9 +446,9 @@ new Handle:g_cvSpecialRoundBehavior;
 new Handle:g_cvSpecialRoundForce;
 new Handle:g_cvSpecialRoundOverride;
 new Handle:g_cvSpecialRoundInterval;
-new Handle:g_cvBossRoundBehavior;
-new Handle:g_cvBossRoundInterval;
-new Handle:g_cvBossRoundForce;
+new Handle:g_cvNewBossRoundBehavior;
+new Handle:g_cvNewBossRoundInterval;
+new Handle:g_cvNewBossRoundForce;
 new Handle:g_cvPlayerVoiceDistance;
 new Handle:g_cvPlayerVoiceWallScale;
 new Handle:g_cvUltravisionEnabled;
@@ -559,6 +562,7 @@ new Handle:g_hSDKWantsLagCompensationOnEntity;
 new Handle:g_hSDKShouldTransmit;
 
 #include "sf2/stocks.sp"
+#include "sf2/debug.sp"
 #include "sf2/profiles.sp"
 #include "sf2/effects.sp"
 #include "sf2/pvp.sp"
@@ -634,6 +638,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	CreateNative("SF2_GetRandomStringFromBossProfile", Native_GetRandomStringFromBossProfile);
 	
 	PvP_InitializeAPI();
+	
+	SpecialRoundInitializeAPI();
 	
 	return APLRes_Success;
 }
@@ -737,9 +743,9 @@ public OnPluginStart()
 	g_cvSpecialRoundOverride = CreateConVar("sf2_specialround_forcetype", "-1", "Sets the type of Special Round that will be chosen on the next Special Round. Set to -1 to let the game choose.");
 	g_cvSpecialRoundInterval = CreateConVar("sf2_specialround_interval", "5", "If this many rounds are completed, the next round will be a Special Round.");
 	
-	g_cvBossRoundBehavior = CreateConVar("sf2_newbossround_mode", "0", "0 = boss selection will return to normal after the boss round, 1 = the new boss will continue being the boss until all players in the server have played against it (not counting spectators, recently joined players, and those who reset their queue points during the round).");
-	g_cvBossRoundInterval = CreateConVar("sf2_newbossround_interval", "3", "If this many around are completed, the next round's boss will be randomly chosen.");
-	g_cvBossRoundForce = CreateConVar("sf2_newbossround_forceenable", "-1", "Sets whether a new boss will be chosen on the next round or not. Set to -1 to let the game choose.");
+	g_cvNewBossRoundBehavior = CreateConVar("sf2_newbossround_mode", "0", "0 = boss selection will return to normal after the boss round, 1 = the new boss will continue being the boss until all players in the server have played against it (not counting spectators, recently joined players, and those who reset their queue points during the round).");
+	g_cvNewBossRoundInterval = CreateConVar("sf2_newbossround_interval", "3", "If this many around are completed, the next round's boss will be randomly chosen.");
+	g_cvNewBossRoundForce = CreateConVar("sf2_newbossround_forceenable", "-1", "Sets whether a new boss will be chosen on the next round or not. Set to -1 to let the game choose.");
 	
 	g_cvTimeLimit = CreateConVar("sf2_timelimit_default", "300", "The time limit of the round. Maps can change the time limit.");
 	g_cvTimeLimitEscape = CreateConVar("sf2_timelimit_escape_default", "90", "The time limit to escape. Maps can change the time limit.");
@@ -751,6 +757,11 @@ public OnPluginStart()
 	g_cvPlayerProxyAsk = CreateConVar("sf2_player_proxy_ask", "0", "Set to 1 if the player can choose before becoming a Proxy, set to 0 to force.");
 	
 	g_cvHalfZatoichiHealthGain = CreateConVar("sf2_halfzatoichi_healthgain", "20", "How much health should be gained from killing a player with the Half-Zatoichi? Set to -1 for default behavior.");
+	
+	g_hHudSync = CreateHudSynchronizer();
+	g_hHudSync2 = CreateHudSynchronizer();
+	g_hRoundTimerSync = CreateHudSynchronizer();
+	g_hCookie = RegClientCookie("slender_cookie", "", CookieAccess_Private);
 	
 	// Register console commands.
 	RegConsoleCmd("sm_sf2", Command_MainMenu);
@@ -777,10 +788,12 @@ public OnPluginStart()
 	RegAdminCmd("sm_sf2_boss_no_teleport", Command_SlenderNoTeleport, ADMFLAG_SLAY);
 	RegAdminCmd("sm_sf2_force_proxy", Command_ForceProxy, ADMFLAG_SLAY);
 	
+#if defined DEBUG
 	RegAdminCmd("sm_sf2_debug_boss_teleport", Command_DebugBossTeleport, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_boss_chase", Command_DebugBossChase, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_player_stress", Command_DebugPlayerStress, ADMFLAG_CHEATS);
 	RegAdminCmd("sm_sf2_debug_boss_proxies", Command_DebugBossProxies, ADMFLAG_CHEATS);
+#endif
 	
 	// Hook onto existing console commands.
 	AddCommandListener(Hook_CommandBuild, "build");
@@ -817,11 +830,6 @@ public OnPluginStart()
 	
 	// Hook sounds.
 	AddNormalSoundHook(Hook_NormalSound);
-	
-	g_hHudSync = CreateHudSynchronizer();
-	g_hHudSync2 = CreateHudSynchronizer();
-	g_hRoundTimerSync = CreateHudSynchronizer();
-	g_hCookie = RegClientCookie("slender_cookie", "", CookieAccess_Private);
 	
 	AddTempEntHook("Fire Bullets", Hook_TEFireBullets);
 	
@@ -1091,74 +1099,6 @@ SetupClassDefaultWeapons()
 	g_hSDKWeaponWrench = PrepareItemHandle("tf_weapon_wrench", 7, 0, 0, "");
 }
 
-public Action:Command_DebugBossTeleport(client, args)
-{
-	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_BOSS_TELEPORTATION);
-	if (!bInMode)
-	{
-		g_iPlayerDebugFlags[client] |= DEBUG_BOSS_TELEPORTATION;
-		PrintToChat(client, "Enabled debugging boss teleportation.");
-	}
-	else
-	{
-		g_iPlayerDebugFlags[client] &= ~DEBUG_BOSS_TELEPORTATION;
-		PrintToChat(client, "Disabled debugging boss teleportation.");
-	}
-	
-	return Plugin_Handled;
-}
-
-public Action:Command_DebugBossChase(client, args)
-{
-	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_BOSS_CHASE);
-	if (!bInMode)
-	{
-		g_iPlayerDebugFlags[client] |= DEBUG_BOSS_CHASE;
-		PrintToChat(client, "Enabled debugging boss chasing.");
-	}
-	else
-	{
-		g_iPlayerDebugFlags[client] &= ~DEBUG_BOSS_CHASE;
-		PrintToChat(client, "Disabled debugging boss chasing.");
-	}
-	
-	return Plugin_Handled;
-}
-
-public Action:Command_DebugPlayerStress(client, args)
-{
-	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_PLAYER_STRESS);
-	if (!bInMode)
-	{
-		g_iPlayerDebugFlags[client] |= DEBUG_PLAYER_STRESS;
-		PrintToChat(client, "Enabled debugging player stress.");
-	}
-	else
-	{
-		g_iPlayerDebugFlags[client] &= ~DEBUG_PLAYER_STRESS;
-		PrintToChat(client, "Disabled debugging player stress.");
-	}
-	
-	return Plugin_Handled;
-}
-
-public Action:Command_DebugBossProxies(client, args)
-{
-	new bool:bInMode = bool:(g_iPlayerDebugFlags[client] & DEBUG_BOSS_PROXIES);
-	if (!bInMode)
-	{
-		g_iPlayerDebugFlags[client] |= DEBUG_BOSS_PROXIES;
-		PrintToChat(client, "Enabled debugging boss proxies.");
-	}
-	else
-	{
-		g_iPlayerDebugFlags[client] &= ~DEBUG_BOSS_PROXIES;
-		PrintToChat(client, "Disabled debugging boss proxies.");
-	}
-	
-	return Plugin_Handled;
-}
-
 public OnMapStart()
 {
 	g_iSlenderGlobalID = -1;
@@ -1170,10 +1110,14 @@ public OnMapStart()
 	g_hBossCountUpdateTimer = INVALID_HANDLE;
 	g_hClientAverageUpdateTimer = INVALID_HANDLE;
 	
+	SetRoundState(SF2RoundState_Waiting);
+	
 	// Reset boss rounds.
-	g_bBossRound = false;
-	g_iBossRoundCount = 0;
-	strcopy(g_strBossRoundProfile, sizeof(g_strBossRoundProfile), "");
+	g_bNewBossRound = false;
+	g_bNewBossRoundNew = false;
+	g_bNewBossRoundContinuous = false;
+	g_iNewBossRoundCount = 1;
+	strcopy(g_strNewBossRoundProfile, sizeof(g_strNewBossRoundProfile), "");
 	
 	PvP_OnMapStart();
 }
@@ -1251,7 +1195,6 @@ static StartPlugin()
 	
 	// Reset special round.
 	SpecialRoundReset();
-	InitializeNewGame();
 	
 	// Late load compensation.
 	for (new i = 1; i <= MaxClients; i++)
@@ -2007,10 +1950,17 @@ public Menu_ResetQueuePoints(Handle:menu, MenuAction:action, param1, param2)
 					CPrintToChat(param1, "{olive}%T", "SF2 Queue Points Reset", param1);
 					
 					// Special round.
-					if (g_bSpecialRound) g_bPlayerDidSpecialRound[param1] = true;
+					if (g_bSpecialRound) 
+					{
+						g_bPlayerDidSpecialRound[param1] = true;
+					}
 					
-					// Boss round.
-					if (g_bBossRound) g_bPlayerDidBossRound[param1] = true;
+					// new boss round
+					if (g_bNewBossRound) 
+					{
+						// If the player resets the queue points ignore them when checking for players that haven't played the new boss yet, if applicable.
+						g_bPlayerPlayedNewBossRound[param1] = true;
+					}
 				}
 			}
 			
@@ -3320,6 +3270,7 @@ public OnConVarChanged(Handle:cvar, const String:oldValue[], const String:newVal
 //	IN-GAME AND ENTITY HOOK FUNCTIONS
 //	==========================================================
 
+
 public OnEntityCreated(ent, const String:classname[])
 {
 	if (!g_bEnabled) return;
@@ -3334,13 +3285,16 @@ public OnEntityCreated(ent, const String:classname[])
 	{
 		SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightBeamSetTransmit);
 	}
+	/*
 	else if (StrEqual(classname, "func_breakable", false) || StrEqual(classname, "func_breakable_surf", false))
 	{
 		SDKHook(ent, SDKHook_SpawnPost, Hook_BreakableSpawnPost);
 	}
+	*/
 	
 	PvP_OnEntityCreated(ent, classname);
 }
+
 
 public OnEntityDestroyed(ent)
 {
@@ -3516,28 +3470,6 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 	}
 	
 	if (bModified) return Plugin_Changed;
-	return Plugin_Continue;
-}
-
-public Hook_BreakableSpawnPost(breakable)
-{
-	if (!g_bEnabled) return;
-	
-	SDKUnhook(breakable, SDKHook_SpawnPost, Hook_BreakableSpawnPost);
-	SDKHook(breakable, SDKHook_StartTouch, Hook_BreakableOnTouch);
-	SDKHook(breakable, SDKHook_EndTouch, Hook_BreakableOnTouch);
-	SDKHook(breakable, SDKHook_Touch, Hook_BreakableOnTouch);
-}
-
-public Action:Hook_BreakableOnTouch(breakable, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-	
-	if (IsValidClient(other))
-	{
-		if (IsClientInGhostMode(other)) return Plugin_Handled;
-	}
-	
 	return Plugin_Continue;
 }
 
@@ -3754,6 +3686,7 @@ public Action:Hook_PageOnTakeDamage(page, &attacker, &inflictor, &Float:damage, 
 //	GENERIC CLIENT HOOKS AND FUNCTIONS
 //	==========================================================
 
+
 public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:angles[3], &weapon)
 {
 	if (!g_bEnabled) return Plugin_Continue;
@@ -3798,6 +3731,7 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
 	
 	return Plugin_Continue;
 }
+
 
 public OnClientCookiesCached(client)
 {
@@ -3844,7 +3778,7 @@ public OnClientPutInServer(client)
 	g_bPlayerEliminated[client] = true;
 	g_bPlayerChoseTeam[client] = false;
 	g_bPlayerDidSpecialRound[client] = true;
-	g_bPlayerDidBossRound[client] = true;
+	g_bPlayerPlayedNewBossRound[client] = true;
 	g_bPlayerFlashlightProjected[client] = false;
 	g_iPlayerDebugFlags[client] = 0;
 	
@@ -3957,27 +3891,6 @@ public OnClientDisconnect_Post(client)
     g_iPlayerLastButtons[client] = 0;
 }
 
-public Action:TF2Footprints_ShouldAppear(client, &bool:bAppear)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	if (IsClientInGhostMode(client))
-	{
-		bAppear = false;
-		return Plugin_Changed;
-	}
-	else if (!g_bPlayerEliminated[client])
-	{
-		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
-		{
-			bAppear = false;
-			return Plugin_Changed;
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
 public TF2_OnWaitingForPlayersStart()
 {
 	g_bRoundWaitingForPlayers = true;
@@ -3986,6 +3899,15 @@ public TF2_OnWaitingForPlayersStart()
 public TF2_OnWaitingForPlayersEnd()
 {
 	g_bRoundWaitingForPlayers = false;
+}
+
+
+SetRoundState(SF2RoundState:iRoundState)
+{
+	if (g_iRoundState == iRoundState) return;
+	
+	new SF2RoundState:iOldRoundState = g_iRoundState;
+	g_iRoundState = iRoundState;
 }
 
 #define SF2_PLAYER_HUD_BLINK_SYMBOL "B"
@@ -4206,7 +4128,7 @@ stock ClientForcePlay(client, bool:bEnablePlay=true)
 	PvP_SetPlayerPvPState(client, false, false, false);
 	
 	if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
-	if (g_bBossRound) g_bPlayerDidBossRound[client] = true;
+	if (g_bNewBossRound) g_bPlayerPlayedNewBossRound[client] = true;
 	
 	ChangeClientTeamNoSuicide(client, _:TFTeam_Red);
 }
@@ -6423,45 +6345,6 @@ SlenderOnClientStressUpdate(client)
 	}
 }
 
-stock SendDebugMessageToPlayer(client, iDebugFlags, iType, const String:sMessage[], any:...)
-{
-	if (!IsClientInGame(client) || IsFakeClient(client)) return;
-
-	decl String:sMsg[1024];
-	VFormat(sMsg, sizeof(sMsg), sMessage, 5);
-	
-	if (g_iPlayerDebugFlags[client] & iDebugFlags)
-	{
-		switch (iType)
-		{
-			case 0: CPrintToChat(client, sMsg);
-			case 1: PrintCenterText(client, sMsg);
-			case 2: PrintHintText(client, sMsg);
-		}
-	}
-}
-
-stock SendDebugMessageToPlayers(iDebugFlags, iType, const String:sMessage[], any:...)
-{
-	decl String:sMsg[1024];
-	VFormat(sMsg, sizeof(sMsg), sMessage, 4);
-
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i) || IsFakeClient(i)) continue;
-		
-		if (g_iPlayerDebugFlags[i] & iDebugFlags)
-		{
-			switch (iType)
-			{
-				case 0: CPrintToChat(i, sMsg);
-				case 1: PrintCenterText(i, sMsg);
-				case 2: PrintHintText(i, sMsg);
-			}
-		}
-	}
-}
-
 // As time passes on, we have to get more aggressive in order to successfully peak the target's
 // stress level in the allotted duration we're given. Otherwise we'll be forced to place him
 // in a rest period.
@@ -7148,7 +7031,7 @@ stock GetPageMusicRanges()
 				new iMax = StringToInt(sPageRanges[0]);
 				
 #if defined DEBUG
-				LogMessage("Page range found: entity %d, iMin = %d, iMax = %d", ent, iMin, iMax);
+				DebugMessage("Page range found: entity %d, iMin = %d, iMax = %d", ent, iMin, iMax);
 #endif
 				SetArrayCell(g_hPageMusicRanges, iIndex, iMin, 1);
 				SetArrayCell(g_hPageMusicRanges, iIndex, iMax, 2);
@@ -7378,19 +7261,76 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dB)
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_RoundStart");
 #endif
 	
-	InitializeNewGame();
+	// Reset some global variables.
+	g_iRoundCount++;
+	g_iRoundState = SF2RoundState_Invalid;
+	g_bRoundInfiniteFlashlight = false;
+	g_bRoundInfiniteBlink = false;
+	g_bRoundWarmup = true;
+	g_bRoundEnded = false;
+	g_hRoundTimer = INVALID_HANDLE;
+	g_iRoundTimeLimit = GetConVarInt(g_cvTimeLimit);
+	g_iRoundEscapeTimeLimit = GetConVarInt(g_cvTimeLimitEscape);
+	g_iRoundTimeGainFromPage = GetConVarInt(g_cvTimeGainFromPageGrab);
 	
+	g_bRoundGrace = true;
+	g_hRoundGraceTimer = INVALID_HANDLE;
+	
+	SetPageCount(0);
+	g_iPageMax = 0;
+	g_flPageFoundLastTime = GetGameTime();
+	
+	g_hVoteTimer = INVALID_HANDLE;
+	
+	// Calculate the new round state.
 	if (g_bRoundWaitingForPlayers)
 	{
+		g_bRoundWarmup = true;
+		SetRoundState(SF2RoundState_Waiting);
 	}
-	else if (g_bRoundWarmup)
+	else if (GetConVarBool(g_cvWarmupRound) && g_iRoundCount < 4)
 	{
+		g_bRoundWarmup = true;
+	
+		SetRoundState(SF2RoundState_Waiting);
+		
 		ServerCommand("mp_restartgame 15");
 		PrintCenterTextAll("Round restarting in 15 seconds");
 	}
 	else
 	{
-		//CreateTimer(2.0, Timer_RoundStart, _, TIMER_FLAG_NO_MAPCHANGE);
+		g_bRoundWarmup = false;
+	
+		// We have a non-warmup round.
+		SetRoundState(SF2RoundState_Waiting);
+	}
+	
+	// Remove all bosses from the game.
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		RemoveProfile(i);
+	}
+	
+	// Refresh groups.
+	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+	{
+		SetPlayerGroupPlaying(i, false);
+		CheckPlayerGroup(i);
+	}
+	
+	// Refresh players.
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		ClientSetGhostModeState(i, false);
+		
+		g_bPlayerPlaying[i] = false;
+		g_bPlayerEliminated[i] = true;
+		g_bPlayerEscaped[i] = false;
+	}
+	
+	if (!g_bRoundWarmup)
+	{
+		InitializeNewGame();
 	}
 	
 #if defined DEBUG
@@ -7606,7 +7546,7 @@ public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 			if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
 			
 			// Boss round.
-			if (g_bBossRound) g_bPlayerDidBossRound[client] = true;
+			if (g_bNewBossRound) g_bPlayerPlayedNewBossRound[client] = true;
 		}
 		else
 		{
@@ -7645,29 +7585,107 @@ public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 
 }
 
+/**
+ *	Sets the player to the correct team if needed. Returns true if a change was necessary, false if no change occurred.
+ */
+static bool:HandlePlayerTeam(client, bool:bRespawn=true)
+{
+	if (!IsClientInGame(client) || !IsClientParticipating(client)) return false;
+	
+	if (!g_bPlayerEliminated[client])
+	{
+		if (GetClientTeam(client) != _:TFTeam_Red)
+		{
+			if (bRespawn)
+				ChangeClientTeamNoSuicide(client, _:TFTeam_Red);
+			else
+				ChangeClientTeam(client, _:TFTeam_Red);
+				
+			return true;
+		}
+	}
+	else
+	{
+		if (GetClientTeam(client) != _:TFTeam_Blue)
+		{
+			if (bRespawn)
+				ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
+			else
+				ChangeClientTeam(client, _:TFTeam_Blue);
+				
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+static HandlePlayerIntroState(client)
+{
+	if (!IsClientInGame(client) || !IsPlayerAlive(client) || !IsClientParticipating(client)) return;
+	
+	if (g_bRoundIntro)
+	{
+		// Disable movement on player.
+		SetEntityFlags(client, GetEntityFlags(client) | FL_FROZEN);
+		
+		new Float:flDelay = 0.0;
+		if (!IsFakeClient(client))
+		{
+			flDelay = GetClientLatency(client, NetFlow_Outgoing);
+		}
+		
+		CreateTimer(flDelay * 4.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+	}
+}
+
+HandlePlayerHUD(client)
+{
+	if (g_bRoundWarmup || IsClientInGhostMode(client))
+	{
+		SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
+	}
+
+	if (!g_bPlayerEliminated[client])
+	{
+		if (!g_bPlayerEscaped[client])
+		{
+			// Player is in the game; disable normal HUD.
+			SetEntProp(client, Prop_Send, "m_iHideHUD", HIDEHUD_CROSSHAIR | HIDEHUD_HEALTH);
+		}
+		else
+		{
+			// Player isn't in the game; enable normal HUD behavior.
+			SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
+		}
+	}
+	else
+	{
+		if (g_bPlayerProxy[client])
+		{
+			// Player is in the game; disable normal HUD.
+			SetEntProp(client, Prop_Send, "m_iHideHUD", HIDEHUD_CROSSHAIR | HIDEHUD_HEALTH);
+		}
+		else
+		{
+			// Player isn't in the game; enable normal HUD behavior.
+			SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
+		}
+	}
+}
+
 public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 {
 	if (!g_bEnabled) return;
 	
+	new client = GetClientOfUserId(GetEventInt(event, "userid"));
+	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerSpawn");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerSpawn(%d)", client);
 #endif
 	
-	new client = GetClientOfUserId(GetEventInt(event, "userid"));
 	if (client > 0)
 	{
-#if defined DEBUG
-		if (GetConVarInt(g_cvDebugDetail) > 0) 
-		{
-			new bool:bIsCoaching = bool:GetEntProp(client, Prop_Send, "m_bIsCoaching");
-			new iTeam = GetClientTeam(client);
-			DebugMessage("client->m_bIsCoaching = %d", bIsCoaching);
-			DebugMessage("client->GetClientTeam() = %d", iTeam);
-			DebugMessage("client->IsPlayerAlive() = %d", IsPlayerAlive(client));
-			DebugMessage("client->IsClientParticipating() = %d", IsClientParticipating(client));
-		}
-#endif
-		
 		if (!IsClientParticipating(client))
 		{
 			ClientSetGhostModeState(client, false);
@@ -7676,81 +7694,62 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 		if (IsPlayerAlive(client) && IsClientParticipating(client))
 		{
 #if defined DEBUG
-			DebugMessage("client->InitializePlayerSpawn()");
+			if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START client->InitializePlayerSpawn()");
 #endif
 			
 			InitializeClient(client);
-		
-			SetVariantString("");
-			AcceptEntityInput(client, "SetCustomModel");
 			
 			ClientResetDeathCam(client);
 			
-			g_hPlayerOverlayCheck[client] = CreateTimer(0.1, Timer_PlayerOverlayCheck, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-			TriggerTimer(g_hPlayerOverlayCheck[client], true);
-			
 			ClientHandleGhostMode(client);
 			
-			if ((g_bRoundWarmup || 
-				g_bPlayerEliminated[client] || 
-				g_bPlayerEscaped[client]) && 
-				!IsClientInGhostMode(client) &&
-				!g_bPlayerProxy[client])
+			if (HandlePlayerTeam(client))
 			{
-				SetEntProp(client, Prop_Send, "m_iHideHUD", 0);
+#if defined DEBUG
+				if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("client->HandlePlayerTeam()");
+#endif
 			}
 			else
 			{
-				SetEntProp(client, Prop_Send, "m_iHideHUD", HIDEHUD_CROSSHAIR | HIDEHUD_HEALTH);
-			}
-			
-			if (!g_bPlayerEliminated[client])
-			{
-				if (GetClientTeam(client) != _:TFTeam_Red)
+				if (!g_bPlayerEliminated[client])
 				{
-					ChangeClientTeamNoSuicide(client, _:TFTeam_Red);
-				}
-				else 
-				{
-					ClientCreateProxyGlow(client, "head");
-					
 					g_hPlayerCampingTimer[client] = CreateTimer(5.0, Timer_ClientCheckCamp, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 					g_hPlayerBlinkTimer[client] = CreateTimer(GetClientBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 					CreateTimer(0.1, Timer_CheckEscapedPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 					
-					if (g_bRoundIntro)
-					{
-						// Disable movement on player.
-						SetEntityFlags(client, GetEntityFlags(client) | FL_FROZEN);
-						
-						new Float:flDelay = 0.0;
-						if (!IsFakeClient(client))
-						{
-							flDelay = GetClientLatency(client, NetFlow_Outgoing);
-						}
-						
-						CreateTimer(flDelay * 4.0, Timer_IntroBlackOut, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
-					}
+					HandlePlayerIntroState(client);
+					
+					// screen overlay timer
+					g_hPlayerOverlayCheck[client] = CreateTimer(0.0, Timer_PlayerOverlayCheck, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+					TriggerTimer(g_hPlayerOverlayCheck[client], true);
+					
+					ClientCreateProxyGlow(client, "head");
 				}
-			}
-			else
-			{
-				ClientRemoveProxyGlow(client);
-				
-				if (GetClientTeam(client) != _:TFTeam_Blue)
+				else
 				{
-					ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
+					g_hPlayerOverlayCheck[client] = INVALID_HANDLE;
+				
+					ClientRemoveProxyGlow(client);
 				}
+				
+				CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+				
+				HandlePlayerHUD(client);
+				
+				SetVariantString("");
+				AcceptEntityInput(client, "SetCustomModel");
+				
+#if defined DEBUG
+				if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END client->InitializePlayerSpawn()");
+#endif
 			}
-			
-			CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 		}
 		
 		PvP_OnPlayerSpawn(client);
 	}
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerSpawn");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerSpawn(%d)", client);
 #endif
 }
 
@@ -7798,7 +7797,7 @@ public Event_PostInventoryApplication(Handle:event, const String:name[], bool:dB
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT START: Event_PostInventoryApplication");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PostInventoryApplication");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -7808,7 +7807,7 @@ public Event_PostInventoryApplication(Handle:event, const String:name[], bool:dB
 	}
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT END: Event_PostInventoryApplication");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PostInventoryApplication");
 #endif
 }
 
@@ -7856,7 +7855,7 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT START: Event_PlayerHurt");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerHurt");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -7893,7 +7892,7 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("EVENT END: Event_PlayerHurt");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerHurt");
 #endif
 }
 
@@ -7902,7 +7901,7 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 	if (!g_bEnabled) return;
 	
 #if defined DEBUG
-	DebugMessage("EVENT START: Event_PlayerDeath");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerDeath");
 #endif
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -8019,7 +8018,7 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 	}
 	
 #if defined DEBUG
-	DebugMessage("EVENT END: Event_PlayerDeath");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerDeath");
 #endif
 }
 
@@ -8244,180 +8243,12 @@ public Action:Timer_VoteDifficulty(Handle:timer, any:data)
 	return Plugin_Stop;
 }
 
-InitializeNewGame()
+static InitializeMapEntities()
 {
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeNewGame()");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeMapEntities()");
 #endif
-	
-	SetPageCount(0);
-	g_iPageMax = 0;
-	g_flPageFoundLastTime = GetGameTime();
-	g_iRoundCount++;
-	g_bRoundIntro = false;
-	g_bRoundEnded = false;
-	g_bRoundWarmup = true;
-	g_bRoundGrace = true;
-	g_bRoundMustEscape = false;
-	g_hRoundGraceTimer = INVALID_HANDLE;
-	g_bRoundInfiniteFlashlight = false;
-	g_bRoundInfiniteBlink = false;
-	g_hRoundTimer = INVALID_HANDLE;
-	g_iRoundTimeLimit = GetConVarInt(g_cvTimeLimit);
-	g_iRoundEscapeTimeLimit = GetConVarInt(g_cvTimeLimitEscape);
-	g_iRoundTimeGainFromPage = GetConVarInt(g_cvTimeGainFromPageGrab);
-	g_hVoteTimer = INVALID_HANDLE;
-	
-	// Reset the boss profiles.
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		RemoveProfile(i);
-	}
-	
-	if (g_iRoundCount <= 1)
-	{
-		SetConVarString(g_cvProfileOverride, "");
-	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Determine warmup round state");
-#endif
-	
-	if (GetConVarBool(g_cvWarmupRound) && g_iRoundCount < 4)
-	{
-		g_bRoundWarmup = true;
-	}
-	else
-	{
-		g_bRoundWarmup = false;
-	}
-	
-	if (g_bRoundWarmup)
-	{
-		g_hRoundGraceTimer = INVALID_HANDLE;
-		return;
-	}
-	
-	decl String:buffer[64];
-	new iCount;
-	
-	// Determine special round state.
 
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Special round check");
-#endif
-	
-	g_bSpecialRoundNew = false;
-	
-	if (!g_bSpecialRound)
-	{
-		g_iSpecialRoundCount++;
-		
-		if (GetConVarInt(g_cvSpecialRoundInterval) > 0)
-		{
-			iCount = g_iSpecialRoundCount;
-			while (iCount > 0) iCount -= GetConVarInt(g_cvSpecialRoundInterval);
-			if (iCount == 0) 
-			{
-				g_bSpecialRound = true;
-				g_bSpecialRoundNew = true;
-			}
-		}
-	}
-	else
-	{
-		if (GetConVarInt(g_cvSpecialRoundBehavior) == 0)
-		{
-			g_bSpecialRound = false;
-		}
-		else
-		{
-			new iSpecialCount;
-			for (new i = 1; i <= MaxClients; i++)
-			{
-				if (!IsClientInGame(i)) continue;
-				
-				if (!g_bPlayerDidSpecialRound[i] && IsClientParticipating(i))
-				{
-					iSpecialCount++;
-				}
-			}
-			
-			if (!iSpecialCount) 
-			{
-				g_bSpecialRound = false;
-			}
-			else
-			{
-				g_bSpecialRoundNew = false;
-			}
-		}
-	}
-	
-	// Do special round force override and reset it.
-	if (GetConVarInt(g_cvSpecialRoundForce) >= 0)
-	{
-		g_bSpecialRound = GetConVarBool(g_cvSpecialRoundForce);
-		SetConVarInt(g_cvSpecialRoundForce, -1);
-		
-		if (g_bSpecialRound)
-		{
-			g_bSpecialRoundNew = true;
-		}
-	}
-	
-	// Was a new special round initialized?
-	if (g_bSpecialRound)
-	{
-		if (g_bSpecialRoundNew)
-		{
-			g_iSpecialRoundCount = 0; // Reset round count
-			
-			SpecialRoundCycleStart();
-			
-			// Reset all players' values.
-			for (new i = 1; i <= MaxClients; i++)
-			{
-				if (!IsClientParticipating(i))
-				{
-					g_bPlayerDidSpecialRound[i] = true;
-					continue;
-				}
-				
-				g_bPlayerDidSpecialRound[i] = false;
-			}
-		}
-		else
-		{
-			SpecialRoundStart();
-		
-			CreateTimer(3.0, Timer_DisplaySpecialRound, _, TIMER_FLAG_NO_MAPCHANGE);
-		}
-	}
-	else
-	{
-		SpecialRoundReset();
-	}
-	
-	// Initialize pages and entities.
-	GetPageMusicRanges();
-	
-	if (GetArraySize(g_hPageMusicRanges) > 0)
-	{
-		for (new i = 0; i < GetArraySize(g_hPageMusicRanges); i++)
-		{
-			new ent = EntRefToEntIndex(GetArrayCell(g_hPageMusicRanges, i));
-			if (!ent || ent == INVALID_ENT_REFERENCE) continue;
-			
-			decl String:sPath[PLATFORM_MAX_PATH];
-			GetEntPropString(ent, Prop_Data, "m_iszSound", sPath, sizeof(sPath));
-			if (sPath[0])
-			{
-				PrecacheSound(sPath);
-			}
-		}
-	}
-	
 	// Reset page reference.
 	g_bPageRef = false;
 	strcopy(g_strPageRefModel, sizeof(g_strPageRefModel), "");
@@ -8425,10 +8256,6 @@ InitializeNewGame()
 	
 	new Handle:hArray = CreateArray(2);
 	new Handle:hPageTrie = CreateTrie();
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Parsing through map entities");
-#endif
 	
 	decl String:targetName[64];
 	new ent = -1;
@@ -8529,10 +8356,6 @@ InitializeNewGame()
 	
 	// Get a reference entity, if any.
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Finding page reference entity");
-#endif
-	
 	ent = -1;
 	while ((ent = FindEntityByClassname(ent, "prop_dynamic")) != -1)
 	{
@@ -8549,10 +8372,6 @@ InitializeNewGame()
 			}
 		}
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Spawning pages");
-#endif
 	
 	new iPageCount = GetArraySize(hArray);
 	if (iPageCount)
@@ -8633,189 +8452,326 @@ InitializeNewGame()
 	CloseHandle(hPageTrie);
 	CloseHandle(hArray);
 	
-	// Get valid boss list.
-	decl String:sBossMain[64];
-	GetConVarString(g_cvBossMain, sBossMain, sizeof(sBossMain));
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeMapEntities()");
+#endif
+}
+
+static HandleNewBossRoundState()
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START HandleNewBossRoundState()");
+#endif
 	
-	new Handle:hValidRandomBosses = CreateArray(64);
-	hArray = CreateArray(64);
-	KvRewind(g_hConfig);
-	KvGotoFirstSubKey(g_hConfig);
-	do
+	new bool:bBossOld = g_bNewBossRound;
+	new bool:bBossContinuousOld = g_bNewBossRoundContinuous;
+	g_bNewBossRound = false;
+	g_bNewBossRoundNew = false;
+	g_bNewBossRoundContinuous = false;
+	
+	new bool:bForceNew = false;
+	
+	if (bBossOld)
 	{
-		KvGetSectionName(g_hConfig, buffer, sizeof(buffer));
-		PushArrayString(hArray, buffer);
-		
-		if (!StrEqual(buffer, sBossMain))
+		if (bBossContinuousOld)
 		{
-			if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1)) 
+			// Check if there are players who haven't played the boss round yet.
+			for (new i = 1; i <= MaxClients; i++)
 			{
-				PushArrayString(hValidRandomBosses, buffer);
+				if (!IsClientInGame(i) || !IsClientParticipating(i))
+				{
+					g_bPlayerPlayedNewBossRound[i] = true;
+					continue;
+				}
+				
+				if (!g_bPlayerPlayedNewBossRound[i])
+				{
+					// Someone didn't get to play this yet. Continue the boss round.
+					g_bNewBossRound = true;
+					g_bNewBossRoundContinuous = true;
+					break;
+				}
 			}
 		}
 	}
-	while (KvGotoNextKey(g_hConfig));
 	
-	// Determine boss round state.
+	new iRoundInterval = GetConVarInt(g_cvNewBossRoundInterval);
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): New boss round check");
-#endif
-	
-	new bool:bBossOld = g_bBossRound;
-	
-	if (!g_bBossRound)
+	if (iRoundInterval > 0 && g_iNewBossRoundCount >= iRoundInterval)
 	{
-		g_iBossRoundCount++;
-		
-		if (GetConVarInt(g_cvSpecialRoundInterval) > 0)
+		g_bNewBossRound = true;
+		bForceNew = true;
+	}
+	
+	// Do boss round force override and reset it.
+	if (GetConVarInt(g_cvNewBossRoundForce) >= 0)
+	{
+		g_bNewBossRound = GetConVarBool(g_cvNewBossRoundForce);
+		SetConVarInt(g_cvNewBossRoundForce, -1);
+	}
+	
+	new Handle:hSelectableBossList = GetSelectableBossProfileList();
+	
+	// Check if we have enough bosses.
+	if (g_bNewBossRound)
+	{
+		if (GetArraySize(hSelectableBossList) < 2)
 		{
-			iCount = g_iBossRoundCount;
-			while (iCount > 0) iCount -= GetConVarInt(g_cvBossRoundInterval);
-			if (iCount == 0) 
+			g_bNewBossRound = false; // Not enough bosses.
+		}
+	}
+	
+	CloseHandle(hSelectableBossList);
+	
+	if (g_bNewBossRound)
+	{
+		if (bForceNew || !bBossOld || !bBossContinuousOld)
+		{
+			g_bNewBossRoundNew = true;
+		}
+		
+		if (g_bNewBossRoundNew)
+		{
+			if (GetConVarInt(g_cvNewBossRoundBehavior) == 1)
 			{
-				g_bBossRound = true;
+				g_bNewBossRoundContinuous = true;
+			}
+			else
+			{
+				// New "new boss round", but it's not continuous.
+				g_bNewBossRoundContinuous = false;
 			}
 		}
 	}
 	else
 	{
-		if (GetConVarInt(g_cvBossRoundBehavior) == 0)
+		g_bNewBossRoundContinuous = false;
+	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END HandleNewBossRoundState() -> g_bNewBossRound = %d (count = %d, new = %d, continuous = %d)", g_bNewBossRound, g_iNewBossRoundCount, g_bNewBossRoundNew, g_bNewBossRoundContinuous);
+#endif
+}
+
+static SelectStartingBossesForRound()
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START SelectStartingBossesForRound()");
+#endif
+
+	new Handle:hBossList = GetBossProfileList();
+	new Handle:hSelectableBossList = GetSelectableBossProfileList();
+
+	// Select which boss profile to use.
+	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH];
+	GetConVarString(g_cvProfileOverride, sProfileOverride, sizeof(sProfileOverride));
+	
+	if (sProfileOverride[0] && FindStringInArray(hBossList, sProfileOverride) != -1)
+	{
+		// Pick the overridden boss.
+		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfileOverride);
+		SetConVarString(g_cvProfileOverride, "");
+	}
+	else if (g_bNewBossRound)
+	{
+		if (g_bNewBossRoundNew)
 		{
-			g_bBossRound = false;
+			GetArrayString(hSelectableBossList, GetRandomInt(0, GetArraySize(hSelectableBossList) - 1), g_strNewBossRoundProfile, sizeof(g_strNewBossRoundProfile));
+		}
+		
+		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), g_strNewBossRoundProfile);
+	}
+	else
+	{
+		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		GetConVarString(g_cvBossMain, sProfile, sizeof(sProfile));
+		
+		if (sProfile[0] && FindStringInArray(hBossList, sProfile) != -1)
+		{
+			strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfile);
 		}
 		else
 		{
-			new iBossCount;
+			// Pick the first boss in our array if the main boss doesn't exist.
+			GetArrayString(hSelectableBossList, 0, g_strRoundBossProfile, sizeof(g_strRoundBossProfile));
+		}
+	}
+	
+	CloseHandle(hBossList);
+	CloseHandle(hSelectableBossList);
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END SelectStartingBossesForRound() -> boss: %s", g_strRoundBossProfile);
+#endif
+}
+
+InitializeNewGame()
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeNewGame()");
+#endif
+	
+	if (g_iRoundCount <= 1)
+	{
+		SetConVarString(g_cvProfileOverride, "");
+	}
+	
+	g_bSpecialRoundNew = false;
+	
+	if (!g_bSpecialRound)
+	{
+		g_iSpecialRoundCount++;
+		
+		if (GetConVarInt(g_cvSpecialRoundInterval) > 0)
+		{
+			new iCount = g_iSpecialRoundCount;
+			while (iCount > 0) iCount -= GetConVarInt(g_cvSpecialRoundInterval);
+			if (iCount == 0) 
+			{
+				g_bSpecialRound = true;
+				g_bSpecialRoundNew = true;
+			}
+		}
+	}
+	else
+	{
+		if (GetConVarInt(g_cvSpecialRoundBehavior) == 0)
+		{
+			g_bSpecialRound = false;
+		}
+		else
+		{
+			new iSpecialCount;
 			for (new i = 1; i <= MaxClients; i++)
 			{
 				if (!IsClientInGame(i)) continue;
 				
-				if (!g_bPlayerDidBossRound[i] && IsClientParticipating(i))
+				if (!g_bPlayerDidSpecialRound[i] && IsClientParticipating(i))
 				{
-					iBossCount++;
+					iSpecialCount++;
 				}
 			}
 			
-			if (!iBossCount)
+			if (!iSpecialCount) 
 			{
-				g_bBossRound = false;
+				g_bSpecialRound = false;
+			}
+			else
+			{
+				g_bSpecialRoundNew = false;
 			}
 		}
 	}
 	
-	// Do boss round force override and reset it.
-	if (GetConVarInt(g_cvBossRoundForce) >= 0)
+	// Do special round force override and reset it.
+	if (GetConVarInt(g_cvSpecialRoundForce) >= 0)
 	{
-		g_bBossRound = GetConVarBool(g_cvBossRoundForce);
-		SetConVarInt(g_cvBossRoundForce, -1);
-	}
-	
-	if (GetArraySize(hArray) < 2)
-	{
-		g_bBossRound = false; // Not enough bosses.
-	}
-	
-	// Was a new boss round initialized?
-	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	
-	if (bBossOld != g_bBossRound || GetConVarInt(g_cvBossRoundBehavior) == 0)
-	{
-		if (g_bBossRound)
+		g_bSpecialRound = GetConVarBool(g_cvSpecialRoundForce);
+		SetConVarInt(g_cvSpecialRoundForce, -1);
+		
+		if (g_bSpecialRound)
 		{
-			// Reset round count;
-			g_iBossRoundCount = 0;
+			g_bSpecialRoundNew = true;
+		}
+	}
+	
+	// Was a new special round initialized?
+	if (g_bSpecialRound)
+	{
+		if (g_bSpecialRoundNew)
+		{
+			g_iSpecialRoundCount = 0; // Reset round count
+			
+			SpecialRoundCycleStart();
 			
 			// Reset all players' values.
 			for (new i = 1; i <= MaxClients; i++)
 			{
 				if (!IsClientParticipating(i))
 				{
-					g_bPlayerDidBossRound[i] = true;
+					g_bPlayerDidSpecialRound[i] = true;
 					continue;
 				}
 				
-				g_bPlayerDidBossRound[i] = false;
+				g_bPlayerDidSpecialRound[i] = false;
 			}
-			
-			// Get a new boss.
-			GetArrayString(hValidRandomBosses, GetRandomInt(1, GetArraySize(hValidRandomBosses) - 1), sProfile, sizeof(sProfile));
 		}
 		else
 		{
-			strcopy(sProfile, sizeof(sProfile), "");
+			SpecialRoundStart();
+		
+			CreateTimer(3.0, Timer_DisplaySpecialRound, _, TIMER_FLAG_NO_MAPCHANGE);
 		}
-	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Selecting boss profile");
-#endif
-	
-	// Select which boss profile to use.
-	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH];
-	GetConVarString(g_cvProfileOverride, sProfileOverride, sizeof(sProfileOverride));
-	
-	strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), "");
-	
-	if (sProfileOverride[0] && FindStringInArray(hArray, sProfileOverride) != -1)
-	{
-		// Pick the overridden boss.
-		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfileOverride);
-		SetConVarString(g_cvProfileOverride, "");
-	}
-	else if (g_bBossRound && sProfile[0] && FindStringInArray(hArray, sProfile) != -1)
-	{
-		// Pick the special boss.
-		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfile);
 	}
 	else
 	{
-		GetConVarString(g_cvBossMain, sProfile, sizeof(sProfile));
-		if (sProfile[0] && FindStringInArray(hArray, sProfile) != -1)
-		{
-			strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfile);
-		}
-		else
-		{
-			// Pick the first boss in our array.
-			GetArrayString(hArray, 0, g_strRoundBossProfile, sizeof(g_strRoundBossProfile));
-		}
+		SpecialRoundReset();
 	}
 	
-	// We don't need these anymore. Close it now.
-	CloseHandle(hArray);
-	CloseHandle(hValidRandomBosses);
+	// Initialize pages and entities.
+	GetPageMusicRanges();
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Refreshing groups and players");
-#endif
-	
-	// Refresh groups.
-	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
+	if (GetArraySize(g_hPageMusicRanges) > 0)
 	{
-		SetPlayerGroupPlaying(i, false);
-		CheckPlayerGroup(i);
+		decl String:sPath[PLATFORM_MAX_PATH];
+	
+		for (new i = 0; i < GetArraySize(g_hPageMusicRanges); i++)
+		{
+			new ent = EntRefToEntIndex(GetArrayCell(g_hPageMusicRanges, i));
+			if (!ent || ent == INVALID_ENT_REFERENCE) continue;
+			
+			GetEntPropString(ent, Prop_Data, "m_iszSound", sPath, sizeof(sPath));
+			if (sPath[0])
+			{
+				PrecacheSound(sPath);
+			}
+		}
 	}
 	
-	// Refresh players.
-	for (new i = 1; i <= MaxClients; i++)
+	InitializeMapEntities();
+	
+	// Determine boss round state.
+	HandleNewBossRoundState();
+	
+	if (g_bNewBossRound)
 	{
-		ClientSetGhostModeState(i, false);
-		
-		g_bPlayerPlaying[i] = false;
-		g_bPlayerEliminated[i] = true;
-		g_bPlayerEscaped[i] = false;
+		if (g_bNewBossRoundNew)
+		{
+			// Reset round count;
+			g_iNewBossRoundCount = 1;
+			
+			if (g_bNewBossRoundContinuous)
+			{
+				// It's the start of a continuous "new boss round".
+			
+				// Initialize all players' values.
+				for (new i = 1; i <= MaxClients; i++)
+				{
+					if (!IsClientInGame(i))
+					{
+						g_bPlayerPlayedNewBossRound[i] = true;
+						continue;
+					}
+				
+					if (!IsClientParticipating(i))
+					{
+						g_bPlayerPlayedNewBossRound[i] = true;
+						continue;
+					}
+					
+					g_bPlayerPlayedNewBossRound[i] = false;
+				}
+			}
+		}
+	}
+	else
+	{
+		g_iNewBossRoundCount++;
 	}
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Going through player and group queue list");
-#endif
+	SelectStartingBossesForRound();
 	
 	ForceInNextPlayersInQueue(GetConVarInt(g_cvMaxPlayers));
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("InitializeNewGame(): Respawning players");
-#endif
 	
 	new bool:bDoIntro = GetConVarBool(g_cvIntroEnabled);
 	
@@ -8845,12 +8801,6 @@ InitializeNewGame()
 		g_bRoundIntro = false;
 		g_hRoundIntroTimer = CreateTimer(0.0, Timer_IntroEnd, _, TIMER_FLAG_NO_MAPCHANGE);
 		TriggerTimer(g_hRoundIntroTimer);
-	}
-	
-	// Respawn all players.
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (IsClientParticipating(i)) TF2_RespawnPlayer(i);
 	}
 	
 	if (bDoIntro)
@@ -8910,6 +8860,15 @@ InitializeNewGame()
 			
 				EmitSoundToClient(i, sPath, _, MUSIC_CHAN, SNDLEVEL_NONE);
 			}
+		}
+	}
+	
+	// Respawn all players.
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientParticipating(i)) 
+		{
+			TF2_RespawnPlayer(i);
 		}
 	}
 	
@@ -9375,17 +9334,3 @@ public Native_GetRandomStringFromBossProfile(Handle:plugin, numParams)
 	SetNativeString(3, sBuffer, iBufferLen);
 	return bSuccess;
 }
-
-//	==========================================================
-//	DEBUGGING
-//	==========================================================
-
-#if defined DEBUG
-stock DebugMessage(const String:sMessage[], ...)
-{
-	decl String:sDebugMessage[1024], String:sTemp[1024];
-	VFormat(sTemp, sizeof(sTemp), sMessage, 2);
-	Format(sDebugMessage, sizeof(sDebugMessage), "SF2: %s", sTemp);
-	PrintToServer(sDebugMessage);
-}
-#endif

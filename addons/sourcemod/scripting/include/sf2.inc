@@ -73,6 +73,16 @@ enum
 	Static_Decrease
 };
 
+enum SF2RoundState
+{
+	SF2RoundState_Invalid = -1,
+	SF2RoundState_Waiting = 0,		// waiting for players
+	SF2RoundState_Intro,				// if intro is enabled, intro stage for RED
+	SF2RoundState_Active,			// round is running for RED
+	SF2RoundState_Escape,			// escape stage for RED
+	SF2RoundState_Outro				// round win for a team, next round coming soon
+};
+
 // Boss flags.
 #define SFF_SPAWNONCE (1 << 0)
 #define SFF_NOTELEPORT (1 << 1)
@@ -165,6 +175,20 @@ native SF2_GetCurrentDifficulty();
  * @return				Modifier float value of the indicated difficulty number.
  */
 native Float:SF2_GetDifficultyModifier(iDifficulty);
+
+/**
+ * Returns a bool indicating whether or not a special round is currently running.
+ *
+ * @return				True if a special round is running, false if not.
+ */
+native bool:SF2_IsSpecialRoundRunning();
+
+/**
+ * Returns the type of special round that is running.
+ *
+ * @return				Special round type.
+ */
+native SF2_GetSpecialRoundType();
 
 /**
  * Returns a bool about the client's elimination state.

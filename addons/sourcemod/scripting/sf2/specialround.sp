@@ -204,7 +204,7 @@ SpecialRoundCycleStart()
 	g_iSpecialRound = 0;
 	g_iSpecialRoundCycleNum = 0;
 	g_flSpecialRoundCycleEndTime = GetGameTime() + SR_CYCLELENGTH;
-	g_hSpecialRoundTimer = CreateTimer(0.05, Timer_SpecialRoundCycle, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	g_hSpecialRoundTimer = CreateTimer(0.12, Timer_SpecialRoundCycle, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
 SpecialRoundCycleFinish()
@@ -325,4 +325,20 @@ SpecialRoundReset()
 	g_hSpecialRoundTimer = INVALID_HANDLE;
 	g_iSpecialRoundCycleNum = 0;
 	g_flSpecialRoundCycleEndTime = -1.0;
+}
+
+public SpecialRoundInitializeAPI()
+{
+	CreateNative("SF2_IsSpecialRoundRunning", Native_IsSpecialRoundRunning);
+	CreateNative("SF2_GetSpecialRoundType", Native_GetSpecialRoundType);
+}
+
+public Native_IsSpecialRoundRunning(Handle:plugin, numParams)
+{
+	return g_bSpecialRound;
+}
+
+public Native_GetSpecialRoundType(Handle:plugin, numParams)
+{
+	return g_iSpecialRound;
 }
