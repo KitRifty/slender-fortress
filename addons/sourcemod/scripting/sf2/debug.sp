@@ -3,6 +3,11 @@
 #endif
 #define _sf2_debug_included
 
+#if !defined DEBUG
+ #endinput
+#endif
+
+new g_iPlayerDebugFlags[MAXPLAYERS + 1];
 
 
 stock DebugMessage(const String:sMessage[], ...)

@@ -136,7 +136,7 @@ public PvP_OnGameFrame()
 				iOwnerEntity = GetEntPropEnt(iOwnerEntity, Prop_Data, "m_hOwnerEntity");
 			}
 			
-			if (IsValidClient(iOwnerEntity) && (g_bRoundWarmup || IsClientInPvP(iOwnerEntity)))
+			if (IsValidClient(iOwnerEntity) && (IsRoundInWarmup() || IsClientInPvP(iOwnerEntity)))
 			{
 				GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flOrigin);
 				
@@ -374,7 +374,7 @@ static PvP_OnFlameEntityStartTouchPost(flame, other)
 {
 	if (IsValidClient(other))
 	{
-		if ((g_bRoundWarmup || IsClientInPvP(other)) && !g_bRoundEnded)
+		if ((IsRoundInWarmup() || IsClientInPvP(other)) && !IsRoundEnding())
 		{
 			new iFlamethrower = GetEntPropEnt(flame, Prop_Data, "m_hOwnerEntity");
 			if (IsValidEdict(iFlamethrower))
@@ -382,7 +382,7 @@ static PvP_OnFlameEntityStartTouchPost(flame, other)
 				new iOwnerEntity = GetEntPropEnt(iFlamethrower, Prop_Data, "m_hOwnerEntity");
 				if (iOwnerEntity != other && IsValidClient(iOwnerEntity))
 				{
-					if (g_bRoundWarmup || IsClientInPvP(iOwnerEntity))
+					if (IsRoundInWarmup() || IsClientInPvP(iOwnerEntity))
 					{
 						if (GetClientTeam(other) == GetClientTeam(iOwnerEntity))
 						{

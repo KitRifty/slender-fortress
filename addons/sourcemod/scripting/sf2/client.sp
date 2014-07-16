@@ -34,6 +34,15 @@ static String:g_strPlayerLagCompensationWeapons[][] =
 	"tf_weapon_sniperrifle_decap"
 };
 
+// Flashlight data.
+static bool:g_bPlayerFlashlight[MAXPLAYERS + 1] = { false, ... };
+static bool:g_bPlayerFlashlightBroken[MAXPLAYERS + 1] = { false, ... };
+static g_iPlayerFlashlightEnt[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static g_iPlayerFlashlightEntAng[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static Float:g_flPlayerFlashlightBatteryLife[MAXPLAYERS + 1] = { 1.0, ... };
+static Handle:g_hPlayerFlashlightBatteryTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+static Float:g_flPlayerFlashlightNextInputTime[MAXPLAYERS + 1] = { -1.0, ... };
+
 //	==========================================================
 //	GENERAL CLIENT HOOK FUNCTIONS
 //	==========================================================
@@ -56,14 +65,10 @@ public Hook_ClientPreThink(client)
 {
 	if (!g_bEnabled) return;
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("START Hook_ClientPreThink(%d)", client);
-#endif
-	
 	ClientProcessViewAngles(client);
 	ClientProcessVisibility(client);
 	ClientProcessStaticShake(client);
-	ClientProcessFlashlight(client);
+	ClientProcessFlashlightAngles(client);
 	ClientProcessGlow(client);
 	
 	if (IsClientInGhostMode(client))
@@ -73,7 +78,7 @@ public Hook_ClientPreThink(client)
 	}
 	else if (!g_bPlayerEliminated[client] || g_bPlayerProxy[client])
 	{
-		if (!g_bRoundEnded && !g_bRoundWarmup && !g_bPlayerEscaped[client])
+		if (!IsRoundEnding() && !IsRoundInWarmup() && !g_bPlayerEscaped[client])
 		{
 			new iRoundState = _:GameRules_GetRoundState();
 		
@@ -268,7 +273,9 @@ public Hook_ClientPreThink(client)
 		g_flPlayerStressNextUpdateTime[client] = GetGameTime() + 0.33;
 		ClientAddStress(client, -0.01);
 		
+#if defined DEBUG
 		SendDebugMessageToPlayer(client, DEBUG_PLAYER_STRESS, 1, "g_flPlayerStress[%d]: %0.1f", client, g_flPlayerStress[client]);
+#endif
 	}
 	
 	// Process screen shake, if enabled.
@@ -298,10 +305,6 @@ public Hook_ClientPreThink(client)
 			UTIL_ScreenShake(client, flAmplitude, 0.5, flFrequency);
 		}
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("END Hook_ClientPreThink(%d)", client);
-#endif
 }
 
 public Action:Hook_ClientSetTransmit(client, other)
@@ -312,7 +315,7 @@ public Action:Hook_ClientSetTransmit(client, other)
 	{
 		if (IsClientInGhostMode(client) && !IsClientInGhostMode(other)) return Plugin_Handled;
 		
-		if (!g_bRoundEnded)
+		if (!IsRoundEnding())
 		{
 			// SPECIAL ROUND: Singleplayer
 			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
@@ -343,7 +346,7 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 {
 	if (!g_bEnabled) return Plugin_Continue;
 	
-	if ((g_bRoundWarmup || IsClientInPvP(client)) && !g_bRoundEnded)
+	if ((IsRoundInWarmup() || IsClientInPvP(client)) && !IsRoundEnding())
 	{
 		if (!GetConVarBool(g_cvPlayerFakeLagCompensation))
 		{
@@ -364,7 +367,7 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 				{
 					if (GetClientTeam(iHitEntity) == GetClientTeam(client))
 					{
-						if (g_bRoundWarmup || IsClientInPvP(iHitEntity))
+						if (IsRoundInWarmup() || IsClientInPvP(iHitEntity))
 						{
 							new Float:flDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
 							if (flDamage < 50.0) flDamage = 50.0;
@@ -393,11 +396,11 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 {
 	if (!g_bEnabled) return Plugin_Continue;
 	
-	if (g_bRoundWarmup) return Plugin_Continue;
+	if (IsRoundInWarmup()) return Plugin_Continue;
 	
 	if (attacker != victim && IsValidClient(attacker))
 	{
-		if (!g_bRoundEnded)
+		if (!IsRoundEnding())
 		{
 			if (IsClientInPvP(victim) && IsClientInPvP(attacker))
 			{
@@ -531,7 +534,7 @@ public Action:Hook_TEFireBullets(const String:te_name[], const Players[], numCli
 	{
 		if (GetConVarBool(g_cvPlayerFakeLagCompensation))
 		{
-			if ((g_bRoundWarmup || IsClientInPvP(client)))
+			if ((IsRoundInWarmup() || IsClientInPvP(client)))
 			{
 				ClientEnableFakeLagCompensation(client);
 			}
@@ -590,17 +593,14 @@ InitializeClient(client)
 		g_iPlayerDesiredFOV[client] = 90;
 	}
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): ClientStopAllSlenderSounds", client);
-#endif
-	
 	PvP_SetPlayerPvPState(client, false, false, false);
 	
 	g_iPlayerPageCount[client] = 0;
 	
+	ClientDisableFakeLagCompensation(client);
+	
 	ClientResetStatic(client);
 	ClientResetSlenderStats(client);
-	ClientResetFlashlight(client);
 	ClientResetCampingStats(client);
 	ClientResetBlink(client);
 	ClientResetOverlay(client);
@@ -615,11 +615,14 @@ InitializeClient(client)
 	ClientResetGlow(client);
 	ClientResetProxy(client);
 	ClientResetProxyGlow(client);
-	ClientResetSprint(client);
-	ClientResetBreathing(client);
 	ClientResetHints(client);
 	ClientResetScare(client);
-	ClientDisableFakeLagCompensation(client);
+	
+	ClientResetDeathCam(client);
+	ClientResetFlashlight(client);
+	ClientDeactivateUltravision(client);
+	ClientResetSprint(client);
+	ClientResetBreathing(client);
 	
 	g_flPlayerDangerBoostTime[client] = -1.0;
 	
@@ -662,15 +665,15 @@ ClientEscape(client)
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("START ClientEscape(%d)", client);
 #endif
-
+	
 	if (!g_bPlayerEscaped[client])
 	{
 		g_bPlayerEscaped[client] = true;
-	
-		CheckRoundState();
 		
 		ClientResetBreathing(client);
-		ClientDeactivateFlashlight(client);
+		ClientResetSprint(client);
+		ClientResetFlashlight(client);
+		ClientDeactivateUltravision(client);
 		
 		// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
 		TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
@@ -680,6 +683,8 @@ ClientEscape(client)
 		decl String:sName[MAX_NAME_LENGTH];
 		GetClientName(client, sName, sizeof(sName));
 		CPrintToChatAll("%t", "SF2 Player Escaped", sName);
+		
+		CheckRoundWinConditions();
 		
 		Call_StartForward(fOnClientEscape);
 		Call_PushCell(client);
@@ -799,45 +804,139 @@ stock bool:ClientHasCrits(client)
 //	FLASHLIGHT / ULTRAVISION FUNCTIONS
 //	==========================================================
 
-ClientProcessFlashlight(i)
+bool:IsClientUsingFlashlight(client)
 {
-	if (!IsClientInGame(i) || !IsPlayerAlive(i)) return;
+	return g_bPlayerFlashlight[client];
+}
 
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("START ClientProcessFlashlight(%d)", i);
-#endif
+Float:ClientGetFlashlightBatteryLife(client)
+{
+	return g_flPlayerFlashlightBatteryLife[client];
+}
+
+ClientSetFlashlightBatteryLife(client, Float:flPercent)
+{
+	g_flPlayerFlashlightBatteryLife[client] = flPercent;
+}
+
+/**
+ *	Called in Hook_ClientPreThink, this makes sure the flashlight is oriented correctly on the player.
+ */
+static ClientProcessFlashlightAngles(client)
+{
+	if (!IsClientInGame(client)) return;
 	
-	decl fl, flAng, Float:eyeAng[3], Float:ang2[3];
-	
-	if (g_bPlayerFlashlight[i])
+	if (IsPlayerAlive(client))
 	{
-		new bool:bFlicker = false;
-		if (g_flPlayerFlashlightMeter[i] <= SF2_FLASHLIGHT_FLICKERAT) bFlicker = true;
+		decl fl, Float:eyeAng[3], Float:ang2[3];
 		
-		fl = EntRefToEntIndex(g_iPlayerFlashlightEnt[i]);
-		if (fl && fl != INVALID_ENT_REFERENCE)
+		if (IsClientUsingFlashlight(client))
 		{
-			TeleportEntity(fl, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 }, NULL_VECTOR);
+			fl = EntRefToEntIndex(g_iPlayerFlashlightEnt[client]);
+			if (fl && fl != INVALID_ENT_REFERENCE)
+			{
+				TeleportEntity(fl, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 }, NULL_VECTOR);
+			}
 			
-			if (bFlicker) SetEntProp(fl, Prop_Data, "m_LightStyle", 10);
-			else SetEntProp(fl, Prop_Data, "m_LightStyle", 0);
-		}
-		
-		flAng = EntRefToEntIndex(g_iPlayerFlashlightEntAng[i]);
-		if (flAng && flAng != INVALID_ENT_REFERENCE)
-		{
-			GetClientEyeAngles(i, eyeAng);
-			GetClientAbsAngles(i, ang2);
-			SubtractVectors(eyeAng, ang2, eyeAng);
-			TeleportEntity(flAng, NULL_VECTOR, eyeAng, NULL_VECTOR);
-			
-			if (bFlicker) SetEntityRenderFx(flAng, RenderFx:13);
-			else SetEntityRenderFx(flAng, RenderFx:0);
+			fl = EntRefToEntIndex(g_iPlayerFlashlightEntAng[client]);
+			if (fl && fl != INVALID_ENT_REFERENCE)
+			{
+				GetClientEyeAngles(client, eyeAng);
+				GetClientAbsAngles(client, ang2);
+				SubtractVectors(eyeAng, ang2, eyeAng);
+				TeleportEntity(fl, NULL_VECTOR, eyeAng, NULL_VECTOR);
+			}
 		}
 	}
+}
+
+/**
+ *	Handles whether or not the player's flashlight should be "flickering", a sign of a dying flashlight battery.
+ */
+static ClientHandleFlashlightFlickerState(client)
+{
+	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
+	
+	if (IsClientUsingFlashlight(client))
+	{
+		new bool:bFlicker = bool:(ClientGetFlashlightBatteryLife(client) <= SF2_FLASHLIGHT_FLICKERAT);
+	
+		new fl = EntRefToEntIndex(g_iPlayerFlashlightEnt[client]);
+		if (fl && fl != INVALID_ENT_REFERENCE)
+		{
+			if (bFlicker)
+			{
+				SetEntProp(fl, Prop_Data, "m_LightStyle", 10);
+			}
+			else
+			{
+				SetEntProp(fl, Prop_Data, "m_LightStyle", 0);
+			}
+		}
+		
+		fl = EntRefToEntIndex(g_iPlayerFlashlightEntAng[client]);
+		if (fl && fl != INVALID_ENT_REFERENCE)
+		{
+			if (bFlicker) 
+			{
+				SetEntityRenderFx(fl, RenderFx:13);
+			}
+			else 
+			{
+				SetEntityRenderFx(fl, RenderFx:0);
+			}
+		}
+	}
+}
+
+bool:IsClientFlashlightBroken(client)
+{
+	return g_bPlayerFlashlightBroken[client];
+}
+
+Float:ClientGetFlashlightNextInputTime(client)
+{
+	return g_flPlayerFlashlightNextInputTime[client];
+}
+
+/**
+ *	Breaks the player's flashlight. Nothing else.
+ */
+ClientBreakFlashlight(client)
+{
+	if (IsClientFlashlightBroken(client)) return;
+	
+	g_bPlayerFlashlightBroken[client] = true;
+	
+	ClientSetFlashlightBatteryLife(client, 0.0);
+	ClientTurnOffFlashlight(client);
+	
+	ClientAddStress(client, 0.2);
+	
+	EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
+	
+	Call_StartForward(fOnClientBreakFlashlight);
+	Call_PushCell(client);
+	Call_Finish();
+}
+
+/**
+ *	Resets everything of the player's flashlight.
+ */
+ClientResetFlashlight(client)
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetFlashlight(%d)", client);
+#endif
+	
+	ClientTurnOffFlashlight(client);
+	ClientSetFlashlightBatteryLife(client, 1.0);
+	g_bPlayerFlashlightBroken[client] = false;
+	g_hPlayerFlashlightBatteryTimer[client] = INVALID_HANDLE;
+	g_flPlayerFlashlightNextInputTime[client] = -1.0;
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("END ClientProcessFlashlight(%d)", i);
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetFlashlight(%d)", client);
 #endif
 }
 
@@ -848,7 +947,7 @@ public Action:Hook_FlashlightSetTransmit(ent, other)
 	if (EntRefToEntIndex(g_iPlayerFlashlightEnt[other]) != ent) return Plugin_Handled;
 	
 	// We've already checked for flashlight ownership in the last statement. So we can do just this.
-	if (g_bPlayerFlashlightProjected[other]) return Plugin_Handled;
+	if (g_iPlayerPreferences[other][PlayerPreference_ProjectedFlashlight]) return Plugin_Handled;
 	
 	return Plugin_Continue;
 }
@@ -861,29 +960,135 @@ public Action:Hook_Flashlight2SetTransmit(ent, other)
 	return Plugin_Continue;
 }
 
+public Hook_FlashlightEndSpawnPost(ent)
+{
+	if (!g_bEnabled) return;
+
+	SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightEndSetTransmit);
+	SDKUnhook(ent, SDKHook_SpawnPost, Hook_FlashlightEndSpawnPost);
+}
+
+public Action:Hook_FlashlightBeamSetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+
+	new iOwner = -1;
+	new iSpotlight = -1;
+	while ((iSpotlight = FindEntityByClassname(iSpotlight, "point_spotlight")) != -1)
+	{
+		if (GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity") == iSpotlight)
+		{
+			iOwner = iSpotlight;
+			break;
+		}
+	}
+	
+	if (iOwner == -1) return Plugin_Continue;
+	
+	new iClient = -1;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i)) continue;
+		
+		if (EntRefToEntIndex(g_iPlayerFlashlightEntAng[i]) == iOwner)
+		{
+			iClient = i;
+			break;
+		}
+	}
+	
+	if (iClient == -1) return Plugin_Continue;
+	
+	if (iClient == other)
+	{
+		if (!GetEntProp(iClient, Prop_Send, "m_nForceTauntCam") || !GetEntProp(iClient, Prop_Send, "m_iObserverMode"))
+		{
+			return Plugin_Handled;
+		}
+	}
+	else
+	{
+		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+		{
+			return Plugin_Handled;
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action:Hook_FlashlightEndSetTransmit(ent, other)
+{
+	if (!g_bEnabled) return Plugin_Continue;
+
+	new iOwner = -1;
+	new iSpotlight = -1;
+	while ((iSpotlight = FindEntityByClassname(iSpotlight, "point_spotlight")) != -1)
+	{
+		if (GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity") == iSpotlight)
+		{
+			iOwner = iSpotlight;
+			break;
+		}
+	}
+	
+	if (iOwner == -1) return Plugin_Continue;
+	
+	new iClient = -1;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i)) continue;
+		
+		if (EntRefToEntIndex(g_iPlayerFlashlightEntAng[i]) == iOwner)
+		{
+			iClient = i;
+			break;
+		}
+	}
+	
+	if (iClient == -1) return Plugin_Continue;
+	
+	if (iClient == other)
+	{
+		if (!GetEntProp(iClient, Prop_Send, "m_nForceTauntCam") || !GetEntProp(iClient, Prop_Send, "m_iObserverMode"))
+		{
+			return Plugin_Handled;
+		}
+	}
+	else
+	{
+		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+		{
+			return Plugin_Handled;
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
 public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return Plugin_Stop;
 	
-	if (timer != g_hPlayerFlashlightTimer[client]) return Plugin_Stop;
+	if (timer != g_hPlayerFlashlightBatteryTimer[client]) return Plugin_Stop;
 	
-	if (!g_bRoundInfiniteFlashlight) g_flPlayerFlashlightMeter[client] -= 0.01;
-	
-	if (g_flPlayerFlashlightMeter[client] <= 0.0)
+	if (!g_bRoundInfiniteFlashlight) 
 	{
-		g_flPlayerFlashlightMeter[client] = 0.0;
-		g_bPlayerFlashlightBroken[client] = true;
-		EmitSoundToAll(FLASHLIGHT_BREAKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
-		ClientDeactivateFlashlight(client);
-		
-		ClientAddStress(client, 0.2);
-		
-		Call_StartForward(fOnClientBreakFlashlight);
-		Call_PushCell(client);
-		Call_Finish();
-		
+		ClientSetFlashlightBatteryLife(client, ClientGetFlashlightBatteryLife(client) - 0.01);
+	}
+	
+	if (ClientGetFlashlightBatteryLife(client) <= 0.0)
+	{
+		// Break the player's flashlight, but also start recharging.
+		ClientBreakFlashlight(client);
+		ClientStartRechargingFlashlightBattery(client);
+		ClientActivateUltravision(client);
 		return Plugin_Stop;
+	}
+	else
+	{
+		ClientHandleFlashlightFlickerState(client);
 	}
 	
 	return Plugin_Continue;
@@ -894,75 +1099,92 @@ public Action:Timer_RechargeFlashlight(Handle:timer, any:userid)
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return Plugin_Stop;
 	
-	if (timer != g_hPlayerFlashlightTimer[client]) return Plugin_Stop;
+	if (timer != g_hPlayerFlashlightBatteryTimer[client]) return Plugin_Stop;
 	
-	g_flPlayerFlashlightMeter[client] += 0.01;
+	ClientSetFlashlightBatteryLife(client, ClientGetFlashlightBatteryLife(client) + 0.01);
 	
-	if (g_bPlayerFlashlightBroken[client] && g_flPlayerFlashlightMeter[client] >= SF2_FLASHLIGHT_ENABLEAT)
+	if (IsClientFlashlightBroken(client) && ClientGetFlashlightBatteryLife(client) >= SF2_FLASHLIGHT_ENABLEAT)
 	{
+		// Repair the flashlight.
 		g_bPlayerFlashlightBroken[client] = false;
 	}
 	
-	if (g_flPlayerFlashlightMeter[client] >= 1.0)
+	if (ClientGetFlashlightBatteryLife(client) >= 1.0)
 	{
-		g_flPlayerFlashlightMeter[client] = 1.0;
-		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
+		// I am fully charged!
+		ClientSetFlashlightBatteryLife(client, 1.0);
+		g_hPlayerFlashlightBatteryTimer[client] = INVALID_HANDLE;
+		
 		return Plugin_Stop;
 	}
 	
 	return Plugin_Continue;
 }
 
-ClientActivateFlashlight(client)
+/**
+ *	Turns on the player's flashlight. Nothing else.
+ */
+ClientTurnOnFlashlight(client)
 {
-	ClientDeactivateFlashlight(client);
+	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
 	
-	new Float:flDrainRate = SF2_FLASHLIGHT_DRAIN_RATE;
-	if (TF2_GetPlayerClass(client) == TFClass_Engineer) flDrainRate *= 1.33;
+	if (IsClientUsingFlashlight(client)) return;
 	
 	g_bPlayerFlashlight[client] = true;
-	g_hPlayerFlashlightTimer[client] = CreateTimer(flDrainRate, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
-	decl Float:flPos[3];
-	GetClientEyePosition(client, flPos);
+	decl Float:flEyePos[3];
+	GetClientEyePosition(client, flEyePos);
 	
-	new ent = CreateEntityByName("light_dynamic");
-	if (ent != -1)
+	if (g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight])
 	{
-		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
-		DispatchKeyValue(ent, "targetname", "WUBADUBDUBMOTHERBUCKERS");
-		DispatchKeyValue(ent, "rendercolor", "255 255 255");
-		SetVariantFloat(SF2_FLASHLIGHT_WIDTH);
-		AcceptEntityInput(ent, "spotlight_radius");
-		SetVariantFloat(SF2_FLASHLIGHT_LENGTH);
-		AcceptEntityInput(ent, "distance");
-		SetVariantInt(SF2_FLASHLIGHT_BRIGHTNESS);
-		AcceptEntityInput(ent, "brightness");
-		
-		// Convert WU to inches.
-		new Float:cone = 55.0;
-		cone *= 0.75;
-		
-		SetVariantInt(RoundToFloor(cone));
-		AcceptEntityInput(ent, "_inner_cone");
-		SetVariantInt(RoundToFloor(cone));
-		AcceptEntityInput(ent, "_cone");
-		DispatchSpawn(ent);
-		ActivateEntity(ent);
-		SetVariantString("!activator");
-		AcceptEntityInput(ent, "SetParent", client);
-		AcceptEntityInput(ent, "TurnOn");
-		
-		g_iPlayerFlashlightEnt[client] = EntIndexToEntRef(ent);
-		
-		SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightSetTransmit);
+		// If the player is using the projected flashlight, just set effect flags.
+		new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
+		if (!(iEffects & (1 << 2)))
+		{
+			SetEntProp(client, Prop_Send, "m_fEffects", iEffects | (1 << 2));
+		}
+	}
+	else
+	{
+		// Spawn the light which only the user will see.
+		new ent = CreateEntityByName("light_dynamic");
+		if (ent != -1)
+		{
+			TeleportEntity(ent, flEyePos, NULL_VECTOR, NULL_VECTOR);
+			DispatchKeyValue(ent, "targetname", "WUBADUBDUBMOTHERBUCKERS");
+			DispatchKeyValue(ent, "rendercolor", "255 255 255");
+			SetVariantFloat(SF2_FLASHLIGHT_WIDTH);
+			AcceptEntityInput(ent, "spotlight_radius");
+			SetVariantFloat(SF2_FLASHLIGHT_LENGTH);
+			AcceptEntityInput(ent, "distance");
+			SetVariantInt(SF2_FLASHLIGHT_BRIGHTNESS);
+			AcceptEntityInput(ent, "brightness");
+			
+			// Convert WU to inches.
+			new Float:cone = 55.0;
+			cone *= 0.75;
+			
+			SetVariantInt(RoundToFloor(cone));
+			AcceptEntityInput(ent, "_inner_cone");
+			SetVariantInt(RoundToFloor(cone));
+			AcceptEntityInput(ent, "_cone");
+			DispatchSpawn(ent);
+			ActivateEntity(ent);
+			SetVariantString("!activator");
+			AcceptEntityInput(ent, "SetParent", client);
+			AcceptEntityInput(ent, "TurnOn");
+			
+			g_iPlayerFlashlightEnt[client] = EntIndexToEntRef(ent);
+			
+			SDKHook(ent, SDKHook_SetTransmit, Hook_FlashlightSetTransmit);
+		}
 	}
 	
-	// Create.
-	ent = CreateEntityByName("point_spotlight");
+	// Spawn the light that only everyone else will see.
+	new ent = CreateEntityByName("point_spotlight");
 	if (ent != -1)
 	{
-		TeleportEntity(ent, flPos, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(ent, flEyePos, NULL_VECTOR, NULL_VECTOR);
 		
 		decl String:sBuffer[256];
 		FloatToString(SF2_FLASHLIGHT_LENGTH, sBuffer, sizeof(sBuffer));
@@ -979,48 +1201,43 @@ ClientActivateFlashlight(client)
 		g_iPlayerFlashlightEntAng[client] = EntIndexToEntRef(ent);
 	}
 	
-	if (g_bPlayerFlashlightProjected[client])
-	{
-		new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
-		if (!(iEffects & (1 << 2)))
-		{
-			SetEntProp(client, Prop_Send, "m_fEffects", iEffects | (1 << 2));
-		}
-	}
-	
-	ClientDeactivateUltravision(client);
-	
 	Call_StartForward(fOnClientActivateFlashlight);
 	Call_PushCell(client);
 	Call_Finish();
 }
 
-ClientDeactivateFlashlight(client)
+/**
+ *	Turns off the player's flashlight. Nothing else.
+ */
+ClientTurnOffFlashlight(client)
 {
-	new bool:bOld = g_bPlayerFlashlight[client];
-	g_bPlayerFlashlight[client] = false;
+	if (!IsClientUsingFlashlight(client)) return;
 	
+	g_bPlayerFlashlight[client] = false;
+	g_hPlayerFlashlightBatteryTimer[client] = INVALID_HANDLE;
+	
+	// Remove user-only light.
 	new ent = EntRefToEntIndex(g_iPlayerFlashlightEnt[client]);
-	g_iPlayerFlashlightEnt[client] = INVALID_ENT_REFERENCE;
 	if (ent && ent != INVALID_ENT_REFERENCE) 
 	{
 		AcceptEntityInput(ent, "TurnOff");
 		AcceptEntityInput(ent, "Kill");
 	}
 	
+	// Remove everyone-else-only light.
 	ent = EntRefToEntIndex(g_iPlayerFlashlightEntAng[client]);
-	g_iPlayerFlashlightEntAng[client] = INVALID_ENT_REFERENCE;
 	if (ent && ent != INVALID_ENT_REFERENCE) 
 	{
 		AcceptEntityInput(ent, "LightOff");
 		CreateTimer(0.1, Timer_KillEntity, g_iPlayerFlashlightEntAng[client], TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
+	g_iPlayerFlashlightEnt[client] = INVALID_ENT_REFERENCE;
+	g_iPlayerFlashlightEntAng[client] = INVALID_ENT_REFERENCE;
+	
 	if (IsClientInGame(client))
 	{
-		g_hPlayerFlashlightTimer[client] = CreateTimer(SF2_FLASHLIGHT_RECHARGE_RATE, Timer_RechargeFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	
-		if (g_bPlayerFlashlightProjected[client])
+		if (g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight])
 		{
 			new iEffects = GetEntProp(client, Prop_Send, "m_fEffects");
 			if (iEffects & (1 << 2))
@@ -1029,113 +1246,135 @@ ClientDeactivateFlashlight(client)
 			}
 		}
 	}
-	else
-	{
-		g_hPlayerFlashlightTimer[client] = INVALID_HANDLE;
-	}
 	
-	ClientActivateUltravision(client);
-	
-	if (bOld && !g_bPlayerFlashlight[client])
-	{
-		Call_StartForward(fOnClientDeactivateFlashlight);
-		Call_PushCell(client);
-		Call_Finish();
-	}
+	Call_StartForward(fOnClientDeactivateFlashlight);
+	Call_PushCell(client);
+	Call_Finish();
 }
 
-ClientToggleFlashlight(client)
+ClientStartRechargingFlashlightBattery(client)
+{
+	g_hPlayerFlashlightBatteryTimer[client] = CreateTimer(SF2_FLASHLIGHT_RECHARGE_RATE, Timer_RechargeFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+}
+
+ClientStartDrainingFlashlightBattery(client)
+{
+	new Float:flDrainRate = SF2_FLASHLIGHT_DRAIN_RATE;
+	if (TF2_GetPlayerClass(client) == TFClass_Engineer) 
+	{
+		// Engineers have a 33% longer battery life, basically.
+		// TODO: Make this value customizable via cvar.
+		flDrainRate *= 1.33;
+	}
+	
+	g_hPlayerFlashlightBatteryTimer[client] = CreateTimer(flDrainRate, Timer_DrainFlashlight, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+}
+
+ClientHandleFlashlight(client)
 {
 	if (!IsValidClient(client) || !IsPlayerAlive(client)) return;
 	
-	if (g_bPlayerFlashlight[client]) 
+	if (IsClientUsingFlashlight(client)) 
 	{
-		ClientDeactivateFlashlight(client);
+		ClientTurnOffFlashlight(client);
+		ClientStartRechargingFlashlightBattery(client);
+		ClientActivateUltravision(client);
+		
+		g_flPlayerFlashlightNextInputTime[client] = GetGameTime() + SF2_FLASHLIGHT_COOLDOWN;
+		
 		EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
-		g_flPlayerFlashlightLastEnable[client] = GetGameTime();
 	}
-	else if (!g_bPlayerEliminated[client])
+	else
 	{
-		new bool:bCanUseFlashlight = true;
-		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_LIGHTSOUT) bCanUseFlashlight = false;
-	
-		if ((!g_bPlayerFlashlightBroken[client] || 
-			g_flPlayerFlashlightMeter[client] >= SF2_FLASHLIGHT_ENABLEAT) &&
-			bCanUseFlashlight)
+		// Only players in the "game" can use the flashlight.
+		if (!g_bPlayerEliminated[client])
 		{
-			ClientActivateFlashlight(client);
-			EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
-			g_flPlayerFlashlightLastEnable[client] = GetGameTime();
-		}
-		else
-		{
-			EmitSoundToClient(client, FLASHLIGHT_NOSOUND, _, SNDCHAN_ITEM, SNDLEVEL_NONE);
+			new bool:bCanUseFlashlight = true;
+			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_LIGHTSOUT) 
+			{
+				// Unequip the flashlight please.
+				bCanUseFlashlight = false;
+			}
+			
+			if (!IsClientFlashlightBroken(client) && bCanUseFlashlight)
+			{
+				ClientTurnOnFlashlight(client);
+				ClientStartDrainingFlashlightBattery(client);
+				ClientDeactivateUltravision(client);
+				
+				g_flPlayerFlashlightNextInputTime[client] = GetGameTime();
+				
+				EmitSoundToAll(FLASHLIGHT_CLICKSOUND, client, SNDCHAN_STATIC, SNDLEVEL_DRYER);
+			}
+			else
+			{
+				EmitSoundToClient(client, FLASHLIGHT_NOSOUND, _, SNDCHAN_ITEM, SNDLEVEL_NONE);
+			}
 		}
 	}
+}
+
+bool:IsClientUsingUltravision(client)
+{
+	return g_bPlayerUltravision[client];
 }
 
 ClientActivateUltravision(client)
 {
-	ClientDeactivateUltravision(client);
-	
-	if (!IsClientInGame(client) || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) return;
-	
-	new ent = CreateEntityByName("light_dynamic");
-	if (ent == -1) return;
-	
-	decl Float:flPos[3];
-	GetClientEyePosition(client, flPos);
-	
-	TeleportEntity(ent, flPos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
-	DispatchKeyValue(ent, "rendercolor", "0 200 255");
-	
-	if (g_bPlayerEliminated[client])
-	{
-		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusBlue));
-	}
-	else
-	{
-		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusRed));
-	}
-	
-	AcceptEntityInput(ent, "spotlight_radius");
-	
-	if (g_bPlayerEliminated[client])
-	{
-		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusBlue));
-	}
-	else
-	{
-		SetVariantFloat(GetConVarFloat(g_cvUltravisionRadiusRed));
-	}
-	
-	AcceptEntityInput(ent, "distance");
-	SetVariantInt(-15); // Start dark, then fade in via timer.
-	AcceptEntityInput(ent, "brightness");
-	
-	// Convert WU to inches.
-	new Float:cone = SF2_ULTRAVISION_CONE;
-	cone *= 0.75;
-	
-	SetVariantInt(RoundToFloor(cone));
-	AcceptEntityInput(ent, "_inner_cone");
-	SetVariantInt(0);
-	AcceptEntityInput(ent, "_cone");
-	DispatchSpawn(ent);
-	ActivateEntity(ent);
-	SetVariantString("!activator");
-	AcceptEntityInput(ent, "SetParent", client);
-	AcceptEntityInput(ent, "TurnOn");
-	SetEntityRenderFx(ent, RENDERFX_SOLID_SLOW);
-	SetEntityRenderColor(ent, 100, 200, 255, 255);
-	g_iPlayerUltravisionEnt[client] = EntIndexToEntRef(ent);
-	
-	SDKHook(ent, SDKHook_SetTransmit, Hook_UltravisionSetTransmit);
+	if (!IsClientInGame(client) || IsClientUsingUltravision(client)) return;
 	
 	g_bPlayerUltravision[client] = true;
 	
-	// Fade in effect.
-	CreateTimer(0.0, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	new ent = CreateEntityByName("light_dynamic");
+	if (ent != -1)
+	{
+		decl Float:flEyePos[3];
+		GetClientEyePosition(client, flEyePos);
+		
+		TeleportEntity(ent, flEyePos, Float:{ 90.0, 0.0, 0.0 }, NULL_VECTOR);
+		DispatchKeyValue(ent, "rendercolor", "0 200 255");
+		
+		new Float:flRadius = 0.0;
+		if (g_bPlayerEliminated[client])
+		{
+			flRadius = GetConVarFloat(g_cvUltravisionRadiusBlue);
+		}
+		else
+		{
+			flRadius = GetConVarFloat(g_cvUltravisionRadiusRed);
+		}
+		
+		SetVariantFloat(flRadius);
+		AcceptEntityInput(ent, "spotlight_radius");
+		SetVariantFloat(flRadius);
+		AcceptEntityInput(ent, "distance");
+		
+		SetVariantInt(-15); // Start dark, then fade in via the Timer_UltravisionFadeInEffect timer func.
+		AcceptEntityInput(ent, "brightness");
+		
+		// Convert WU to inches.
+		new Float:cone = SF2_ULTRAVISION_CONE;
+		cone *= 0.75;
+		
+		SetVariantInt(RoundToFloor(cone));
+		AcceptEntityInput(ent, "_inner_cone");
+		SetVariantInt(0);
+		AcceptEntityInput(ent, "_cone");
+		DispatchSpawn(ent);
+		ActivateEntity(ent);
+		SetVariantString("!activator");
+		AcceptEntityInput(ent, "SetParent", client);
+		AcceptEntityInput(ent, "TurnOn");
+		SetEntityRenderFx(ent, RENDERFX_SOLID_SLOW);
+		SetEntityRenderColor(ent, 100, 200, 255, 255);
+		
+		g_iPlayerUltravisionEnt[client] = EntIndexToEntRef(ent);
+		
+		SDKHook(ent, SDKHook_SetTransmit, Hook_UltravisionSetTransmit);
+		
+		// Fade in effect.
+		CreateTimer(0.0, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	}
 }
 
 public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
@@ -1155,15 +1394,18 @@ public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
 
 ClientDeactivateUltravision(client)
 {
+	if (!IsClientUsingUltravision(client)) return;
+	
 	g_bPlayerUltravision[client] = false;
 	
 	new ent = EntRefToEntIndex(g_iPlayerUltravisionEnt[client]);
-	g_iPlayerUltravisionEnt[client] = INVALID_ENT_REFERENCE;
 	if (ent != INVALID_ENT_REFERENCE)
 	{
 		AcceptEntityInput(ent, "TurnOff");
 		AcceptEntityInput(ent, "Kill");
 	}
+	
+	g_iPlayerUltravisionEnt[client] = INVALID_ENT_REFERENCE;
 }
 
 public Action:Hook_UltravisionSetTransmit(ent, other)
@@ -1174,7 +1416,7 @@ public Action:Hook_UltravisionSetTransmit(ent, other)
 	return Plugin_Continue;
 }
 
-stock Float:ClientGetDefaultWalkSpeed(client)
+static Float:ClientGetDefaultWalkSpeed(client)
 {
 	new Float:flReturn = 190.0;
 	new Float:flReturn2 = flReturn;
@@ -1205,7 +1447,7 @@ stock Float:ClientGetDefaultWalkSpeed(client)
 	return flReturn;
 }
 
-stock Float:ClientGetDefaultSprintSpeed(client)
+static Float:ClientGetDefaultSprintSpeed(client)
 {
 	new Float:flReturn = 300.0;
 	new Float:flReturn2 = flReturn;
@@ -1242,10 +1484,6 @@ stock Float:ClientGetDefaultSprintSpeed(client)
 ClientProcessStaticShake(client)
 {
 	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("START ClientProcessStaticShake(%d)", client);
-#endif
 	
 	new bool:bOldStaticShake = g_bPlayerInStaticShake[client];
 	new iOldStaticShakeMaster = SlenderGetFromID(g_iPlayerStaticShakeMaster[client]);
@@ -1391,35 +1629,16 @@ ClientProcessStaticShake(client)
 		if (flAngVelocityScalar < 1.0) flAngVelocityScalar = 1.0;
 		ScaleVector(flNewPunchAng, flAngVelocityScalar);
 		
-		/*
-		if (!IsFakeClient(client))
-		{
-			// Latency compensation. Too buggy, though.
-			new Float:flLatency = GetClientLatency(client, NetFlow_Outgoing);
-			new Float:flLatencyCalcDiff = 85.0 * Pow(flLatency, 2.0);
-			
-			for (new i = 0; i < 2; i++) flNewPunchAng[i] += (flNewPunchAng[i] * flLatencyCalcDiff);
-		}
-		*/
-		
 		for (new i = 0; i < 2; i++) flNewPunchAngVel[i] = 0.0;
 		
 		SetEntDataVector(client, g_offsPlayerPunchAngle, flNewPunchAng, true);
 		SetEntDataVector(client, g_offsPlayerPunchAngleVel, flNewPunchAngVel, true);
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("END ClientProcessStaticShake(%d)", client);
-#endif
 }
 
 ClientProcessVisibility(client)
 {
 	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("START ClientProcessVisibility(%d)", client);
-#endif
 	
 	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	
@@ -1746,18 +1965,10 @@ ClientProcessVisibility(client)
 			TriggerTimer(g_hPlayerStaticTimer[client], true);
 		}
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("END ClientProcessVisibility(%d)", client);
-#endif
 }
 
 ClientProcessViewAngles(client)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("START ClientProcessViewAngles(%d)", client);
-#endif
-
 	if ((!g_bPlayerEliminated[client] || g_bPlayerProxy[client]) && 
 		!g_bPlayerEscaped[client])
 	{
@@ -1843,10 +2054,6 @@ ClientProcessViewAngles(client)
 			}
 		}
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("END ClientProcessViewAngles(%d)", client);
-#endif
 }
 
 public Action:Timer_ClientIncreaseStatic(Handle:timer, any:userid)
@@ -1947,35 +2154,6 @@ public Action:Timer_ClientFadeOutLastStaticSound(Handle:timer, any:userid)
 	return Plugin_Continue;
 }
 
-stock ClientResetFlashlight(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetFlashlight(%d)", client);
-#endif
-
-	ClientDeactivateFlashlight(client);
-	g_flPlayerFlashlightMeter[client] = 1.0;
-	g_bPlayerFlashlightBroken[client] = false;
-	g_flPlayerFlashlightLastEnable[client] = GetGameTime();
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetFlashlight(%d)", client);
-#endif
-}
-
-stock ClientResetUltravision(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetUltravision(%d)", client);
-#endif
-
-	ClientDeactivateUltravision(client);
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetUltravision(%d)", client);
-#endif
-}
-
 //	==========================================================
 //	INTERACTIVE GLOW FUNCTIONS
 //	==========================================================
@@ -1983,10 +2161,6 @@ stock ClientResetUltravision(client)
 ClientProcessGlow(client)
 {
 	if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_bPlayerEliminated[client] && !g_bPlayerProxy[client]) || IsClientInGhostMode(client)) return;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("START ClientProcessGlow(%d)", client);
-#endif
 	
 	new iOldLookEntity = EntRefToEntIndex(g_iPlayerGlowLookAtEntity[client]);
 	
@@ -2022,10 +2196,6 @@ ClientProcessGlow(client)
 			}
 		}
 	}
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 3) DebugMessage("END ClientProcessGlow(%d)", client);
-#endif
 }
 
 ClientResetGlow(client)
@@ -2177,7 +2347,7 @@ public Action:Timer_ClientBreath(Handle:timer, any:userid)
 	if (ClientCanBreath(client))
 	{
 		EmitSoundToAll(g_strPlayerBreathSounds[GetRandomInt(0, sizeof(g_strPlayerBreathSounds) - 1)], client, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
-	
+		
 		ClientStartBreathing(client);
 		return;
 	}
@@ -2203,6 +2373,8 @@ ClientResetSprint(client)
 	{
 		SDKUnhook(client, SDKHook_PreThink, Hook_ClientSprintingPreThink);
 		SDKUnhook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
+		
+		ClientSetFOV(client, g_iPlayerDesiredFOV[client]);
 	}
 	
 #if defined DEBUG
@@ -2223,7 +2395,7 @@ ClientStartSprint(client)
 	SDKUnhook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
 }
 
-ClientSprintTimer(client, bool:bRecharge=false)
+static ClientSprintTimer(client, bool:bRecharge=false)
 {
 	new Float:flRate = 0.28;
 	if (bRecharge) flRate = 0.8;
@@ -2471,7 +2643,7 @@ public Action:Timer_ClientForceProxy(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerProxyAvailableTimer[client]) return Plugin_Stop;
 	
-	if (!g_bRoundEnded)
+	if (!IsRoundEnding())
 	{
 		new iBossIndex = SlenderGetFromID(g_iPlayerProxyAskMaster[client]);
 		if (iBossIndex != -1)
@@ -2545,7 +2717,7 @@ public Menu_ProxyAsk(Handle:menu, MenuAction:action, param1, param2)
 		case MenuAction_End: CloseHandle(menu);
 		case MenuAction_Select:
 		{
-			if (!g_bRoundEnded)
+			if (!IsRoundEnding())
 			{
 				new iBossIndex = SlenderGetFromID(g_iPlayerProxyAskMaster[param1]);
 				if (iBossIndex != -1)
@@ -2771,7 +2943,11 @@ ClientResetJumpScare(client)
   */
 ClientHandleSprint(client, bool:bSprint)
 {
-	if (!IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] || g_bPlayerProxy[client] || IsClientInGhostMode(client)) return;
+	if (!IsPlayerAlive(client) || 
+		g_bPlayerEliminated[client] || 
+		g_bPlayerEscaped[client] || 
+		g_bPlayerProxy[client] || 
+		IsClientInGhostMode(client)) return;
 	
 	if (bSprint)
 	{
@@ -2801,15 +2977,14 @@ ClientOnButtonPress(client, button)
 		{
 			if (IsPlayerAlive(client))
 			{
-				if (!g_bRoundWarmup &&
-					!g_bRoundIntro &&
-					!g_bRoundEnded && 
+				if (!IsRoundInWarmup() &&
+					!IsRoundInIntro() &&
+					!IsRoundEnding() && 
 					!g_bPlayerEscaped[client])
 				{
-					if ((GetGameTime() - g_flPlayerFlashlightLastEnable[client]) >= SF2_FLASHLIGHT_COOLDOWN || 
-						g_bPlayerFlashlight[client])
+					if (GetGameTime() >= ClientGetFlashlightNextInputTime(client))
 					{
-						ClientToggleFlashlight(client);
+						ClientHandleFlashlight(client);
 					}
 				}
 			}
@@ -2824,10 +2999,10 @@ ClientOnButtonPress(client, button)
 			{
 				if (!g_bPlayerEliminated[client])
 				{
-					if (!g_bRoundEnded && 
-					!g_bRoundWarmup &&
-					!g_bRoundIntro &&
-					!g_bPlayerEscaped[client])
+					if (!IsRoundEnding() && 
+						!IsRoundInWarmup() &&
+						!IsRoundInIntro() &&
+						!g_bPlayerEscaped[client])
 					{
 						ClientBlink(client);
 					}
@@ -2864,7 +3039,7 @@ ClientOnJump(client)
 {
 	if (!g_bPlayerEliminated[client])
 	{
-		if (!g_bRoundEnded && !g_bRoundWarmup && !g_bPlayerEscaped[client])
+		if (!IsRoundEnding() && !IsRoundInWarmup() && !g_bPlayerEscaped[client])
 		{
 			g_iPlayerSprintPoints[client] -= 7;
 			if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
@@ -3310,14 +3485,14 @@ stock ClientResetCampingStats(client)
 
 public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 {
-	if (g_bRoundWarmup) return Plugin_Stop;
+	if (IsRoundInWarmup()) return Plugin_Stop;
 
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return Plugin_Stop;
 	
 	if (timer != g_hPlayerCampingTimer[client]) return Plugin_Stop;
 	
-	if (g_bRoundEnded || !IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client]) return Plugin_Stop;
+	if (IsRoundEnding() || !IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client]) return Plugin_Stop;
 	
 	if (!g_bPlayerCampingFirstTime[client])
 	{
@@ -3410,7 +3585,7 @@ stock ClientResetBlink(client)
 
 stock ClientBlink(client)
 {
-	if (g_bRoundWarmup || g_bPlayerEscaped[client]) return;
+	if (IsRoundInWarmup() || g_bPlayerEscaped[client]) return;
 
 	g_bPlayerBlink[client] = true;
 	g_iPlayerBlinkCount[client]++;
@@ -3425,14 +3600,14 @@ stock ClientBlink(client)
 
 public Action:Timer_BlinkTimer(Handle:timer, any:userid)
 {
-	if (g_bRoundWarmup) return Plugin_Stop;
+	if (IsRoundInWarmup()) return Plugin_Stop;
 
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return Plugin_Stop;
 	
 	if (timer != g_hPlayerBlinkTimer[client]) return Plugin_Stop;
 	
-	if (IsPlayerAlive(client) && !g_bPlayerDeathCam[client] && !g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bRoundEnded)
+	if (IsPlayerAlive(client) && !g_bPlayerDeathCam[client] && !g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !IsRoundEnding())
 	{
 		if (!g_bRoundInfiniteBlink) g_flPlayerBlinkMeter[client] -= 0.05;
 		
@@ -3482,7 +3657,7 @@ stock Float:GetClientBlinkRate(client)
 	
 	if (TF2_GetPlayerClass(client) == TFClass_Sniper) flValue *= 1.4;
 	
-	if (g_bPlayerFlashlight[client])
+	if (IsClientUsingFlashlight(client))
 	{
 		decl Float:startPos[3], Float:endPos[3], Float:flDirection[3];
 		new Float:flLength = SF2_FLASHLIGHT_LENGTH;
@@ -3550,7 +3725,7 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerOverlayCheck[client]) return Plugin_Stop;
 	
-	if (g_bRoundWarmup) return Plugin_Continue;
+	if (IsRoundInWarmup()) return Plugin_Continue;
 	
 	decl String:sMaterial[PLATFORM_MAX_PATH];
 	if (g_iPlayerDeathCamBoss[client] != -1 && g_bPlayerDeathCamShowOverlay[client])
@@ -3561,7 +3736,7 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	{
 		GetRandomStringFromProfile(g_strSlenderProfile[g_iPlayerJumpScareMaster[client]], "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
 	}
-	else if (g_bRoundWarmup || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !IsClientInGhostMode(client))
+	else if (IsRoundInWarmup() || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !IsClientInGhostMode(client))
 	{
 		return Plugin_Continue;
 	}
@@ -3587,7 +3762,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 	new iAlertBoss = -1;
 	new i20DollarsBoss = -1;
 	
-	if (g_bRoundEnded || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) 
+	if (IsRoundEnding() || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) 
 	{
 		g_iPlayerMusicFlags[client] = 0;
 		g_iPlayerPageMusicMaster[client] = INVALID_ENT_REFERENCE;
@@ -3648,7 +3823,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		if (iPageRange != 3) ClientRemoveMusicFlag(client, MUSICF_PAGES50PERCENT);
 		if (iPageRange != 4) ClientRemoveMusicFlag(client, MUSICF_PAGES75PERCENT);
 		
-		if (g_iPageCount == g_iPageMax && g_bRoundMustEscape && !bPlayMusicOnEscape) 
+		if (IsRoundInEscapeObjective() && !bPlayMusicOnEscape) 
 		{
 			ClientRemoveMusicFlag(client, MUSICF_PAGES75PERCENT);
 			g_iPlayerPageMusicMaster[client] = INVALID_ENT_REFERENCE;
@@ -4695,7 +4870,7 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 	{
 		if (i == client || !IsClientInGame(i)) continue;
 		
-		if (bReset || g_bRoundEnded || GetConVarBool(g_cvAllChat))
+		if (bReset || IsRoundEnding() || GetConVarBool(g_cvAllChat))
 		{
 			SetListenOverride(client, i, Listen_Default);
 			continue;
@@ -5127,7 +5302,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 	new bool:bRemoveWeapons = true;
 	new bool:bRestrictWeapons = true;
 	
-	if (g_bRoundEnded)
+	if (IsRoundEnding())
 	{
 		if (!g_bPlayerEliminated[client]) 
 		{
@@ -5143,7 +5318,7 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 		bRestrictWeapons = false;
 	}
 	
-	if (g_bRoundWarmup) 
+	if (IsRoundInWarmup()) 
 	{
 		bRemoveWeapons = false;
 		bRestrictWeapons = false;

@@ -270,22 +270,10 @@ SpecialRoundStart()
 	{
 		case SPECIALROUND_DOUBLETROUBLE:
 		{
-			decl String:sBuffer[64];
-			new Handle:hArray = CreateArray(64);
-			KvRewind(g_hConfig);
-			KvGotoFirstSubKey(g_hConfig);
-			do
-			{
-				if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1)) 
-				{
-					KvGetSectionName(g_hConfig, sBuffer, sizeof(sBuffer));
-					PushArrayString(hArray, sBuffer);
-				}
-			}
-			while (KvGotoNextKey(g_hConfig));
-			
-			GetArrayString(hArray, GetRandomInt(0, GetArraySize(hArray) - 1), sBuffer, sizeof(sBuffer));
-			CloseHandle(hArray);
+			decl String:sBuffer[SF2_MAX_PROFILE_NAME_LENGTH];
+			new Handle:hSelectableBosses = GetSelectableBossProfileList();
+			GetArrayString(hSelectableBosses, GetRandomInt(0, GetArraySize(hSelectableBosses) - 1), sBuffer, sizeof(sBuffer));
+			CloseHandle(hSelectableBosses);
 			
 			AddProfile(sBuffer);
 		}
@@ -298,6 +286,7 @@ SpecialRoundStart()
 			for (new i = 1; i <= MaxClients; i++)
 			{
 				if (!IsClientInGame(i)) continue;
+				
 				ClientUpdateListeningFlags(i);
 			}
 		}
@@ -311,10 +300,30 @@ SpecialRoundStart()
 			for (new i = 1; i <= MaxClients; i++)
 			{
 				if (!IsClientInGame(i)) continue;
-				ClientDeactivateFlashlight(i);
+				
+				if (!g_bPlayerEliminated[i])
+				{
+					ClientResetFlashlight(i);
+					ClientActivateUltravision(i);
+				}
 			}
 		}
 	}
+}
+
+public Action:Timer_DisplaySpecialRound(Handle:timer)
+{
+	decl String:sDescHud[64];
+	SpecialRoundGetDescriptionHud(g_iSpecialRound, sDescHud, sizeof(sDescHud));
+	
+	decl String:sIconHud[64];
+	SpecialRoundGetIconHud(g_iSpecialRound, sIconHud, sizeof(sIconHud));
+	
+	decl String:sDescChat[64];
+	SpecialRoundGetDescriptionChat(g_iSpecialRound, sDescChat, sizeof(sDescChat));
+	
+	GameTextTFMessage(sDescHud, sIconHud);
+	CPrintToChatAll("%t", "SF2 Special Round Announce Chat", sDescChat); // For those who are using minimized HUD...
 }
 
 SpecialRoundReset()
