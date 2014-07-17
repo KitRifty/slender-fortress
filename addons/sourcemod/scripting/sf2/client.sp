@@ -43,6 +43,14 @@ static Float:g_flPlayerFlashlightBatteryLife[MAXPLAYERS + 1] = { 1.0, ... };
 static Handle:g_hPlayerFlashlightBatteryTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
 static Float:g_flPlayerFlashlightNextInputTime[MAXPLAYERS + 1] = { -1.0, ... };
 
+// Ultravision data.
+static bool:g_bPlayerUltravision[MAXPLAYERS + 1] = { false, ... };
+static g_iPlayerUltravisionEnt[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+
+// Glow data.
+static g_iPlayerInteractiveGlowEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static g_iPlayerInteractiveGlowTargetEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+
 //	==========================================================
 //	GENERAL CLIENT HOOK FUNCTIONS
 //	==========================================================
@@ -69,7 +77,7 @@ public Hook_ClientPreThink(client)
 	ClientProcessVisibility(client);
 	ClientProcessStaticShake(client);
 	ClientProcessFlashlightAngles(client);
-	ClientProcessGlow(client);
+	ClientProcessInteractiveGlow(client);
 	
 	if (IsClientInGhostMode(client))
 	{
@@ -318,7 +326,7 @@ public Action:Hook_ClientSetTransmit(client, other)
 		if (!IsRoundEnding())
 		{
 			// SPECIAL ROUND: Singleplayer
-			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+			if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 			{
 				if (!g_bPlayerEliminated[client] && !g_bPlayerEliminated[other] && !g_bPlayerEscaped[other]) return Plugin_Handled; 
 			}
@@ -373,7 +381,7 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 							if (flDamage < 50.0) flDamage = 50.0;
 							new iDamageType = DMG_BULLET;
 							
-							if (ClientHasCrits(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
+							if (IsClientCritBoosted(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
 							{
 								// Set damagetype to crit, and also play the crit sound for the weapon.
 								result = true;
@@ -571,66 +579,6 @@ ClientResetStatic(client)
 	strcopy(g_strPlayerStaticShakeSound[client], sizeof(g_strPlayerStaticShakeSound[]), "");
 }
 
-InitializeClient(client)
-{
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START InitializeClient(%d)", client);
-#endif
-
-	g_iPlayerStaticMaster[client] = -1;
-	strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("InitializeClient(%d): QueryClientConVar fov_desired", client);
-#endif
-	
-	if (!IsFakeClient(client))
-	{
-		QueryClientConVar(client, "fov_desired", OnClientGetDesiredFOV, GetClientUserId(client));
-	}
-	else
-	{
-		g_iPlayerDesiredFOV[client] = 90;
-	}
-	
-	PvP_SetPlayerPvPState(client, false, false, false);
-	
-	g_iPlayerPageCount[client] = 0;
-	
-	ClientDisableFakeLagCompensation(client);
-	
-	ClientResetStatic(client);
-	ClientResetSlenderStats(client);
-	ClientResetCampingStats(client);
-	ClientResetBlink(client);
-	ClientResetOverlay(client);
-	ClientResetJumpScare(client);
-	ClientUpdateListeningFlags(client);
-	ClientUpdateMusicSystem(client);
-	ClientChaseMusicReset(client);
-	ClientChaseMusicSeeReset(client);
-	ClientAlertMusicReset(client);
-	Client20DollarsMusicReset(client);
-	ClientMusicReset(client);
-	ClientResetGlow(client);
-	ClientResetProxy(client);
-	ClientResetProxyGlow(client);
-	ClientResetHints(client);
-	ClientResetScare(client);
-	
-	ClientResetDeathCam(client);
-	ClientResetFlashlight(client);
-	ClientDeactivateUltravision(client);
-	ClientResetSprint(client);
-	ClientResetBreathing(client);
-	
-	g_flPlayerDangerBoostTime[client] = -1.0;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END InitializeClient(%d)", client);
-#endif
-}
-
 ClientResetHints(client)
 {
 #if defined DEBUG
@@ -761,43 +709,6 @@ ClientDisableFakeLagCompensation(client)
 	SetEntProp(client, Prop_Send, "m_iTeamNum", g_iPlayerLagCompensationTeam[client]);
 	g_bPlayerLagCompensation[client] = false;
 	g_iPlayerLagCompensationTeam[client] = -1;
-}
-
-
-stock bool:ClientHasCrits(client)
-{
-	if (TF2_IsPlayerInCondition(client, TFCond_Kritzkrieged) ||
-		TF2_IsPlayerInCondition(client, TFCond_HalloweenCritCandy) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritCanteen) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnFirstBlood) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnWin) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnFlagCapture) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnKill) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnDamage))
-	{
-		return true;
-	}
-	
-	new iActiveWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
-	if (IsValidEdict(iActiveWeapon))
-	{
-		decl String:sNetClass[64];
-		GetEntityNetClass(iActiveWeapon, sNetClass, sizeof(sNetClass));
-		
-		if (StrEqual(sNetClass, "CTFFlameThrower"))
-		{
-			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritFire")) return true;
-		
-			new iItemDef = GetEntProp(iActiveWeapon, Prop_Send, "m_iItemDefinitionIndex");
-			if (iItemDef == 594 && TF2_IsPlayerInCondition(client, TFCond_CritMmmph)) return true;
-		}
-		else if (StrEqual(sNetClass, "CTFMinigun"))
-		{
-			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritShot")) return true;
-		}
-	}
-	
-	return false;
 }
 
 //	==========================================================
@@ -1008,7 +919,7 @@ public Action:Hook_FlashlightBeamSetTransmit(ent, other)
 	}
 	else
 	{
-		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+		if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 		{
 			return Plugin_Handled;
 		}
@@ -1057,7 +968,7 @@ public Action:Hook_FlashlightEndSetTransmit(ent, other)
 	}
 	else
 	{
-		if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+		if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 		{
 			return Plugin_Handled;
 		}
@@ -1290,7 +1201,7 @@ ClientHandleFlashlight(client)
 		if (!g_bPlayerEliminated[client])
 		{
 			new bool:bCanUseFlashlight = true;
-			if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_LIGHTSOUT) 
+			if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_LIGHTSOUT) 
 			{
 				// Unequip the flashlight please.
 				bCanUseFlashlight = false;
@@ -2158,11 +2069,11 @@ public Action:Timer_ClientFadeOutLastStaticSound(Handle:timer, any:userid)
 //	INTERACTIVE GLOW FUNCTIONS
 //	==========================================================
 
-ClientProcessGlow(client)
+static ClientProcessInteractiveGlow(client)
 {
 	if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_bPlayerEliminated[client] && !g_bPlayerProxy[client]) || IsClientInGhostMode(client)) return;
 	
-	new iOldLookEntity = EntRefToEntIndex(g_iPlayerGlowLookAtEntity[client]);
+	new iOldLookEntity = EntRefToEntIndex(g_iPlayerInteractiveGlowTargetEntity[client]);
 	
 	decl Float:flStartPos[3], Float:flMyEyeAng[3];
 	GetClientEyePosition(client, flStartPos);
@@ -2174,58 +2085,59 @@ ClientProcessGlow(client)
 	
 	if (IsValidEntity(iEnt))
 	{
-		g_iPlayerGlowLookAtEntity[client] = EntRefToEntIndex(iEnt);
+		g_iPlayerInteractiveGlowTargetEntity[client] = EntRefToEntIndex(iEnt);
 	}
 	else
 	{
-		g_iPlayerGlowLookAtEntity[client] = INVALID_ENT_REFERENCE;
+		g_iPlayerInteractiveGlowTargetEntity[client] = INVALID_ENT_REFERENCE;
 	}
 	
 	if (iEnt != iOldLookEntity)
 	{
-		ClientRemoveGlow(client);
+		ClientRemoveInteractiveGlow(client);
 		
 		if (IsEntityClassname(iEnt, "prop_dynamic", false))
 		{
 			decl String:sTargetName[64];
 			GetEntPropString(iEnt, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));
 			
-			if (!StrContains(sTargetName, "sf2_page", false) || !StrContains(sTargetName, "sf2_interact", false))
+			if (StrContains(sTargetName, "sf2_page", false) == 0 || StrContains(sTargetName, "sf2_interact", false) == 0)
 			{
-				ClientCreateGlowOnEntity(client, iEnt);
+				ClientCreateInteractiveGlow(client, iEnt);
 			}
 		}
 	}
 }
 
-ClientResetGlow(client)
+ClientResetInteractiveGlow(client)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetGlow(%d)", client);
-#endif
-
-	ClientRemoveGlow(client);
-	g_iPlayerGlowLookAtEntity[client] = INVALID_ENT_REFERENCE;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetGlow(%d)", client);
-#endif
+	ClientRemoveInteractiveGlow(client);
+	g_iPlayerInteractiveGlowTargetEntity[client] = INVALID_ENT_REFERENCE;
 }
 
-ClientRemoveGlow(client)
+/**
+ *	Removes the player's current interactive glow entity.
+ */
+ClientRemoveInteractiveGlow(client)
 {
-	new iGlow = EntRefToEntIndex(g_iPlayerGlowEntity[client]);
-	g_iPlayerGlowEntity[client] = INVALID_ENT_REFERENCE;
-	if (iGlow && iGlow != INVALID_ENT_REFERENCE)
+	new ent = EntRefToEntIndex(g_iPlayerInteractiveGlowEntity[client]);
+	if (ent && ent != INVALID_ENT_REFERENCE)
 	{
-		AcceptEntityInput(iGlow, "Kill");
+		AcceptEntityInput(ent, "Kill");
 	}
+	
+	g_iPlayerInteractiveGlowEntity[client] = INVALID_ENT_REFERENCE;
 }
 
-bool:ClientCreateGlowOnEntity(client, iEnt, const String:sAttachment[]="")
+/**
+ *	Creates an interactive glow for an entity to show to a player.
+ */
+bool:ClientCreateInteractiveGlow(client, iEnt, const String:sAttachment[]="")
 {
-	ClientRemoveGlow(client);
-
+	ClientRemoveInteractiveGlow(client);
+	
+	if (!IsClientInGame(client)) return false;
+	
 	if (!iEnt || !IsValidEntity(iEnt)) return false;
 
 	decl String:sBuffer[PLATFORM_MAX_PATH];
@@ -2265,7 +2177,7 @@ bool:ClientCreateGlowOnEntity(client, iEnt, const String:sAttachment[]="")
 			AcceptEntityInput(ent, "SetParentAttachment");
 		}
 		
-		g_iPlayerGlowEntity[client] = EntIndexToEntRef(ent);
+		g_iPlayerInteractiveGlowEntity[client] = EntIndexToEntRef(ent);
 		
 		SDKHook(ent, SDKHook_SetTransmit, Hook_GlowSetTransmit);
 		
@@ -2279,7 +2191,7 @@ public Action:Hook_GlowSetTransmit(ent, other)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 
-	if (EntRefToEntIndex(g_iPlayerGlowEntity[other]) != ent) return Plugin_Handled;
+	if (EntRefToEntIndex(g_iPlayerInteractiveGlowEntity[other]) != ent) return Plugin_Handled;
 	
 	return Plugin_Continue;
 }
@@ -2290,16 +2202,8 @@ public Action:Hook_GlowSetTransmit(ent, other)
 
 ClientResetBreathing(client)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetBreathing(%d)", client);
-#endif
-
 	g_bPlayerBreath[client] = false;
 	g_hPlayerBreathTimer[client] = INVALID_HANDLE;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetBreathing(%d)", client);
-#endif
 }
 
 Float:ClientCalculateBreathingCooldown(client)
@@ -2847,11 +2751,6 @@ public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, userid, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-ClientResetProxyGlow(client)
-{
-	ClientRemoveProxyGlow(client);
-}
-
 ClientRemoveProxyGlow(client)
 {
 	if (!g_bPlayerHasProxyGlow[client]) return;
@@ -2866,7 +2765,7 @@ ClientRemoveProxyGlow(client)
 
 bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 {
-	ClientRemoveProxyGlow(client);
+	if (g_bPlayerHasProxyGlow[client]) return true;
 	
 	g_bPlayerHasProxyGlow[client] = true;
 	
@@ -4904,7 +4803,7 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 		{
 			if (!g_bPlayerEliminated[i])
 			{
-				if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+				if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 				{
 					if (g_bPlayerEscaped[i])
 					{
@@ -5103,14 +5002,6 @@ stock ClientSetFOV(client, iFOV)
 	SetEntData(client, g_offsPlayerDefaultFOV, iFOV);
 }
 
-public OnClientGetDesiredFOV(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
-{
-	if (!IsValidClient(client)) return;
-	
-	g_iPlayerDesiredFOV[client] = StringToInt(cvarValue);
-	ClientSetFOV(client, g_iPlayerDesiredFOV[client]);
-}
-
 stock TF2_GetClassName(TFClassType:iClass, String:sBuffer[], sBufferLen)
 {
 	switch (iClass)
@@ -5295,8 +5186,25 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 	
 	if (!IsPlayerAlive(client)) return;
 	
+	if (timer != g_hPlayerPostWeaponsTimer[client]) return;
+	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START Timer_ClientPostWeapons(%d)", client);
+	if (GetConVarInt(g_cvDebugDetail) > 0) 
+	{
+		DebugMessage("START Timer_ClientPostWeapons(%d)", client);
+	}
+	
+	new iOldWeaponItemIndexes[6] = { -1, ... };
+	new iNewWeaponItemIndexes[6] = { -1, ... };
+	
+	for (new i = 0; i <= 5; i++)
+	{
+		new iWeapon = GetPlayerWeaponSlot(client, i);
+		if (!IsValidEdict(iWeapon)) continue;
+		
+		iOldWeaponItemIndexes[i] = GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex");
+	}
+	
 #endif
 	
 	new bool:bRemoveWeapons = true;
@@ -5496,7 +5404,23 @@ public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)
 	}
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END Timer_ClientPostWeapons(%d) -> remove = %d, restrict = %d", client, bRemoveWeapons, bRestrictWeapons);
+	for (new i = 0; i <= 5; i++)
+	{
+		new iWeapon = GetPlayerWeaponSlot(client, i);
+		if (!IsValidEdict(iWeapon)) continue;
+		
+		iNewWeaponItemIndexes[i] = GetEntProp(iWeapon, Prop_Send, "m_iItemDefinitionIndex");
+	}
+
+	if (GetConVarInt(g_cvDebugDetail) > 0) 
+	{
+		for (new i = 0; i <= 5; i++)
+		{
+			DebugMessage("-> slot %d: %d (old: %d)", i, iNewWeaponItemIndexes[i], iOldWeaponItemIndexes[i]);
+		}
+	
+		DebugMessage("END Timer_ClientPostWeapons(%d) -> remove = %d, restrict = %d", client, bRemoveWeapons, bRestrictWeapons);
+	}
 #endif
 }
 

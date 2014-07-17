@@ -301,10 +301,6 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	Call_PushCell(iBossIndex);
 	Call_Finish();
 	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("SelectProfile(%d, %s)", iBossIndex, sProfile);
-#endif
-	
 	return true;
 }
 
@@ -442,10 +438,6 @@ RemoveProfile(iBossIndex)
 	}
 	
 	SlenderRemoveTargetMemory(iBossIndex);
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("RemoveProfile(%d)", iBossIndex);
-#endif
 }
 
 stock GetProfileNum(const String:strName[], const String:keyValue[], defaultValue=0)

@@ -12,6 +12,13 @@
 
 static Handle:g_hSpecialRoundCycleNames = INVALID_HANDLE;
 
+new bool:g_bSpecialRoundNew = false;
+new Handle:g_hSpecialRoundTimer = INVALID_HANDLE;
+new g_iSpecialRoundCycleNum = 0;
+new Float:g_flSpecialRoundCycleEndTime = -1.0;
+new g_iSpecialRoundCount = 0;
+new bool:g_bPlayerDidSpecialRound[MAXPLAYERS + 1] = { false, ... };
+
 ReloadSpecialRounds()
 {
 	if (g_hSpecialRoundCycleNames == INVALID_HANDLE)
@@ -176,7 +183,7 @@ public Action:Timer_SpecialRoundAttribute(Handle:timer)
 	
 	new iCond = -1;
 	
-	switch (g_iSpecialRound)
+	switch (g_iSpecialRoundType)
 	{
 		case SPECIALROUND_DEFENSEBUFF: iCond = _:TFCond_DefenseBuffed;
 		case SPECIALROUND_MARKEDFORDEATH: iCond = _:TFCond_MarkedForDeath;
@@ -201,7 +208,7 @@ SpecialRoundCycleStart()
 	if (!g_bSpecialRound) return;
 	
 	EmitSoundToAll(SR_MUSIC, _, MUSIC_CHAN);
-	g_iSpecialRound = 0;
+	g_iSpecialRoundType = 0;
 	g_iSpecialRoundCycleNum = 0;
 	g_flSpecialRoundCycleEndTime = GetGameTime() + SR_CYCLELENGTH;
 	g_hSpecialRoundTimer = CreateTimer(0.12, Timer_SpecialRoundCycle, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
@@ -214,7 +221,7 @@ SpecialRoundCycleFinish()
 	new iOverride = GetConVarInt(g_cvSpecialRoundOverride);
 	if (iOverride >= 1 && iOverride < SPECIALROUND_MAXROUNDS)
 	{
-		g_iSpecialRound = iOverride;
+		g_iSpecialRoundType = iOverride;
 	}
 	else
 	{
@@ -224,7 +231,7 @@ SpecialRoundCycleFinish()
 		PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLEMAXPLAYERS);
 		PushArrayCell(hEnabledRounds, SPECIALROUND_LIGHTSOUT);
 	
-		g_iSpecialRound = GetArrayCell(hEnabledRounds, GetRandomInt(0, GetArraySize(hEnabledRounds) - 1));
+		g_iSpecialRoundType = GetArrayCell(hEnabledRounds, GetRandomInt(0, GetArraySize(hEnabledRounds) - 1));
 		
 		CloseHandle(hEnabledRounds);
 	}
@@ -232,13 +239,13 @@ SpecialRoundCycleFinish()
 	SetConVarInt(g_cvSpecialRoundOverride, -1);
 	
 	decl String:sDescHud[64];
-	SpecialRoundGetDescriptionHud(g_iSpecialRound, sDescHud, sizeof(sDescHud));
+	SpecialRoundGetDescriptionHud(g_iSpecialRoundType, sDescHud, sizeof(sDescHud));
 	
 	decl String:sIconHud[64];
-	SpecialRoundGetIconHud(g_iSpecialRound, sIconHud, sizeof(sIconHud));
+	SpecialRoundGetIconHud(g_iSpecialRoundType, sIconHud, sizeof(sIconHud));
 	
 	decl String:sDescChat[64];
-	SpecialRoundGetDescriptionChat(g_iSpecialRound, sDescChat, sizeof(sDescChat));
+	SpecialRoundGetDescriptionChat(g_iSpecialRoundType, sDescChat, sizeof(sDescChat));
 	
 	GameTextTFMessage(sDescHud, sIconHud);
 	CPrintToChatAll("%t", "SF2 Special Round Announce Chat", sDescChat); // For those who are using minimized HUD...
@@ -249,10 +256,10 @@ SpecialRoundCycleFinish()
 SpecialRoundStart()
 {
 	if (!g_bSpecialRound) return;
-	if (g_iSpecialRound < 1 || g_iSpecialRound >= SPECIALROUND_MAXROUNDS) return;
+	if (g_iSpecialRoundType < 1 || g_iSpecialRoundType >= SPECIALROUND_MAXROUNDS) return;
 	
 	// What to do with the timer...
-	switch (g_iSpecialRound)
+	switch (g_iSpecialRoundType)
 	{
 		/*
 		case SPECIALROUND_DEFENSEBUFF, SPECIALROUND_MARKEDFORDEATH:
@@ -266,7 +273,7 @@ SpecialRoundStart()
 		}
 	}
 	
-	switch (g_iSpecialRound)
+	switch (g_iSpecialRoundType)
 	{
 		case SPECIALROUND_DOUBLETROUBLE:
 		{
@@ -314,13 +321,13 @@ SpecialRoundStart()
 public Action:Timer_DisplaySpecialRound(Handle:timer)
 {
 	decl String:sDescHud[64];
-	SpecialRoundGetDescriptionHud(g_iSpecialRound, sDescHud, sizeof(sDescHud));
+	SpecialRoundGetDescriptionHud(g_iSpecialRoundType, sDescHud, sizeof(sDescHud));
 	
 	decl String:sIconHud[64];
-	SpecialRoundGetIconHud(g_iSpecialRound, sIconHud, sizeof(sIconHud));
+	SpecialRoundGetIconHud(g_iSpecialRoundType, sIconHud, sizeof(sIconHud));
 	
 	decl String:sDescChat[64];
-	SpecialRoundGetDescriptionChat(g_iSpecialRound, sDescChat, sizeof(sDescChat));
+	SpecialRoundGetDescriptionChat(g_iSpecialRoundType, sDescChat, sizeof(sDescChat));
 	
 	GameTextTFMessage(sDescHud, sIconHud);
 	CPrintToChatAll("%t", "SF2 Special Round Announce Chat", sDescChat); // For those who are using minimized HUD...
@@ -330,7 +337,7 @@ SpecialRoundReset()
 {
 	g_bSpecialRound = false;
 	g_bSpecialRoundNew = false;
-	g_iSpecialRound = 0;
+	g_iSpecialRoundType = 0;
 	g_hSpecialRoundTimer = INVALID_HANDLE;
 	g_iSpecialRoundCycleNum = 0;
 	g_flSpecialRoundCycleEndTime = -1.0;
@@ -349,5 +356,5 @@ public Native_IsSpecialRoundRunning(Handle:plugin, numParams)
 
 public Native_GetSpecialRoundType(Handle:plugin, numParams)
 {
-	return g_iSpecialRound;
+	return g_iSpecialRoundType;
 }

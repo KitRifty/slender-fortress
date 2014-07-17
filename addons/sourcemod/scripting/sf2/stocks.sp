@@ -165,6 +165,43 @@ stock Float:GetClassBaseSpeed(TFClassType:class)
 	return 0.0;
 }
 
+stock bool:IsClientCritBoosted(client)
+{
+	if (TF2_IsPlayerInCondition(client, TFCond_Kritzkrieged) ||
+		TF2_IsPlayerInCondition(client, TFCond_HalloweenCritCandy) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritCanteen) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnFirstBlood) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnWin) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnFlagCapture) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnKill) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnDamage) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritMmmph))
+	{
+		return true;
+	}
+	
+	new iActiveWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+	if (IsValidEdict(iActiveWeapon))
+	{
+		decl String:sNetClass[64];
+		GetEntityNetClass(iActiveWeapon, sNetClass, sizeof(sNetClass));
+		
+		if (StrEqual(sNetClass, "CTFFlameThrower"))
+		{
+			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritFire")) return true;
+		
+			new iItemDef = GetEntProp(iActiveWeapon, Prop_Send, "m_iItemDefinitionIndex");
+			if (iItemDef == 594 && TF2_IsPlayerInCondition(client, TFCond_CritMmmph)) return true;
+		}
+		else if (StrEqual(sNetClass, "CTFMinigun"))
+		{
+			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritShot")) return true;
+		}
+	}
+	
+	return false;
+}
+
 stock Float:EntityDistanceFromEntity(ent1, ent2)
 {
 	if (!IsValidEntity(ent1) || !IsValidEntity(ent2)) return -1.0;

@@ -226,6 +226,8 @@ public Hook_PvPProjectileSpawnPost(ent)
 
 public PvP_OnPlayerSpawn(client)
 {
+	PvP_SetPlayerPvPState(client, false, false, false);
+
 	if (IsPlayerAlive(client) && IsClientParticipating(client))
 	{
 		if (!IsClientInGhostMode(client) && !g_bPlayerProxy[client])
@@ -387,7 +389,7 @@ static PvP_OnFlameEntityStartTouchPost(flame, other)
 						if (GetClientTeam(other) == GetClientTeam(iOwnerEntity))
 						{
 							TF2_IgnitePlayer(other, iOwnerEntity);
-							SDKHooks_TakeDamage(other, iOwnerEntity, iOwnerEntity, 7.0, ClientHasCrits(iOwnerEntity) ? (DMG_BURN | DMG_PREVENT_PHYSICS_FORCE | DMG_ACID) : DMG_BURN | DMG_PREVENT_PHYSICS_FORCE); 
+							SDKHooks_TakeDamage(other, iOwnerEntity, iOwnerEntity, 7.0, IsClientCritBoosted(iOwnerEntity) ? (DMG_BURN | DMG_PREVENT_PHYSICS_FORCE | DMG_ACID) : DMG_BURN | DMG_PREVENT_PHYSICS_FORCE); 
 						}
 					}
 				}

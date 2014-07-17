@@ -19,7 +19,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.3c"
+#define PLUGIN_VERSION "0.2.3d"
 
 public Plugin:myinfo = 
 {
@@ -268,10 +268,6 @@ enum PlayerPreferences
 new bool:g_bPlayerHints[MAXPLAYERS + 1][PlayerHint_MaxNum];
 new g_iPlayerPreferences[MAXPLAYERS + 1][PlayerPreferences];
 
-// Ultravision data.
-new bool:g_bPlayerUltravision[MAXPLAYERS + 1];
-new g_iPlayerUltravisionEnt[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
-
 // Deathcam data.
 new g_iPlayerDeathCamBoss[MAXPLAYERS + 1] = { -1, ... };
 new bool:g_bPlayerDeathCam[MAXPLAYERS + 1];
@@ -279,10 +275,6 @@ new bool:g_bPlayerDeathCamShowOverlay[MAXPLAYERS + 1];
 new g_iPlayerDeathCamEnt[MAXPLAYERS + 1];
 new g_iPlayerDeathCamEnt2[MAXPLAYERS + 1];
 new Handle:g_hPlayerDeathCamTimer[MAXPLAYERS + 1];
-
-// Glow data.
-new g_iPlayerGlowEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
-new g_iPlayerGlowLookAtEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
 
 // Jumpscare data.
 new g_iPlayerJumpScareMaster[MAXPLAYERS + 1] = { -1, ... };
@@ -333,6 +325,8 @@ new Float:g_iPlayerProxyAskPosition[MAXPLAYERS + 1][3];
 
 new g_iPlayerDesiredFOV[MAXPLAYERS + 1];
 
+new Handle:g_hPlayerPostWeaponsTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+
 // Music system.
 new g_iPlayerMusicFlags[MAXPLAYERS + 1];
 new String:g_strPlayerMusic[MAXPLAYERS + 1][PLATFORM_MAX_PATH];
@@ -363,20 +357,25 @@ new g_iPlayer20DollarsMusicMaster[MAXPLAYERS + 1] = { -1, ... };
 
 
 new SF2RoundState:g_iRoundState = SF2RoundState_Invalid;
-new g_iRoundCount = 0;
 new bool:g_bRoundGrace = false;
-new Handle:g_hRoundGraceTimer = INVALID_HANDLE;
-new bool:g_bRoundHasEscapeObjective = false;
-new String:g_strRoundBossProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 new Float:g_flRoundDifficultyModifier = DIFFICULTY_NORMAL;
-new bool:g_bRoundInfiniteFlashlight;
-new bool:g_bRoundInfiniteBlink;
-new g_iRoundTime;
-new g_iRoundTimeLimit;
-new g_iRoundEscapeTimeLimit;
-new g_iRoundTimeGainFromPage;
-new Handle:g_hRoundTimer;
-new Handle:g_hVoteTimer;
+new bool:g_bRoundInfiniteFlashlight = false;
+new bool:g_bRoundInfiniteBlink = false;
+
+new bool:g_bSpecialRound = false;
+new g_iSpecialRoundType = 0;
+
+static Handle:g_hRoundGraceTimer = INVALID_HANDLE;
+static Handle:g_hRoundTimer = INVALID_HANDLE;
+static Handle:g_hVoteTimer = INVALID_HANDLE;
+static String:g_strRoundBossProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+
+static g_iRoundCount = 0;
+static g_iRoundTime = 0;
+static g_iRoundTimeLimit = 0;
+static g_iRoundEscapeTimeLimit = 0;
+static g_iRoundTimeGainFromPage = 0;
+static bool:g_bRoundHasEscapeObjective = false;
 
 static g_iRoundIntroFadeColor[4] = { 255, ... };
 static Float:g_flRoundIntroFadeHoldTime;
@@ -389,21 +388,12 @@ static String:g_strRoundIntroMusic[] = "";
 
 static bool:g_bRoundWaitingForPlayers = false;
 
-new bool:g_bSpecialRound;
-new bool:g_bSpecialRoundNew;
-new g_iSpecialRound;
-new Handle:g_hSpecialRoundTimer;
-new g_iSpecialRoundCycleNum;
-new Float:g_flSpecialRoundCycleEndTime;
-new g_iSpecialRoundCount;
-new bool:g_bPlayerDidSpecialRound[MAXPLAYERS + 1];
-
-new bool:g_bNewBossRound;
-new bool:g_bNewBossRoundNew;
-new bool:g_bNewBossRoundContinuous;
-new g_iNewBossRoundCount;
-new bool:g_bPlayerPlayedNewBossRound[MAXPLAYERS + 1];
-new String:g_strNewBossRoundProfile[64];
+static bool:g_bNewBossRound = false;
+static bool:g_bNewBossRoundNew = false;
+static bool:g_bNewBossRoundContinuous = false;
+static g_iNewBossRoundCount = 0;
+static bool:g_bPlayerPlayedNewBossRound[MAXPLAYERS + 1] = { false, ... };
+static String:g_strNewBossRoundProfile[64] = "";
 
 new Float:g_flPlayerDangerBoostTime[MAXPLAYERS + 1];
 
@@ -681,6 +671,7 @@ public OnPluginStart()
 	g_cvBlockSuicideDuringRound = CreateConVar("sf2_block_suicide_during_round", "0");
 	
 	g_cvAllChat = CreateConVar("sf2_alltalk", "0");
+	HookConVarChange(g_cvAllChat, OnConVarChanged);
 	
 	g_cvPlayerVoiceDistance = CreateConVar("sf2_player_voice_distance", "800.0", "The maximum distance RED can communicate in voice chat. Set to 0 if you want them to be heard at all times.");
 	g_cvPlayerVoiceWallScale = CreateConVar("sf2_player_voice_scale_blocked", "0.5", "The distance required to hear RED in voice chat will be multiplied by this amount if something is blocking them.");
@@ -1410,7 +1401,7 @@ public Menu_VoteDifficulty(Handle:menu, MenuAction:action, param1, param2)
 		GetMenuItem(menu, param1, sInfo, sizeof(sInfo), _, sDisplay, sizeof(sDisplay));
 		
 		if (g_bSpecialRound && 
-			(g_iSpecialRound == SPECIALROUND_INSANEDIFFICULTY || g_iSpecialRound == SPECIALROUND_DOUBLEMAXPLAYERS))
+			(g_iSpecialRoundType == SPECIALROUND_INSANEDIFFICULTY || g_iSpecialRoundType == SPECIALROUND_DOUBLEMAXPLAYERS))
 		{
 			SetConVarInt(g_cvDifficulty, Difficulty_Insane);
 		}
@@ -3263,6 +3254,16 @@ public OnConVarChanged(Handle:cvar, const String:oldValue[], const String:newVal
 	{
 		g_b20Dollars = bool:StringToInt(newValue);
 	}
+	else if (cvar == g_cvAllChat)
+	{
+		if (g_bEnabled)
+		{
+			for (new i = 1; i <= MaxClients; i++)
+			{
+				ClientUpdateListeningFlags(i);
+			}
+		}
+	}
 }
 
 //	==========================================================
@@ -3443,7 +3444,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 			{
 				if (!g_bPlayerEliminated[iClient])
 				{
-					if (g_bSpecialRound && g_iSpecialRound == SPECIALROUND_SINGLEPLAYER)
+					if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 					{
 						if (!g_bPlayerEliminated[entity] && !g_bPlayerEscaped[entity])
 						{
@@ -3654,7 +3655,6 @@ public OnClientPutInServer(client)
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START OnClientPutInServer(%d)", client);
 #endif
 	
-	InitializeClient(client);
 	ClientSetPlayerGroup(client, -1);
 	
 	g_bPlayerEscaped[client] = false;
@@ -3665,6 +3665,9 @@ public OnClientPutInServer(client)
 	
 	g_iPlayerPreferences[client][PlayerPreference_PvPAutoSpawn] = false;
 	g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight] = false;
+	
+	g_iPlayerPageCount[client] = 0;
+	g_iPlayerDesiredFOV[client] = 90;
 	
 	SDKHook(client, SDKHook_PreThink, Hook_ClientPreThink);
 	SDKHook(client, SDKHook_SetTransmit, Hook_ClientSetTransmit);
@@ -3682,12 +3685,42 @@ public OnClientPutInServer(client)
 		SetPlayerGroupInvitedPlayerTime(i, client, 0.0);
 	}
 	
+	ClientDisableFakeLagCompensation(client);
+	
+	ClientResetStatic(client);
+	ClientResetSlenderStats(client);
+	ClientResetCampingStats(client);
+	ClientResetBlink(client);
+	ClientResetOverlay(client);
+	ClientResetJumpScare(client);
+	ClientUpdateListeningFlags(client);
+	ClientUpdateMusicSystem(client);
+	ClientChaseMusicReset(client);
+	ClientChaseMusicSeeReset(client);
+	ClientAlertMusicReset(client);
+	Client20DollarsMusicReset(client);
+	ClientMusicReset(client);
+	ClientResetInteractiveGlow(client);
+	ClientResetProxy(client);
+	ClientRemoveProxyGlow(client);
+	ClientResetHints(client);
+	ClientResetScare(client);
+	
+	ClientResetDeathCam(client);
+	ClientResetFlashlight(client);
+	ClientDeactivateUltravision(client);
+	ClientResetSprint(client);
+	ClientResetBreathing(client);
+	
 	ClientStartProxyAvailableTimer(client);
 	
 	if (!IsFakeClient(client))
 	{
 		// See if the player is using the custom flashlight.
-		QueryClientConVar(client, "mat_supportflashlight", QueryClientFlashlight);
+		QueryClientConVar(client, "mat_supportflashlight", OnClientGetProjectedFlashlightSetting);
+		
+		// Get desired FOV.
+		QueryClientConVar(client, "fov_desired", OnClientGetDesiredFOV);
 	}
 	
 	PvP_OnClientPutInServer(client);
@@ -3699,7 +3732,7 @@ public OnClientPutInServer(client)
 #endif
 }
 
-public QueryClientFlashlight(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
+public OnClientGetProjectedFlashlightSetting(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
 {
 	if (result != ConVarQuery_Okay) 
 	{
@@ -3712,6 +3745,13 @@ public QueryClientFlashlight(QueryCookie:cookie, client, ConVarQueryResult:resul
 		g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight] = true;
 		LogMessage("Player %N has mat_supportflashlight enabled, using client-side flashlight!", client);
 	}
+}
+
+public OnClientGetDesiredFOV(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
+{
+	if (!IsValidClient(client)) return;
+	
+	g_iPlayerDesiredFOV[client] = StringToInt(cvarValue);
 }
 
 public OnClientDisconnect(client)
@@ -3738,7 +3778,7 @@ public OnClientDisconnect(client)
 	
 	ClientSetGhostModeState(client, false);
 	
-	ClientResetGlow(client);
+	ClientResetInteractiveGlow(client);
 	ClientStopProxyForce(client);
 	ClientResetOverlay(client);
 	
@@ -4111,7 +4151,7 @@ public Action:Timer_ClientAverageUpdate(Handle:timer)
 					}
 				}
 				
-				if (!g_bSpecialRound || g_iSpecialRound != SPECIALROUND_LIGHTSOUT)
+				if (!g_bSpecialRound || g_iSpecialRoundType != SPECIALROUND_LIGHTSOUT)
 				{
 					iBars = RoundToCeil(float(iMaxBars) * ClientGetFlashlightBatteryLife(i));
 					if (iBars > iMaxBars) iBars = iMaxBars;
@@ -7226,6 +7266,51 @@ SetPageCount(iNum)
 	
 	if (g_iPageCount != iOldPageCount)
 	{
+		if (g_iPageCount > iOldPageCount)
+		{
+			if (g_hRoundGraceTimer != INVALID_HANDLE) 
+			{
+				TriggerTimer(g_hRoundGraceTimer);
+			}
+			
+			g_iRoundTime += g_iRoundTimeGainFromPage;
+			if (g_iRoundTime > g_iRoundTimeLimit) g_iRoundTime = g_iRoundTimeLimit;
+			
+			// Increase anger on selected bosses.
+			for (new i = 0; i < MAX_BOSSES; i++)
+			{
+				if (!g_strSlenderProfile[i][0]) continue;
+			
+				new Float:flPageDiff = GetProfileFloat(g_strSlenderProfile[i], "anger_page_time_diff");
+				if (flPageDiff >= 0.0)
+				{
+					new iDiff = g_iPageCount - iOldPageCount;
+					if ((GetGameTime() - g_flPageFoundLastTime) < flPageDiff)
+					{
+						g_flSlenderAnger[i] += (GetProfileFloat(g_strSlenderProfile[i], "anger_page_add") * float(iDiff));
+					}
+				}
+			}
+			
+			g_flPageFoundLastTime = GetGameTime();
+		}
+		
+		// Notify logic entities.
+		decl String:sTargetName[64];
+		decl String:sFindTargetName[64];
+		Format(sFindTargetName, sizeof(sFindTargetName), "sf2_onpagecount_%d", g_iPageCount);
+		
+		new ent = -1;
+		while ((ent = FindEntityByClassname(ent, "logic_relay")) != -1)
+		{
+			GetEntPropString(ent, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));
+			if (sTargetName[0] && StrEqual(sTargetName, sFindTargetName, false))
+			{
+				AcceptEntityInput(ent, "Trigger");
+				break;
+			}
+		}
+	
 		new iClients[MAXPLAYERS + 1] = { -1, ... };
 		new iClientsNum = 0;
 		
@@ -7289,48 +7374,6 @@ SetPageCount(iNum)
 						ClientShowMainMessage(client, "%d/%d", g_iPageCount, g_iPageMax);
 					}
 				}
-			}
-		}
-		
-		if (g_iPageCount > iOldPageCount)
-		{
-			if (g_hRoundGraceTimer != INVALID_HANDLE) TriggerTimer(g_hRoundGraceTimer);
-			
-			g_iRoundTime += g_iRoundTimeGainFromPage;
-			if (g_iRoundTime > g_iRoundTimeLimit) g_iRoundTime = g_iRoundTimeLimit;
-			
-			// Increase anger on selected bosses.
-			for (new i = 0; i < MAX_BOSSES; i++)
-			{
-				if (!g_strSlenderProfile[i][0]) continue;
-			
-				new Float:flPageDiff = GetProfileFloat(g_strSlenderProfile[i], "anger_page_time_diff");
-				if (flPageDiff >= 0.0)
-				{
-					new iDiff = g_iPageCount - iOldPageCount;
-					if ((GetGameTime() - g_flPageFoundLastTime) < flPageDiff)
-					{
-						g_flSlenderAnger[i] += (GetProfileFloat(g_strSlenderProfile[i], "anger_page_add") * float(iDiff));
-					}
-				}
-			}
-			
-			g_flPageFoundLastTime = GetGameTime();
-		}
-		
-		// Notify logic entities.
-		decl String:sTargetName[64];
-		decl String:sFindTargetName[64];
-		Format(sFindTargetName, sizeof(sFindTargetName), "sf2_onpagecount_%d", g_iPageCount);
-		
-		new ent = -1;
-		while ((ent = FindEntityByClassname(ent, "logic_relay")) != -1)
-		{
-			GetEntPropString(ent, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));
-			if (sTargetName[0] && StrEqual(sTargetName, sFindTargetName, false))
-			{
-				AcceptEntityInput(ent, "Trigger");
-				break;
 			}
 		}
 		
@@ -7419,9 +7462,6 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dB)
 	// Reset some global variables.
 	g_iRoundCount++;
 	g_hRoundTimer = INVALID_HANDLE;
-	g_iRoundTimeLimit = GetConVarInt(g_cvTimeLimit);
-	g_iRoundEscapeTimeLimit = GetConVarInt(g_cvTimeLimitEscape);
-	g_iRoundTimeGainFromPage = GetConVarInt(g_cvTimeGainFromPageGrab);
 	
 	SetRoundState(SF2RoundState_Invalid);
 	
@@ -7780,10 +7820,10 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 		ClientSetGhostModeState(client, false);
 	}
 	
+	g_hPlayerPostWeaponsTimer[client] = INVALID_HANDLE;
+	
 	if (IsPlayerAlive(client) && IsClientParticipating(client))
 	{
-		InitializeClient(client);
-		
 		if (HandlePlayerTeam(client))
 		{
 #if defined DEBUG
@@ -7792,6 +7832,35 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 		}
 		else
 		{
+			g_iPlayerPageCount[client] = 0;
+		
+			ClientDisableFakeLagCompensation(client);
+			
+			ClientResetStatic(client);
+			ClientResetSlenderStats(client);
+			ClientResetCampingStats(client);
+			ClientResetBlink(client);
+			ClientResetOverlay(client);
+			ClientResetJumpScare(client);
+			ClientUpdateListeningFlags(client);
+			ClientUpdateMusicSystem(client);
+			ClientChaseMusicReset(client);
+			ClientChaseMusicSeeReset(client);
+			ClientAlertMusicReset(client);
+			Client20DollarsMusicReset(client);
+			ClientMusicReset(client);
+			ClientResetInteractiveGlow(client);
+			ClientResetProxy(client);
+			ClientRemoveProxyGlow(client);
+			ClientResetHints(client);
+			ClientResetScare(client);
+			
+			ClientResetDeathCam(client);
+			ClientResetFlashlight(client);
+			ClientDeactivateUltravision(client);
+			ClientResetSprint(client);
+			ClientResetBreathing(client);
+			
 			ClientHandleGhostMode(client);
 			
 			if (!g_bPlayerEliminated[client])
@@ -7817,7 +7886,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 				ClientRemoveProxyGlow(client);
 			}
 			
-			CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+			g_hPlayerPostWeaponsTimer[client] = CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 			
 			HandlePlayerHUD(client);
 			
@@ -7858,7 +7927,7 @@ public Event_PostInventoryApplication(Handle:event, const String:name[], bool:dB
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
 	if (client > 0)
 	{
-		CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+		g_hPlayerPostWeaponsTimer[client] = CreateTimer(0.1, Timer_ClientPostWeapons, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
 #if defined DEBUG
@@ -7960,7 +8029,7 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 	if (client <= 0) return;
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerDeath");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT START: Event_PlayerDeath(%d)", client);
 #endif
 	
 	new bool:bFake = bool:(GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER);
@@ -7975,8 +8044,8 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 		ClientResetBlink(client);
 		ClientResetOverlay(client);
 		ClientResetJumpScare(client);
-		ClientResetGlow(client);
-		ClientResetProxyGlow(client);
+		ClientResetInteractiveGlow(client);
+		ClientRemoveProxyGlow(client);
 		ClientChaseMusicReset(client);
 		ClientChaseMusicSeeReset(client);
 		ClientAlertMusicReset(client);
@@ -8079,12 +8148,14 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 				}
 			}
 		}
+		
+		g_hPlayerPostWeaponsTimer[client] = INVALID_HANDLE;
 	}
 	
 	PvP_OnPlayerDeath(client, bFake);
 	
 #if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerDeath");
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_PlayerDeath(%d)", client);
 #endif
 }
 
@@ -8187,11 +8258,13 @@ public Action:Timer_RoundGrace(Handle:timer)
 	// Initialize the main round timer.
 	if (g_iRoundTimeLimit > 0)
 	{
+		// Set round time.
 		g_iRoundTime = g_iRoundTimeLimit;
 		g_hRoundTimer = CreateTimer(1.0, Timer_RoundTime, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	}
 	else
 	{
+		// Infinite round time.
 		g_hRoundTimer = INVALID_HANDLE;
 	}
 	
@@ -8318,6 +8391,10 @@ static InitializeMapEntities()
 	g_bRoundInfiniteFlashlight = false;
 	g_bRoundInfiniteBlink = false;
 	g_bRoundHasEscapeObjective = false;
+	
+	g_iRoundTimeLimit = GetConVarInt(g_cvTimeLimit);
+	g_iRoundEscapeTimeLimit = GetConVarInt(g_cvTimeLimitEscape);
+	g_iRoundTimeGainFromPage = GetConVarInt(g_cvTimeGainFromPageGrab);
 	
 	// Reset page reference.
 	g_bPageRef = false;
