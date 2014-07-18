@@ -358,7 +358,7 @@ static Handle:g_hRoundIntroTimer = INVALID_HANDLE;
 static bool:g_bRoundIntroTextDefault = true;
 static Handle:g_hRoundIntroTextTimer = INVALID_HANDLE;
 static g_iRoundIntroText;
-static String:g_strRoundIntroMusic[] = "";
+static String:g_strRoundIntroMusic[PLATFORM_MAX_PATH] = "";
 
 static bool:g_bRoundWaitingForPlayers = false;
 
@@ -369,11 +369,11 @@ static g_iNewBossRoundCount = 0;
 static bool:g_bPlayerPlayedNewBossRound[MAXPLAYERS + 1] = { false, ... };
 static String:g_strNewBossRoundProfile[64] = "";
 
-new Handle:g_hRoundMessagesTimer;
-new g_iRoundMessagesNum;
+static Handle:g_hRoundMessagesTimer = INVALID_HANDLE;
+static g_iRoundMessagesNum = 0;
 
-new Handle:g_hBossCountUpdateTimer = INVALID_HANDLE;
-new Handle:g_hClientAverageUpdateTimer = INVALID_HANDLE;
+static Handle:g_hBossCountUpdateTimer = INVALID_HANDLE;
+static Handle:g_hClientAverageUpdateTimer = INVALID_HANDLE;
 
 // Server variables.
 new Handle:g_cvEnabled;
