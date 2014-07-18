@@ -38,10 +38,10 @@ bool:SlenderCanRemove(iBossIndex)
 				for (new i = 1; i <= MaxClients; i++)
 				{
 					if (!IsClientInGame(i) || 
-					!IsPlayerAlive(i) || 
-					g_bPlayerEliminated[i] || 
-					IsClientInGhostMode(i) || 
-					g_bPlayerDeathCam[i]) continue;
+						!IsPlayerAlive(i) || 
+						g_bPlayerEliminated[i] || 
+						IsClientInGhostMode(i) || 
+						IsClientInDeathCam(i)) continue;
 					
 					if (!IsPointVisibleToPlayer(i, flSlenderPos, false, false)) continue;
 					
@@ -326,7 +326,7 @@ stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
 		if (!(GetEntityFlags(client) & FL_ONGROUND)) return false;
 		
 		if (GetEntProp(client, Prop_Send, "m_bDucking") || GetEntProp(client, Prop_Send, "m_bDucked")) flDistance *= 1.85;
-		if (ClientSprintIsValid(client)) flDistance *= 0.66;
+		if (IsClientReallySprinting(client)) flDistance *= 0.66;
 		
 		hTrace = TR_TraceRayFilterEx(flMyPos, flHisPos, MASK_NPCSOLID, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, iSlender);
 		bTraceHit = TR_DidHit(hTrace);
@@ -732,7 +732,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 		{
 			if (!IsClientInGame(i) || 
 				!IsPlayerAlive(i) || 
-				g_bPlayerDeathCam[i] || 
+				IsClientInDeathCam(i) || 
 				g_bPlayerEliminated[i] || 
 				g_bPlayerEscaped[i]) continue;
 			
@@ -747,7 +747,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				
 					if (!IsClientInGame(iBossPlayer) || 
 						!IsPlayerAlive(iBossPlayer) || 
-						g_bPlayerDeathCam[iBossPlayer] || 
+						IsClientInDeathCam(iBossPlayer) || 
 						g_bPlayerEliminated[iBossPlayer] || 
 						g_bPlayerEscaped[iBossPlayer]) continue;
 					

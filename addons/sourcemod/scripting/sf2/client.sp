@@ -31,8 +31,17 @@ new String:g_strPlayerBreathSounds[][] =
 static String:g_strPlayerLagCompensationWeapons[][] = 
 {
 	"tf_weapon_sniperrifle",
-	"tf_weapon_sniperrifle_decap"
+	"tf_weapon_sniperrifle_decap",
+	"tf_weapon_sniperrifle_classic"
 };
+
+// Deathcam data.
+static g_iPlayerDeathCamBoss[MAXPLAYERS + 1] = { -1, ... };
+static bool:g_bPlayerDeathCam[MAXPLAYERS + 1] = { false, ... };
+static bool:g_bPlayerDeathCamShowOverlay[MAXPLAYERS + 1] = { false, ... };
+static g_iPlayerDeathCamEnt[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static g_iPlayerDeathCamEnt2[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static Handle:g_hPlayerDeathCamTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
 
 // Flashlight data.
 static bool:g_bPlayerFlashlight[MAXPLAYERS + 1] = { false, ... };
@@ -47,9 +56,34 @@ static Float:g_flPlayerFlashlightNextInputTime[MAXPLAYERS + 1] = { -1.0, ... };
 static bool:g_bPlayerUltravision[MAXPLAYERS + 1] = { false, ... };
 static g_iPlayerUltravisionEnt[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
 
-// Glow data.
+// Sprint data.
+static bool:g_bPlayerSprint[MAXPLAYERS + 1] = { false, ... };
+static g_iPlayerSprintPoints[MAXPLAYERS + 1] = { 100, ... };
+static Handle:g_hPlayerSprintTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+
+// Blink data.
+static Handle:g_hPlayerBlinkTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+static bool:g_bPlayerBlink[MAXPLAYERS + 1] = { false, ... };
+static Float:g_flPlayerBlinkMeter[MAXPLAYERS + 1] = { 0.0, ... };
+static g_iPlayerBlinkCount[MAXPLAYERS + 1] = { 0, ... };
+
+// Breathing data.
+static bool:g_bPlayerBreath[MAXPLAYERS + 1] = { false, ... };
+static Handle:g_hPlayerBreathTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+
+// Interactive glow data.
 static g_iPlayerInteractiveGlowEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
 static g_iPlayerInteractiveGlowTargetEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+
+// Constant glow data.
+static g_iPlayerConstantGlowEntity[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static bool:g_bPlayerConstantGlowEnabled[MAXPLAYERS + 1] = { false, ... };
+
+// Jumpscare data.
+static g_iPlayerJumpScareBoss[MAXPLAYERS + 1] = { -1, ... };
+static Float:g_flPlayerJumpScareLifeTime[MAXPLAYERS + 1] = { -1.0, ... };
+
+static Float:g_flPlayerScareBoostEndTime[MAXPLAYERS + 1] = { -1.0, ... };
 
 //	==========================================================
 //	GENERAL CLIENT HOOK FUNCTIONS
@@ -67,6 +101,16 @@ public MRESReturn:Hook_ClientWantsLagCompensationOnEntity(this, Handle:hReturn, 
 	
 	DHookSetReturn(hReturn, true);
 	return MRES_Supercede;
+}
+
+Float:ClientGetScareBoostEndTime(client)
+{
+	return g_flPlayerScareBoostEndTime[client];
+}
+
+ClientSetScareBoostEndTime(client, Float:time)
+{
+	g_flPlayerScareBoostEndTime[client] = time;
 }
 
 public Hook_ClientPreThink(client)
@@ -117,7 +161,7 @@ public Hook_ClientPreThink(client)
 									((iBossTarget && iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0 || PlayerCanSeeSlender(client, i, false)))
 								{
 									bDanger = true;
-									g_flPlayerDangerBoostTime[client] = GetGameTime() + 5.0;
+									ClientSetScareBoostEndTime(client, GetGameTime() + 5.0);
 									
 									// Induce client stress levels.
 									new Float:flUnComfortZoneDist = 512.0;
@@ -131,7 +175,7 @@ public Hook_ClientPreThink(client)
 					}
 					
 					if (g_flPlayerStaticAmount[client] > 0.4) bDanger = true;
-					if (GetGameTime() < g_flPlayerDangerBoostTime[client]) bDanger = true;
+					if (GetGameTime() < ClientGetScareBoostEndTime(client)) bDanger = true;
 					
 					if (!bDanger)
 					{
@@ -147,7 +191,7 @@ public Hook_ClientPreThink(client)
 									if (PlayerCanSeeSlender(client, i))
 									{
 										bDanger = true;
-										g_flPlayerDangerBoostTime[client] = GetGameTime() + 5.0;
+										ClientSetScareBoostEndTime(client, GetGameTime() + 5.0);
 									}
 								}
 							}
@@ -229,7 +273,7 @@ public Hook_ClientPreThink(client)
 					flSprintSpeedSubtract -= flSprintSpeedSubtract * (g_iPlayerSprintPoints[client] != 0 ? (float(g_iPlayerSprintPoints[client]) / 100.0) : 0.0);
 					flSprintSpeed -= flSprintSpeedSubtract;
 					
-					if (g_bPlayerSprint[client]) 
+					if (IsClientSprinting(client)) 
 					{
 						SetEntPropFloat(client, Prop_Send, "m_flMaxspeed", flSprintSpeed);
 					}
@@ -358,10 +402,20 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 	{
 		if (!GetConVarBool(g_cvPlayerFakeLagCompensation))
 		{
-			// Fake lag compensation isn't enabled; we'll deal the damage ourselves.
-			if (StrEqual(sWeaponName, "tf_weapon_sniperrifle"))
+			new bool:bNeedsManualDamage = false;
+		
+			// Fake lag compensation isn't enabled; check to see if we need to deal damage manually.
+			for (new i = 0; i < sizeof(g_strPlayerLagCompensationWeapons); i++)
 			{
-				// TRACE!
+				if (StrEqual(sWeaponName, g_strPlayerLagCompensationWeapons[i], false))
+				{
+					bNeedsManualDamage = true;
+					break;
+				}
+			}
+			
+			if (bNeedsManualDamage)
+			{
 				decl Float:flStartPos[3], Float:flEyeAng[3];
 				GetClientEyePosition(client, flStartPos);
 				GetClientEyeAngles(client, flEyeAng);
@@ -377,18 +431,36 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 					{
 						if (IsRoundInWarmup() || IsClientInPvP(iHitEntity))
 						{
-							new Float:flDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
-							if (flDamage < 50.0) flDamage = 50.0;
+							new Float:flChargedDamage = GetEntPropFloat(weapon, Prop_Send, "m_flChargedDamage");
+							if (flChargedDamage < 50.0) flChargedDamage = 50.0;
 							new iDamageType = DMG_BULLET;
 							
-							if (IsClientCritBoosted(client) || (iHitGroup == 1 && TF2_IsPlayerInCondition(client, TFCond_Zoomed)))
+							if (IsClientCritBoosted(client))
 							{
-								// Set damagetype to crit, and also play the crit sound for the weapon.
 								result = true;
 								iDamageType |= DMG_ACID;
 							}
+							else if (iHitGroup == 1)
+							{
+								if (StrEqual(sWeaponName, "tf_weapon_sniperrifle_classic", false))
+								{
+									if (flChargedDamage >= 150.0)
+									{
+										result = true;
+										iDamageType |= DMG_ACID;
+									}
+								}
+								else
+								{
+									if (TF2_IsPlayerInCondition(client, TFCond_Zoomed))
+									{
+										result = true;
+										iDamageType |= DMG_ACID;
+									}
+								}
+							}
 							
-							SDKHooks_TakeDamage(iHitEntity, client, client, flDamage, iDamageType);
+							SDKHooks_TakeDamage(iHitEntity, client, client, flChargedDamage, iDamageType);
 							return Plugin_Changed;
 						}
 					}
@@ -610,38 +682,72 @@ ClientShowHint(client, iHint)
 
 ClientEscape(client)
 {
+	if (g_bPlayerEscaped[client]) return;
+
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("START ClientEscape(%d)", client);
 #endif
 	
-	if (!g_bPlayerEscaped[client])
-	{
-		g_bPlayerEscaped[client] = true;
-		
-		ClientResetBreathing(client);
-		ClientResetSprint(client);
-		ClientResetFlashlight(client);
-		ClientDeactivateUltravision(client);
-		
-		// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
-		TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
-		
-		HandlePlayerHUD(client);
-		
-		decl String:sName[MAX_NAME_LENGTH];
-		GetClientName(client, sName, sizeof(sName));
-		CPrintToChatAll("%t", "SF2 Player Escaped", sName);
-		
-		CheckRoundWinConditions();
-		
-		Call_StartForward(fOnClientEscape);
-		Call_PushCell(client);
-		Call_Finish();
-	}
+	g_bPlayerEscaped[client] = true;
+	
+	ClientResetBreathing(client);
+	ClientResetSprint(client);
+	ClientResetFlashlight(client);
+	ClientDeactivateUltravision(client);
+	
+	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
+	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
+	
+	HandlePlayerHUD(client);
+	
+	decl String:sName[MAX_NAME_LENGTH];
+	GetClientName(client, sName, sizeof(sName));
+	CPrintToChatAll("%t", "SF2 Player Escaped", sName);
+	
+	CheckRoundWinConditions();
+	
+	Call_StartForward(fOnClientEscape);
+	Call_PushCell(client);
+	Call_Finish();
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("END ClientEscape(%d)", client);
 #endif
+}
+
+public Action:Timer_TeleportPlayerToEscapePoint(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return;
+
+	if (IsPlayerAlive(client))
+	{
+		ClientTeleportToEscapePoint(client);
+	}
+}
+
+ClientTeleportToEscapePoint(client)
+{
+	if (!IsClientInGame(client)) return;
+	
+	decl String:sName[64];
+	new ent = -1;
+	while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
+	{
+		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
+		if (!StrContains(sName, "sf2_escape_spawnpoint", false))
+		{
+			decl Float:pos[3], Float:ang[3];
+			GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", pos);
+			GetEntPropVector(ent, Prop_Data, "m_angAbsRotation", ang);
+			ang[2] = 0.0;
+			TeleportEntity(client, pos, ang, Float:{ 0.0, 0.0, 0.0 });
+			
+			AcceptEntityInput(ent, "FireUser1", client);
+			
+			break;
+		}
+	}
 }
 
 stock Float:ClientGetDistanceFromEntity(client, entity)
@@ -1234,6 +1340,10 @@ ClientActivateUltravision(client)
 {
 	if (!IsClientInGame(client) || IsClientUsingUltravision(client)) return;
 	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientActivateUltravision(%d)", client);
+#endif
+	
 	g_bPlayerUltravision[client] = true;
 	
 	new ent = CreateEntityByName("light_dynamic");
@@ -1286,6 +1396,10 @@ ClientActivateUltravision(client)
 		// Fade in effect.
 		CreateTimer(0.0, Timer_UltravisionFadeInEffect, g_iPlayerUltravisionEnt[client], TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	}
+
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientActivateUltravision(%d)", client);
+#endif
 }
 
 public Action:Timer_UltravisionFadeInEffect(Handle:timer, any:entref)
@@ -1592,7 +1706,7 @@ ClientProcessVisibility(client)
 		if (IsClientInGhostMode(client))
 		{
 		}
-		else if (!g_bPlayerDeathCam[client])
+		else if (!IsClientInDeathCam(client))
 		{
 			if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 			{
@@ -1893,7 +2007,7 @@ ClientProcessViewAngles(client)
 			{
 				new Float:flPunchVel[3];
 			
-				if (!g_bPlayerViewbobSprintEnabled || !ClientSprintIsValid(client))
+				if (!g_bPlayerViewbobSprintEnabled || !IsClientReallySprinting(client))
 				{
 					if (GetEntityFlags(client) & FL_ONGROUND)
 					{
@@ -2120,6 +2234,10 @@ ClientResetInteractiveGlow(client)
  */
 ClientRemoveInteractiveGlow(client)
 {
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientRemoveInteractiveGlow(%d)", client);
+#endif
+
 	new ent = EntRefToEntIndex(g_iPlayerInteractiveGlowEntity[client]);
 	if (ent && ent != INVALID_ENT_REFERENCE)
 	{
@@ -2127,6 +2245,10 @@ ClientRemoveInteractiveGlow(client)
 	}
 	
 	g_iPlayerInteractiveGlowEntity[client] = INVALID_ENT_REFERENCE;
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientRemoveInteractiveGlow(%d)", client);
+#endif
 }
 
 /**
@@ -2139,7 +2261,11 @@ bool:ClientCreateInteractiveGlow(client, iEnt, const String:sAttachment[]="")
 	if (!IsClientInGame(client)) return false;
 	
 	if (!iEnt || !IsValidEntity(iEnt)) return false;
-
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientCreateInteractiveGlow(%d)", client);
+#endif
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
 	GetEntPropString(iEnt, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
 	
@@ -2179,15 +2305,23 @@ bool:ClientCreateInteractiveGlow(client, iEnt, const String:sAttachment[]="")
 		
 		g_iPlayerInteractiveGlowEntity[client] = EntIndexToEntRef(ent);
 		
-		SDKHook(ent, SDKHook_SetTransmit, Hook_GlowSetTransmit);
+		SDKHook(ent, SDKHook_SetTransmit, Hook_InterativeGlowSetTransmit);
+		
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientCreateInteractiveGlow(%d) -> true", client);
+#endif
 		
 		return true;
 	}
 	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientCreateInteractiveGlow(%d) -> false", client);
+#endif
+	
 	return false;
 }
 
-public Action:Hook_GlowSetTransmit(ent, other)
+public Action:Hook_InterativeGlowSetTransmit(ent, other)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 
@@ -2263,6 +2397,16 @@ public Action:Timer_ClientBreath(Handle:timer, any:userid)
 //	SPRINTING FUNCTIONS
 //	==========================================================
 
+bool:IsClientSprinting(client)
+{
+	return g_bPlayerSprint[client];
+}
+
+ClientGetSprintPoints(client)
+{
+	return g_iPlayerSprintPoints[client];
+}
+
 ClientResetSprint(client)
 {
 #if defined DEBUG
@@ -2288,7 +2432,7 @@ ClientResetSprint(client)
 
 ClientStartSprint(client)
 {
-	if (g_bPlayerSprint[client]) return;
+	if (IsClientSprinting(client)) return;
 	
 	g_bPlayerSprint[client] = true;
 	g_hPlayerSprintTimer[client] = INVALID_HANDLE;
@@ -2327,7 +2471,7 @@ static ClientSprintTimer(client, bool:bRecharge=false)
 
 ClientStopSprint(client)
 {
-	if (!g_bPlayerSprint[client]) return;
+	if (!IsClientSprinting(client)) return;
 	
 	g_bPlayerSprint[client] = false;
 	g_hPlayerSprintTimer[client] = INVALID_HANDLE;
@@ -2337,9 +2481,9 @@ ClientStopSprint(client)
 	SDKUnhook(client, SDKHook_PreThink, Hook_ClientSprintingPreThink);
 }
 
-bool:ClientSprintIsValid(client)
+bool:IsClientReallySprinting(client)
 {
-	if (!g_bPlayerSprint[client]) return false;
+	if (!IsClientSprinting(client)) return false;
 	if (!(GetEntityFlags(client) & FL_ONGROUND)) return false;
 	
 	decl Float:flVelocity[3];
@@ -2356,7 +2500,7 @@ public Action:Timer_ClientSprinting(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerSprintTimer[client]) return;
 	
-	if (!g_bPlayerSprint[client]) return;
+	if (!IsClientSprinting(client)) return;
 	
 	if (g_iPlayerSprintPoints[client] <= 0)
 	{
@@ -2365,14 +2509,14 @@ public Action:Timer_ClientSprinting(Handle:timer, any:userid)
 		return;
 	}
 	
-	if (ClientSprintIsValid(client)) g_iPlayerSprintPoints[client]--;
+	if (IsClientReallySprinting(client)) g_iPlayerSprintPoints[client]--;
 	
 	ClientSprintTimer(client);
 }
 
 public Hook_ClientSprintingPreThink(client)
 {
-	if (!ClientSprintIsValid(client))
+	if (!IsClientReallySprinting(client))
 	{
 		SDKUnhook(client, SDKHook_PreThink, Hook_ClientSprintingPreThink);
 		SDKHook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
@@ -2404,7 +2548,7 @@ public Hook_ClientSprintingPreThink(client)
 
 public Hook_ClientRechargeSprintPreThink(client)
 {
-	if (ClientSprintIsValid(client))
+	if (IsClientReallySprinting(client))
 	{
 		SDKUnhook(client, SDKHook_PreThink, Hook_ClientRechargeSprintPreThink);
 		SDKHook(client, SDKHook_PreThink, Hook_ClientSprintingPreThink);
@@ -2437,7 +2581,7 @@ public Action:Timer_ClientRechargeSprint(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerSprintTimer[client]) return;
 	
-	if (g_bPlayerSprint[client]) 
+	if (IsClientSprinting(client)) 
 	{
 		g_hPlayerSprintTimer[client] = INVALID_HANDLE;
 		return;
@@ -2751,23 +2895,35 @@ public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, userid, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-ClientRemoveProxyGlow(client)
+ClientDisableConstantGlow(client)
 {
-	if (!g_bPlayerHasProxyGlow[client]) return;
+	if (!g_bPlayerConstantGlowEnabled[client]) return;
 	
-	g_bPlayerHasProxyGlow[client] = false;
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientDisableConstantGlow(%d)", client);
+#endif
 	
-	new iGlow = EntRefToEntIndex(g_iPlayerProxyGlowEntity[client]);
+	g_bPlayerConstantGlowEnabled[client] = false;
+	
+	new iGlow = EntRefToEntIndex(g_iPlayerConstantGlowEntity[client]);
 	if (iGlow && iGlow != INVALID_ENT_REFERENCE) AcceptEntityInput(iGlow, "Kill");
 	
-	g_iPlayerProxyGlowEntity[client] = INVALID_ENT_REFERENCE;
+	g_iPlayerConstantGlowEntity[client] = INVALID_ENT_REFERENCE;
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientDisableConstantGlow(%d)", client);
+#endif
 }
 
-bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
+bool:ClientEnableConstantGlow(client, const String:sAttachment[]="")
 {
-	if (g_bPlayerHasProxyGlow[client]) return true;
+	if (g_bPlayerConstantGlowEnabled[client]) return true;
 	
-	g_bPlayerHasProxyGlow[client] = true;
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientEnableConstantGlow(%d)", client);
+#endif
+	
+	g_bPlayerConstantGlowEnabled[client] = true;
 	
 	new String:sBuffer[PLATFORM_MAX_PATH];
 	GetEntPropString(client, Prop_Send, "m_iszCustomModel", sBuffer, sizeof(sBuffer));
@@ -2813,12 +2969,20 @@ bool:ClientCreateProxyGlow(client, const String:sAttachment[]="")
 			AcceptEntityInput(iGlow, "SetParentAttachment");
 		}
 		
-		g_iPlayerProxyGlowEntity[client] = EntIndexToEntRef(iGlow);
+		g_iPlayerConstantGlowEntity[client] = EntIndexToEntRef(iGlow);
 		
 		SDKHook(iGlow, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
+	
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientEnableConstantGlow(%d) -> true", client);
+#endif
 		
 		return true;
 	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientEnableConstantGlow(%d) -> false", client);
+#endif
 	
 	return false;
 }
@@ -2829,12 +2993,25 @@ ClientResetJumpScare(client)
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetJumpScare(%d)", client);
 #endif
 
-	g_iPlayerJumpScareMaster[client] = -1;
+	g_iPlayerJumpScareBoss[client] = -1;
 	g_flPlayerJumpScareLifeTime[client] = -1.0;
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetJumpScare(%d)", client);
 #endif
+}
+
+ClientDoJumpScare(client, iBossIndex, Float:flLifeTime)
+{
+	g_iPlayerJumpScareBoss[client] = g_iSlenderID[iBossIndex];
+	g_flPlayerJumpScareLifeTime[client] = GetGameTime() + flLifeTime;
+	
+	decl String:sBuffer[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_jumpscare", sBuffer, sizeof(sBuffer), 1);
+	if (strlen(sBuffer) > 0)
+	{
+		EmitSoundToClient(client, sBuffer, _, MUSIC_CHAN);
+	}
 }
 
  /**
@@ -2861,7 +3038,7 @@ ClientHandleSprint(client, bool:bSprint)
 	}
 	else
 	{
-		if (g_bPlayerSprint[client])
+		if (IsClientSprinting(client))
 		{
 			ClientStopSprint(client);
 		}
@@ -2943,7 +3120,7 @@ ClientOnJump(client)
 			g_iPlayerSprintPoints[client] -= 7;
 			if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
 			
-			if (!g_bPlayerSprint[client])
+			if (!IsClientSprinting(client))
 			{
 				if (g_hPlayerSprintTimer[client] == INVALID_HANDLE)
 				{
@@ -2959,6 +3136,11 @@ ClientOnJump(client)
 //	DEATH CAM FUNCTIONS
 //	==========================================================
 
+bool:IsClientInDeathCam(client)
+{
+	return g_bPlayerDeathCam[client];
+}
+
 public Action:Hook_DeathCamSetTransmit(slender, other)
 {
 	if (!g_bEnabled) return Plugin_Continue;
@@ -2969,25 +3151,20 @@ public Action:Hook_DeathCamSetTransmit(slender, other)
 
 ClientResetDeathCam(client)
 {
+	if (!IsClientInDeathCam(client)) return; // no really need to reset if it wasn't set.
+	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetDeathCam(%d)", client);
 #endif
-
-	new bool:bOld = g_bPlayerDeathCam[client];
-	new iOldBoss = g_iPlayerDeathCamBoss[client];
+	
+	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
 	
 	g_iPlayerDeathCamBoss[client] = -1;
 	g_bPlayerDeathCam[client] = false;
 	g_bPlayerDeathCamShowOverlay[client] = false;
 	g_hPlayerDeathCamTimer[client] = INVALID_HANDLE;
 	
-	if (IsClientInGame(client))
-	{
-		SetClientViewEntity(client, client);
-	}
-	
 	new ent = EntRefToEntIndex(g_iPlayerDeathCamEnt[client]);
-	g_iPlayerDeathCamEnt[client] = INVALID_ENT_REFERENCE;
 	if (ent && ent != INVALID_ENT_REFERENCE)
 	{
 		AcceptEntityInput(ent, "Disable");
@@ -2995,19 +3172,23 @@ ClientResetDeathCam(client)
 	}
 	
 	ent = EntRefToEntIndex(g_iPlayerDeathCamEnt2[client]);
-	g_iPlayerDeathCamEnt2[client] = INVALID_ENT_REFERENCE;
 	if (ent && ent != INVALID_ENT_REFERENCE)
 	{
 		AcceptEntityInput(ent, "Kill");
 	}
 	
-	if (bOld && iOldBoss != -1)
+	g_iPlayerDeathCamEnt[client] = INVALID_ENT_REFERENCE;
+	g_iPlayerDeathCamEnt2[client] = INVALID_ENT_REFERENCE;
+	
+	if (IsClientInGame(client))
 	{
-		Call_StartForward(fOnClientEndDeathCam);
-		Call_PushCell(client);
-		Call_PushCell(iOldBoss);
-		Call_Finish();
+		SetClientViewEntity(client, client);
 	}
+	
+	Call_StartForward(fOnClientEndDeathCam);
+	Call_PushCell(client);
+	Call_PushCell(iDeathCamBoss);
+	Call_Finish();
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetDeathCam(%d)", client);
@@ -3016,23 +3197,13 @@ ClientResetDeathCam(client)
 
 ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 {
-	if (iBossIndex < 0 || iBossIndex >= MAX_BOSSES) return;
+	if (IsClientInDeathCam(client)) return;
 
+	if (iBossIndex < 0 || iBossIndex >= MAX_BOSSES) return;
+	
 	decl String:buffer[PLATFORM_MAX_PATH];
 	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
-	
-	if (GetProfileNum(sProfile, "death_cam_play_scare_sound"))
-	{
-		GetRandomStringFromProfile(sProfile, "sound_scare_player", buffer, sizeof(buffer));
-		if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
-	}
-	
-	GetRandomStringFromProfile(sProfile, "sound_player_death", buffer, sizeof(buffer));
-	if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
-	
-	GetRandomStringFromProfile(sProfile, "sound_player_death_all", buffer, sizeof(buffer));
-	if (buffer[0]) EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
 	
 	// Call our forward.
 	Call_StartForward(fOnClientCaughtByBoss);
@@ -3055,9 +3226,7 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 		return;
 	}
 	
-	ClientResetDeathCam(client);
-	
-	g_iPlayerDeathCamBoss[client] = iBossIndex;
+	g_iPlayerDeathCamBoss[client] = g_iSlenderID[iBossIndex];
 	g_bPlayerDeathCam[client] = true;
 	g_bPlayerDeathCamShowOverlay[client] = false;
 	
@@ -3108,6 +3277,19 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 	
 	TeleportEntity(client, NULL_VECTOR, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
 	
+	if (GetProfileNum(sProfile, "death_cam_play_scare_sound"))
+	{
+		GetRandomStringFromProfile(sProfile, "sound_scare_player", buffer, sizeof(buffer));
+		if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	}
+	
+	GetRandomStringFromProfile(sProfile, "sound_player_death", buffer, sizeof(buffer));
+	if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	
+	GetRandomStringFromProfile(sProfile, "sound_player_death_all", buffer, sizeof(buffer));
+	if (buffer[0]) EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
+	
+	
 	Call_StartForward(fOnClientStartDeathCam);
 	Call_PushCell(client);
 	Call_PushCell(iBossIndex);
@@ -3121,9 +3303,10 @@ public Action:Timer_ClientResetDeathCam1(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerDeathCamTimer[client]) return;
 	
-	g_bPlayerDeathCamShowOverlay[client] = true;
+	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
 	
-	g_hPlayerDeathCamTimer[client] = CreateTimer(GetProfileFloat(g_strSlenderProfile[g_iPlayerDeathCamBoss[client]], "death_cam_time_death"), Timer_ClientResetDeathCamEnd, userid, TIMER_FLAG_NO_MAPCHANGE);
+	g_bPlayerDeathCamShowOverlay[client] = true;
+	g_hPlayerDeathCamTimer[client] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iDeathCamBoss], "death_cam_time_death"), Timer_ClientResetDeathCamEnd, userid, TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
@@ -3135,10 +3318,14 @@ public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
 	
 	SetEntProp(client, Prop_Data, "m_takedamage", 2); // We do this because the point_viewcontrol entity changes our damage state.
 	
-	if (SlenderHasAttribute(g_iPlayerDeathCamBoss[client], "ignite player on death"))
+	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
+	if (iDeathCamBoss != -1)
 	{
-		new Float:flValue = SlenderGetAttributeValue(g_iPlayerDeathCamBoss[client], "ignite player on death");
-		if (flValue > 0.0) TF2_IgnitePlayer(client, client);
+		if (SlenderHasAttribute(iDeathCamBoss, "ignite player on death"))
+		{
+			new Float:flValue = SlenderGetAttributeValue(iDeathCamBoss, "ignite player on death");
+			if (flValue > 0.0) TF2_IgnitePlayer(client, client);
+		}
 	}
 	
 	SDKHooks_TakeDamage(client, 0, 0, 9001.0, 0x80 | DMG_PREVENT_PHYSICS_FORCE, _, Float:{ 0.0, 0.0, 0.0 });
@@ -3185,22 +3372,33 @@ ClientSetGhostModeState(client, bool:bState)
  */
 ClientHandleGhostMode(client, bool:bForceSpawn=false)
 {
-	if (g_bPlayerGhostMode[client])
+	if (!IsClientInGhostMode(client)) return;
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientHandleGhostMode(%d, %d)", client, bForceSpawn);
+#endif
+	
+	if (!TF2_IsPlayerInCondition(client, TFCond_HalloweenGhostMode) || bForceSpawn)
 	{
-		if (!TF2_IsPlayerInCondition(client, TFCond_HalloweenGhostMode) || bForceSpawn)
-		{
-			TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
-			SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
-			
-			// Set first observer target.
-			ClientGhostModeNextTarget(client);
-			ClientActivateUltravision(client);
-		}
+		TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
+		//SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
+		
+		// Set first observer target.
+		ClientGhostModeNextTarget(client);
+		ClientActivateUltravision(client);
 	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientHandleGhostMode(%d, %d)", client, bForceSpawn);
+#endif
 }
 
 ClientGhostModeNextTarget(client)
 {
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientGhostModeNextTarget(%d)", client);
+#endif
+
 	new iLastTarget = EntRefToEntIndex(g_iPlayerGhostModeTarget[client]);
 	new iNextTarget = -1;
 	new iFirstTarget = -1;
@@ -3231,6 +3429,10 @@ ClientGhostModeNextTarget(client)
 		GetEntPropVector(iTarget, Prop_Data, "m_vecAbsVelocity", flVelocity);
 		TeleportEntity(client, flPos, flAng, flVelocity);
 	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientGhostModeNextTarget(%d)", client);
+#endif
 }
 
 bool:IsClientInGhostMode(client)
@@ -3466,35 +3668,68 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 //	BLINK FUNCTIONS
 //	==========================================================
 
-stock ClientResetBlink(client)
+bool:IsClientBlinking(client)
 {
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetBlink(%d)", client);
-#endif
+	return g_bPlayerBlink[client];
+}
 
+Float:ClientGetBlinkMeter(client)
+{
+	return g_flPlayerBlinkMeter[client];
+}
+
+ClientGetBlinkCount(client)
+{
+	return g_iPlayerBlinkCount[client];
+}
+
+/**
+ *	Resets all data on blinking.
+ */
+ClientResetBlink(client)
+{
 	g_hPlayerBlinkTimer[client] = INVALID_HANDLE;
 	g_bPlayerBlink[client] = false;
 	g_flPlayerBlinkMeter[client] = 1.0;
 	g_iPlayerBlinkCount[client] = 0;
-	
-#if defined DEBUG
-	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientResetBlink(%d)", client);
-#endif
 }
 
-stock ClientBlink(client)
+/**
+ *	Sets the player into a blinking state and blinds the player
+ */
+ClientBlink(client)
 {
 	if (IsRoundInWarmup() || g_bPlayerEscaped[client]) return;
-
+	
+	if (IsClientBlinking(client)) return;
+	
 	g_bPlayerBlink[client] = true;
 	g_iPlayerBlinkCount[client]++;
-	//UTIL_ScreenFade(client, 50, 0, FFADE_OUT | FFADE_STAYOUT, 0, 0, 0, 255);
-	UTIL_ScreenFade(client, 100, RoundToFloor(GetConVarFloat(g_cvPlayerBlinkHoldTime) * 1000.0), FFADE_IN, 0, 0, 0, 255);
+	g_flPlayerBlinkMeter[client] = 0.0;
 	g_hPlayerBlinkTimer[client] = CreateTimer(GetConVarFloat(g_cvPlayerBlinkHoldTime), Timer_BlinkTimer2, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+	
+	UTIL_ScreenFade(client, 100, RoundToFloor(GetConVarFloat(g_cvPlayerBlinkHoldTime) * 1000.0), FFADE_IN, 0, 0, 0, 255);
 	
 	Call_StartForward(fOnClientBlink);
 	Call_PushCell(client);
 	Call_Finish();
+}
+
+/**
+ *	Unsets the player from the blinking state.
+ */
+ClientUnblink(client)
+{
+	if (!IsClientBlinking(client)) return;
+	
+	g_bPlayerBlink[client] = false;
+	g_hPlayerBlinkTimer[client] = INVALID_HANDLE;
+	g_flPlayerBlinkMeter[client] = 1.0;
+}
+
+ClientStartDrainingBlinkMeter(client)
+{
+	g_hPlayerBlinkTimer[client] = CreateTimer(ClientGetBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action:Timer_BlinkTimer(Handle:timer, any:userid)
@@ -3506,18 +3741,16 @@ public Action:Timer_BlinkTimer(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerBlinkTimer[client]) return Plugin_Stop;
 	
-	if (IsPlayerAlive(client) && !g_bPlayerDeathCam[client] && !g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !IsRoundEnding())
+	if (IsPlayerAlive(client) && !IsClientInDeathCam(client) && !g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !IsRoundEnding())
 	{
-		if (!g_bRoundInfiniteBlink) g_flPlayerBlinkMeter[client] -= 0.05;
+		if (!g_bRoundInfiniteBlink)
+		{
+			g_flPlayerBlinkMeter[client] -= 0.05;
+		}
 		
 		if (g_flPlayerBlinkMeter[client] <= 0.0)
 		{
 			ClientBlink(client);
-			return Plugin_Stop;
-		}
-		else
-		{
-			g_hPlayerBlinkTimer[client] = CreateTimer(GetClientBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 			return Plugin_Stop;
 		}
 	}
@@ -3532,14 +3765,18 @@ public Action:Timer_BlinkTimer2(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerBlinkTimer[client]) return;
 	
-	ClientResetBlink(client);
-	g_hPlayerBlinkTimer[client] = CreateTimer(GetClientBlinkRate(client), Timer_BlinkTimer, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	ClientUnblink(client);
+	ClientStartDrainingBlinkMeter(client);
 }
 
-stock Float:GetClientBlinkRate(client)
+Float:ClientGetBlinkRate(client)
 {
 	new Float:flValue = GetConVarFloat(g_cvPlayerBlinkRate);
-	if (GetEntProp(client, Prop_Send, "m_nWaterLevel") >= 3) flValue *= 0.75;
+	if (GetEntProp(client, Prop_Send, "m_nWaterLevel") >= 3) 
+	{
+		// Being underwater makes you blink faster, obviously.
+		flValue *= 0.75;
+	}
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
@@ -3626,14 +3863,18 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	
 	if (IsRoundInWarmup()) return Plugin_Continue;
 	
+	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
+	new iJumpScareBoss = SlenderGetFromID(g_iPlayerJumpScareBoss[client]);
+	
 	decl String:sMaterial[PLATFORM_MAX_PATH];
-	if (g_iPlayerDeathCamBoss[client] != -1 && g_bPlayerDeathCamShowOverlay[client])
+	
+	if (IsClientInDeathCam(client) && iDeathCamBoss != -1 && g_bPlayerDeathCamShowOverlay[client])
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[g_iPlayerDeathCamBoss[client]], "overlay_player_death", sMaterial, sizeof(sMaterial), 1);
+		GetRandomStringFromProfile(g_strSlenderProfile[iDeathCamBoss], "overlay_player_death", sMaterial, sizeof(sMaterial), 1);
 	}
-	else if (g_iPlayerJumpScareMaster[client] != -1 && GetGameTime() <= g_flPlayerJumpScareLifeTime[client])
+	else if (iJumpScareBoss != -1 && GetGameTime() <= g_flPlayerJumpScareLifeTime[client])
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[g_iPlayerJumpScareMaster[client]], "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
+		GetRandomStringFromProfile(g_strSlenderProfile[iJumpScareBoss], "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
 	}
 	else if (IsRoundInWarmup() || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !IsClientInGhostMode(client))
 	{
@@ -4980,7 +5221,7 @@ public Action:Hook_ProxyGlowSetTransmit(ent, other)
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		if (!IsClientInGame(i)) continue;
-		if (EntRefToEntIndex(g_iPlayerProxyGlowEntity[i]) == ent)
+		if (EntRefToEntIndex(g_iPlayerConstantGlowEntity[i]) == ent)
 		{
 			iOwner = i;
 			break;
@@ -5062,7 +5303,7 @@ stock bool:IsPointVisibleToPlayer(client, const Float:pos[3], bool:bCheckFOV=tru
 	
 	if (bCheckEliminated && g_bPlayerEliminated[client]) return false;
 	
-	if (bCheckBlink && g_bPlayerBlink[client]) return false;
+	if (bCheckBlink && IsClientBlinking(client)) return false;
 	
 	decl Float:eyePos[3];
 	GetClientEyePosition(client, eyePos);
@@ -5525,35 +5766,4 @@ public Action:Timer_RespawnPlayer(Handle:timer, any:userid)
 	if (IsPlayerAlive(client)) return;
 	
 	TF2_RespawnPlayer(client);
-}
-
-public Action:Timer_CheckEscapedPlayer(Handle:timer, any:userid)
-{
-	new client = GetClientOfUserId(userid);
-	if (client <= 0) return;
-
-	if (IsPlayerAlive(client))
-	{
-		if (g_bPlayerEscaped[client])
-		{
-			decl String:sName[64];
-			new ent = -1;
-			while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
-			{
-				GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-				if (!StrContains(sName, "sf2_escape_spawnpoint", false))
-				{
-					decl Float:pos[3], Float:ang[3];
-					GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", pos);
-					GetEntPropVector(ent, Prop_Data, "m_angAbsRotation", ang);
-					ang[2] = 0.0;
-					TeleportEntity(client, pos, ang, Float:{ 0.0, 0.0, 0.0 });
-					
-					AcceptEntityInput(ent, "FireUser1", client);
-					
-					break;
-				}
-			}
-		}
-	}
 }
