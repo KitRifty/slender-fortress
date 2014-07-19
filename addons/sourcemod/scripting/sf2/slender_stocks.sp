@@ -6,13 +6,15 @@
 #define SF2_BOSS_PAGE_CALCULATION 0.3
 #define SF2_BOSS_COPY_SPAWN_MIN_DISTANCE 1850.0 // The default minimum distance boss copies can spawn from each other.
 
+
 SlenderGetCount()
 {
 	new iCount;
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (!g_strSlenderProfile[i][0]) continue;
+		if (SlenderGetID(i) == -1) continue;
 		if (g_iSlenderFlags[i] & SFF_FAKE) continue;
+		
 		iCount++;
 	}
 	
@@ -21,7 +23,8 @@ SlenderGetCount()
 
 bool:SlenderCanRemove(iBossIndex)
 {
-	if (!g_strSlenderProfile[iBossIndex][0]) return false;
+	if (SlenderGetID(iBossIndex) == -1) return false;
+	
 	if (PeopleCanSeeSlender(iBossIndex, _, false)) return false;
 	
 	new iTeleportType = GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_type");
@@ -275,7 +278,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 
 RemoveSlender(iBossIndex)
 {
-	new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new iBoss = SlenderArrayIndexToEntIndex(iBossIndex);
 	g_iSlender[iBossIndex] = INVALID_ENT_REFERENCE;
 	
 	if (iBoss && iBoss != INVALID_ENT_REFERENCE)
@@ -302,7 +305,7 @@ stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
 {
 	if (!IsValidClient(client) || !IsPlayerAlive(client)) return false;
 	
-	new iSlender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new iSlender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (!iSlender || iSlender == INVALID_ENT_REFERENCE) return false;
 	
 	decl Float:flHisPos[3], Float:flMyPos[3];
@@ -374,15 +377,13 @@ stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
 
 stock SlenderEntIndexToArrayIndex(entity)
 {
-	if (entity && IsValidEntity(entity))
+	if (!entity || !IsValidEntity(entity)) return -1;
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		new iEntRef = EntIndexToEntRef(entity);
-		for (new i = 0; i < MAX_BOSSES; i++)
+		if (SlenderArrayIndexToEntIndex(i) == entity)
 		{
-			if (g_iSlender[i] == iEntRef)
-			{
-				return i;
-			}
+			return i;
 		}
 	}
 	
@@ -449,8 +450,8 @@ stock SlenderRemoveTargetMemory(iBossIndex)
 bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 {
 	if (!IsValidClient(iBestPlayer)) return false;
-
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	
+	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return false;
 	
 	decl Float:flSlenderPos[3], Float:flPos[3], Float:flReferenceAng[3], Float:hisEyeAng[3], Float:tempDir[3], Float:tempPos[3];
@@ -754,7 +755,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 					// Get the boss that's targeting this player, if any.
 					for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 					{
-						if (iBossIndex == iBoss || g_iSlenderID[iBoss] == -1) continue;
+						if (iBossIndex == iBoss || SlenderGetID(iBoss) == -1) continue;
 						
 						if (EntRefToEntIndex(g_iSlenderTarget[iBoss]) == iBossPlayer)
 						{
@@ -963,7 +964,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			tempPos[2] -= g_flSlenderDetectMaxs[iBossIndex][2];
 			
 			if (TR_PointOutsideWorld(tempPos)
-				|| (IsSpaceOccupiedNPC(tempPos, flTargetMins, flTargetMaxs, EntRefToEntIndex(g_iSlender[iBossIndex])))
+				|| (IsSpaceOccupiedNPC(tempPos, flTargetMins, flTargetMaxs, SlenderArrayIndexToEntIndex(iBossIndex)))
 				|| (bProxy && IsSpaceOccupiedPlayer(tempPos, flTargetMins, flTargetMaxs, iProxyPlayer))
 				|| (flHitNormal[0] >= 0.0 && flHitNormal[0] < 45.0)
 				|| (flHitNormal[0] < 0.0 && flHitNormal[0] > -45.0))
@@ -992,7 +993,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				for (new i2 = 0; i2 < MAX_BOSSES; i2++)
 				{
 					if (i2 == iBossIndex) continue;
-					if (g_iSlenderID[i2] == -1) continue;
+					if (SlenderGetID(i2) == -1) continue;
 					if (!g_strSlenderProfile[i2][0]) continue;
 					
 					// If I'm a main boss, only check the distance between my copies and me.
@@ -1073,9 +1074,9 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				for (new i3 = 0; i3 < MAX_BOSSES; i3++)
 				{
 					if (i3 == iBossIndex) continue;
-					if (g_iSlenderID[i3] == -1) continue;
+					if (SlenderGetID(i3) == -1) continue;
 					
-					new iBoss = EntRefToEntIndex(g_iSlender[i3]);
+					new iBoss = SlenderArrayIndexToEntIndex(i3);
 					if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
 					
 					if (i3 == iCopyMaster || 
@@ -1181,7 +1182,7 @@ bool:SlenderMarkAsFake(iBossIndex)
 {
 	if (g_iSlenderFlags[iBossIndex] & SFF_MARKEDASFAKE) return false;
 	
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	new iSlenderModel = EntRefToEntIndex(g_iSlenderModel[iBossIndex]);
 	g_iSlender[iBossIndex] = INVALID_ENT_REFERENCE;
 	g_iSlenderModel[iBossIndex] = INVALID_ENT_REFERENCE;
@@ -1293,7 +1294,7 @@ stock bool:PlayerCanSeeSlender(client, iBossIndex, bool:bCheckFOV=true, bool:bCh
 {
 	if (iBossIndex < 0) return false;
 
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (slender && slender != INVALID_ENT_REFERENCE)
 	{
 		decl Float:myPos[3];
@@ -1311,7 +1312,7 @@ stock SlenderGetFromID(iID)
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (g_iSlenderID[i] == iID)
+		if (SlenderGetID(i) == iID)
 		{
 			return i;
 		}
@@ -1322,7 +1323,7 @@ stock SlenderGetFromID(iID)
 
 stock bool:PeopleCanSeeSlender(iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink=false)
 {
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (slender && slender != INVALID_ENT_REFERENCE)
 	{
 		decl Float:myPos[3];
@@ -1336,7 +1337,7 @@ stock bool:PeopleCanSeeSlender(iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink
 
 stock Float:SlenderGetDistanceFromPlayer(iBossIndex, client)
 {
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (slender && slender != INVALID_ENT_REFERENCE)
 	{
 		decl Float:myPos[3], Float:flHisPos[3];

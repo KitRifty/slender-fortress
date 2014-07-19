@@ -5,9 +5,19 @@
 
 #define FILE_PROFILES "configs/sf2/profiles.cfg"
 
+static g_iSlenderGlobalID = -1;
+
+new g_iSlenderID[MAX_BOSSES] = { -1, ... };
+
+SlenderGetID(iBossIndex)
+{
+	return g_iSlenderID[iBossIndex];
+}
 
 ReloadProfiles()
 {
+	g_iSlenderGlobalID = -1;
+
 	if (g_hConfig != INVALID_HANDLE)
 	{
 		CloseHandle(g_hConfig);
@@ -250,7 +260,7 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	
 	g_hSlenderThink[iBossIndex] = CreateTimer(0.1, Timer_SlenderTeleportThink, iBossIndex, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
-	if (iCopyMaster >= 0 && iCopyMaster < MAX_BOSSES && g_iSlenderID[iCopyMaster] != -1)
+	if (iCopyMaster >= 0 && iCopyMaster < MAX_BOSSES && SlenderGetID(iCopyMaster) != -1)
 	{
 		g_iSlenderCopyMaster[iBossIndex] = iCopyMaster;
 		g_flSlenderAnger[iBossIndex] = g_flSlenderAnger[iCopyMaster];
@@ -321,7 +331,7 @@ AddProfile(const String:strName[], iFlags=0, iCopyMaster=-1, bool:bSpawnCompanio
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (g_iSlenderID[i] == -1)
+		if (SlenderGetID(i) == -1)
 		{
 			SelectProfile(i, strName, iFlags, iCopyMaster, bSpawnCompanions, bPlaySpawnSound);
 			return i;
@@ -366,7 +376,7 @@ RemoveProfile(iBossIndex)
 		
 		if (IsClientInGame(i))
 		{
-			if (g_iSlenderID[iBossIndex] == g_iPlayerStaticMaster[i])
+			if (SlenderGetID(iBossIndex) == g_iPlayerStaticMaster[i])
 			{
 				g_iPlayerStaticMaster[i] = -1;
 				
@@ -392,7 +402,7 @@ RemoveProfile(iBossIndex)
 	// Remove all copies associated with me.
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (i == iBossIndex || g_iSlenderID[i] == -1) continue;
+		if (i == iBossIndex || SlenderGetID(i) == -1) continue;
 		
 		if (g_iSlenderCopyMaster[i] == iBossIndex)
 		{

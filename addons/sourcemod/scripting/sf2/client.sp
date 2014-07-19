@@ -150,7 +150,7 @@ public Hook_ClientPreThink(client)
 						
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
-							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
+							if (SlenderGetID(i) == -1 || !g_strSlenderProfile[i][0]) continue;
 							
 							if (g_iSlenderType[i] == 2)
 							{
@@ -182,7 +182,7 @@ public Hook_ClientPreThink(client)
 						decl iState;
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
-							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
+							if (SlenderGetID(i) == -1 || !g_strSlenderProfile[i][0]) continue;
 							
 							if (g_iSlenderType[i] == 2)
 							{
@@ -206,7 +206,7 @@ public Hook_ClientPreThink(client)
 						
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
-							if (g_iSlenderID[i] == -1 || !g_strSlenderProfile[i][0]) continue;
+							if (SlenderGetID(i) == -1 || !g_strSlenderProfile[i][0]) continue;
 							
 							if ((flCurTime - g_flPlayerScareLastTime[client][i]) <= flScareSprintDuration)
 							{
@@ -719,34 +719,12 @@ public Action:Timer_TeleportPlayerToEscapePoint(Handle:timer, any:userid)
 {
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return;
-
+	
+	if (!g_bPlayerEscaped[client]) return;
+	
 	if (IsPlayerAlive(client))
 	{
-		ClientTeleportToEscapePoint(client);
-	}
-}
-
-ClientTeleportToEscapePoint(client)
-{
-	if (!IsClientInGame(client)) return;
-	
-	decl String:sName[64];
-	new ent = -1;
-	while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
-	{
-		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-		if (!StrContains(sName, "sf2_escape_spawnpoint", false))
-		{
-			decl Float:pos[3], Float:ang[3];
-			GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", pos);
-			GetEntPropVector(ent, Prop_Data, "m_angAbsRotation", ang);
-			ang[2] = 0.0;
-			TeleportEntity(client, pos, ang, Float:{ 0.0, 0.0, 0.0 });
-			
-			AcceptEntityInput(ent, "FireUser1", client);
-			
-			break;
-		}
+		TeleportClientToEscapePoint(client);
 	}
 }
 
@@ -1529,7 +1507,7 @@ ClientProcessStaticShake(client)
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (g_iSlenderID[i] == -1) continue;
+		if (SlenderGetID(i) == -1) continue;
 		
 		if (g_iPlayerStaticMode[client][i] != Static_Increase) continue;
 		if (!(g_iSlenderFlags[i] & SFF_HASSTATICSHAKE)) continue;
@@ -1546,7 +1524,7 @@ ClientProcessStaticShake(client)
 	
 	if (iNewStaticShakeMaster != -1)
 	{
-		g_iPlayerStaticShakeMaster[client] = g_iSlenderID[iNewStaticShakeMaster];
+		g_iPlayerStaticShakeMaster[client] = SlenderGetID(iNewStaticShakeMaster);
 		
 		if (iNewStaticShakeMaster != iOldStaticShakeMaster)
 		{
@@ -1684,7 +1662,7 @@ ClientProcessVisibility(client)
 		g_bPlayerSeesSlender[client][i] = false;
 		g_iPlayerStaticMode[client][i] = Static_None;
 		
-		if (g_iSlenderID[i] == -1) continue;
+		if (SlenderGetID(i) == -1) continue;
 		
 		strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[i]);
 		if (!sProfile[0]) continue;
@@ -1913,11 +1891,11 @@ ClientProcessVisibility(client)
 		if (iCopyMaster != -1)
 		{
 			iBossNewStatic = iCopyMaster;
-			g_iPlayerStaticMaster[client] = g_iSlenderID[iCopyMaster];
+			g_iPlayerStaticMaster[client] = SlenderGetID(iCopyMaster);
 		}
 		else
 		{
-			g_iPlayerStaticMaster[client] = g_iSlenderID[iBossNewStatic];
+			g_iPlayerStaticMaster[client] = SlenderGetID(iBossNewStatic);
 		}
 	}
 	else
@@ -2260,7 +2238,7 @@ bool:ClientCreateInteractiveGlow(client, iEnt, const String:sAttachment[]="")
 	
 	if (!IsClientInGame(client)) return false;
 	
-	if (!iEnt || !IsValidEntity(iEnt)) return false;
+	if (!iEnt || !IsValidEdict(iEnt)) return false;
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientCreateInteractiveGlow(%d)", client);
@@ -2269,31 +2247,29 @@ bool:ClientCreateInteractiveGlow(client, iEnt, const String:sAttachment[]="")
 	decl String:sBuffer[PLATFORM_MAX_PATH];
 	GetEntPropString(iEnt, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
 	
-	if (!sBuffer[0]) return false;
+	if (strlen(sBuffer) == 0) 
+	{
+		return false;
+	}
 	
-	new ent = CreateEntityByName("simple_bot");
+	new ent = CreateEntityByName("tf_taunt_prop");
 	if (ent != -1)
 	{
+		g_iPlayerInteractiveGlowEntity[client] = EntIndexToEntRef(ent);
+		
+		new Float:flModelScale = GetEntPropFloat(iEnt, Prop_Send, "m_flModelScale");
+		
+		SetEntityModel(ent, sBuffer);
 		DispatchSpawn(ent);
 		ActivateEntity(ent);
-		SetEntityModel(ent, sBuffer);
 		SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
-		SetEntityRenderColor(ent, 0, 0, 0, 1);
-		SetEntProp(ent, Prop_Data, "m_takedamage", 0);
+		SetEntityRenderColor(ent, 0, 0, 0, 0);
 		SetEntProp(ent, Prop_Send, "m_bGlowEnabled", 1);
-		SetEntPropFloat(ent, Prop_Send, "m_flModelScale", GetEntPropFloat(iEnt, Prop_Send, "m_flModelScale"));
-		// Set solid flags.
-		new iFlags = GetEntProp(ent, Prop_Send, "m_usSolidFlags");
+		SetEntPropFloat(ent, Prop_Send, "m_flModelScale", flModelScale);
 		
-		if (!(iFlags & 0x0004)) iFlags |= 0x0004; // 	FSOLID_NOT_SOLID
-		if (!(iFlags & 0x0008)) iFlags |= 0x0008; // 	FSOLID_TRIGGER
-		SetEntProp(ent, Prop_Send, "m_usSolidFlags", iFlags);
+		new iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
+		SetEntProp(ent, Prop_Send, "m_fEffects", iFlags | (1 << 0));
 		
-		iFlags = GetEntProp(ent, Prop_Send, "m_fEffects");
-		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // 	EF_BONEMERGE
-		SetEntProp(ent, Prop_Send, "m_fEffects", iFlags);
-		
-		SetEntityMoveType(ent, MOVETYPE_NONE);
 		SetVariantString("!activator");
 		AcceptEntityInput(ent, "SetParent", iEnt);
 		
@@ -2302,8 +2278,6 @@ bool:ClientCreateInteractiveGlow(client, iEnt, const String:sAttachment[]="")
 			SetVariantString(sAttachment);
 			AcceptEntityInput(ent, "SetParentAttachment");
 		}
-		
-		g_iPlayerInteractiveGlowEntity[client] = EntIndexToEntRef(ent);
 		
 		SDKHook(ent, SDKHook_SetTransmit, Hook_InterativeGlowSetTransmit);
 		
@@ -2817,7 +2791,7 @@ public Action:Timer_ClientProxyAvailable(Handle:timer, any:userid)
 
 ClientEnableProxy(client, iBossIndex)
 {
-	if (g_iSlenderID[iBossIndex] == -1) return;
+	if (SlenderGetID(iBossIndex) == -1) return;
 	if (!(g_iSlenderFlags[iBossIndex] & SFF_PROXIES)) return;
 	if (g_bPlayerProxy[client]) return;
 	
@@ -2836,7 +2810,7 @@ ClientEnableProxy(client, iBossIndex)
 	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
 	
 	g_bPlayerProxy[client] = true;
-	g_iPlayerProxyMaster[client] = g_iSlenderID[iBossIndex];
+	g_iPlayerProxyMaster[client] = SlenderGetID(iBossIndex);
 	g_iPlayerProxyControl[client] = 100;
 	g_flPlayerProxyControlRate[client] = GetProfileFloat(sProfile, "proxies_controldrainrate");
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
@@ -2923,45 +2897,65 @@ bool:ClientEnableConstantGlow(client, const String:sAttachment[]="")
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientEnableConstantGlow(%d)", client);
 #endif
 	
-	g_bPlayerConstantGlowEnabled[client] = true;
+	decl String:sModel[PLATFORM_MAX_PATH];
+	GetClientModel(client, sModel, sizeof(sModel));
 	
-	new String:sBuffer[PLATFORM_MAX_PATH];
-	GetEntPropString(client, Prop_Send, "m_iszCustomModel", sBuffer, sizeof(sBuffer));
-	if (!sBuffer[0])
+	if (strlen(sModel) == 0) 
 	{
-		GetEntPropString(client, Prop_Data, "m_ModelName", sBuffer, sizeof(sBuffer));
+		// For some reason the model couldn't be found, so no.
+		
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientEnableConstantGlow(%d) -> false (no model specified)", client);
+#endif
+		
+		return false;
 	}
 	
-	if (!sBuffer[0]) return false;
-	
-	new iGlow = CreateEntityByName("simple_bot");
+	new iGlow = CreateEntityByName("tf_taunt_prop");
 	if (iGlow != -1)
 	{
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("tf_taunt_prop -> created");
+#endif
+	
+		g_bPlayerConstantGlowEnabled[client] = true;
+		g_iPlayerConstantGlowEntity[client] = EntIndexToEntRef(iGlow);
+		
 		new Float:flModelScale = GetEntPropFloat(client, Prop_Send, "m_flModelScale");
 		
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) 
+		{
+			DebugMessage("tf_taunt_prop -> get model and model scale (%s, %f, player class: %d)", sModel, flModelScale, TF2_GetPlayerClass(client));
+		}
+#endif
+		
+		SetEntityModel(iGlow, sModel);
 		DispatchSpawn(iGlow);
 		ActivateEntity(iGlow);
-		SetEntityMoveType(iGlow, MOVETYPE_NONE);
-		SetEntityModel(iGlow, sBuffer);
 		SetEntityRenderMode(iGlow, RENDER_TRANSCOLOR);
-		SetEntityRenderColor(iGlow, 0, 0, 0, 1);
-		SetEntProp(iGlow, Prop_Data, "m_takedamage", 0);
+		SetEntityRenderColor(iGlow, 0, 0, 0, 0);
 		SetEntProp(iGlow, Prop_Send, "m_bGlowEnabled", 1);
 		SetEntPropFloat(iGlow, Prop_Send, "m_flModelScale", flModelScale);
 		
-		// Set solid flags.
-		new iFlags = GetEntProp(iGlow, Prop_Send, "m_usSolidFlags");
-		if (!(iFlags & FSOLID_NOT_SOLID)) iFlags |= FSOLID_NOT_SOLID;
-		if (!(iFlags & FSOLID_TRIGGER)) iFlags |= FSOLID_TRIGGER;
-		SetEntProp(iGlow, Prop_Send, "m_usSolidFlags", iFlags);
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("tf_taunt_prop -> set model and model scale");
+#endif
 		
 		// Set effect flags.
-		iFlags = GetEntProp(iGlow, Prop_Send, "m_fEffects");
-		if (!(iFlags & (1 << 0))) iFlags |= (1 << 0); // EF_BONEMERGE
-		SetEntProp(iGlow, Prop_Send, "m_fEffects", iFlags);
+		new iFlags = GetEntProp(iGlow, Prop_Send, "m_fEffects");
+		SetEntProp(iGlow, Prop_Send, "m_fEffects", iFlags | (1 << 0)); // EF_BONEMERGE
+		
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("tf_taunt_prop -> set bonemerge flags");
+#endif
 		
 		SetVariantString("!activator");
 		AcceptEntityInput(iGlow, "SetParent", client);
+		
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("tf_taunt_prop -> set parent to client");
+#endif
 		
 		if (sAttachment[0])
 		{
@@ -2969,10 +2963,12 @@ bool:ClientEnableConstantGlow(client, const String:sAttachment[]="")
 			AcceptEntityInput(iGlow, "SetParentAttachment");
 		}
 		
-		g_iPlayerConstantGlowEntity[client] = EntIndexToEntRef(iGlow);
+#if defined DEBUG
+		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("tf_taunt_prop -> set parent attachment to %s", sAttachment);
+#endif
 		
-		SDKHook(iGlow, SDKHook_SetTransmit, Hook_ProxyGlowSetTransmit);
-	
+		SDKHook(iGlow, SDKHook_SetTransmit, Hook_ConstantGlowSetTransmit);
+		
 #if defined DEBUG
 		if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("END ClientEnableConstantGlow(%d) -> true", client);
 #endif
@@ -3003,7 +2999,7 @@ ClientResetJumpScare(client)
 
 ClientDoJumpScare(client, iBossIndex, Float:flLifeTime)
 {
-	g_iPlayerJumpScareBoss[client] = g_iSlenderID[iBossIndex];
+	g_iPlayerJumpScareBoss[client] = SlenderGetID(iBossIndex);
 	g_flPlayerJumpScareLifeTime[client] = GetGameTime() + flLifeTime;
 	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
@@ -3226,7 +3222,7 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 		return;
 	}
 	
-	g_iPlayerDeathCamBoss[client] = g_iSlenderID[iBossIndex];
+	g_iPlayerDeathCamBoss[client] = SlenderGetID(iBossIndex);
 	g_bPlayerDeathCam[client] = true;
 	g_bPlayerDeathCamShowOverlay[client] = false;
 	
@@ -3446,7 +3442,7 @@ bool:IsClientInGhostMode(client)
 
 ClientPerformScare(client, iBossIndex)
 {
-	if (g_iSlenderID[iBossIndex] == -1)
+	if (SlenderGetID(iBossIndex) == -1)
 	{
 		LogError("Could not perform scare on client %d: boss does not exist!", client);
 		return;
@@ -3502,7 +3498,7 @@ ClientPerformScare(client, iBossIndex)
 
 ClientPerformSightSound(client, iBossIndex)
 {
-	if (g_iSlenderID[iBossIndex] == -1)
+	if (SlenderGetID(iBossIndex) == -1)
 	{
 		LogError("Could not perform sight sound on client %d: boss does not exist!", client);
 		return;
@@ -3609,7 +3605,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 		
 		for (new i = 0; i < MAX_BOSSES; i++)
 		{
-			if (g_iSlenderID[i] == -1) continue;
+			if (SlenderGetID(i) == -1) continue;
 			
 			new iSlender = EntRefToEntIndex(g_iSlender[i]);
 			if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
@@ -5213,7 +5209,7 @@ stock ClientViewPunch(client, const Float:angleOffset[3])
 	SetEntDataVector(client, g_offsPlayerPunchAngleVel, flOffset, true);
 }
 
-public Action:Hook_ProxyGlowSetTransmit(ent, other)
+public Action:Hook_ConstantGlowSetTransmit(ent, other)
 {
 	if (!g_bEnabled) return Plugin_Continue;
 	

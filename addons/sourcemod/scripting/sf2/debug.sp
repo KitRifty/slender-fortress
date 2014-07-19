@@ -7,16 +7,50 @@
  #endinput
 #endif
 
-new g_iPlayerDebugFlags[MAXPLAYERS + 1];
+#define DEBUG_BOSS_TELEPORTATION (1 << 0)
+#define DEBUG_BOSS_CHASE (1 << 1)
+#define DEBUG_PLAYER_STRESS (1 << 2)
+#define DEBUG_PLAYER_ACTION_SLOT (1 << 3)
+#define DEBUG_BOSS_PROXIES (1 << 4)
 
+new g_iPlayerDebugFlags[MAXPLAYERS + 1] = { 0, ... };
 
-stock DebugMessage(const String:sMessage[], ...)
+static String:g_strDebugLogFilePath[512] = "";
+
+new Handle:g_cvDebugDetail = INVALID_HANDLE;
+new Handle:g_cvDebugBosses = INVALID_HANDLE;
+
+InitializeDebug()
+{
+	g_cvDebugDetail = CreateConVar("sf2_debug_detail", "0", "0 = off, 1 = debug only large, expensive functions, 2 = debug more events, 3 = debug client functions");
+	g_cvDebugBosses = CreateConVar("sf2_debug_bosses", "0");
+	
+	RegAdminCmd("sm_sf2_debug_boss_teleport", Command_DebugBossTeleport, ADMFLAG_CHEATS);
+	RegAdminCmd("sm_sf2_debug_boss_chase", Command_DebugBossChase, ADMFLAG_CHEATS);
+	RegAdminCmd("sm_sf2_debug_player_stress", Command_DebugPlayerStress, ADMFLAG_CHEATS);
+	RegAdminCmd("sm_sf2_debug_boss_proxies", Command_DebugBossProxies, ADMFLAG_CHEATS);
+}
+
+InitializeDebugLogging()
+{
+	decl String:sDateSuffix[256];
+	FormatTime(sDateSuffix, sizeof(sDateSuffix), "sf2-debug-%Y-%m-%d.log", GetTime());
+	
+	BuildPath(Path_SM, g_strDebugLogFilePath, sizeof(g_strDebugLogFilePath), "logs/%s", sDateSuffix);
+	
+	decl String:sMap[64];
+	GetCurrentMap(sMap, sizeof(sMap));
+	
+	DebugMessage("-------- Mapchange to %s -------", sMap);
+}
+
+stock DebugMessage(const String:sMessage[], any:...)
 {
 	decl String:sDebugMessage[1024], String:sTemp[1024];
 	VFormat(sTemp, sizeof(sTemp), sMessage, 2);
-	Format(sDebugMessage, sizeof(sDebugMessage), "SF2: %s", sTemp);
-	//PrintToServer(sDebugMessage);
-	LogMessage(sDebugMessage);
+	Format(sDebugMessage, sizeof(sDebugMessage), "%s", sTemp);
+	//LogMessage(sDebugMessage);
+	LogToFile(g_strDebugLogFilePath, sDebugMessage);
 }
 
 stock SendDebugMessageToPlayer(client, iDebugFlags, iType, const String:sMessage[], any:...)
