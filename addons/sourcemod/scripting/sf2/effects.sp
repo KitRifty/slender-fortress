@@ -26,9 +26,7 @@ SlenderSpawnEffects(iBossIndex, EffectEvent:iEvent)
 	if (iBossID == -1) return;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
-	
-	if (!sProfile[0]) return;
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	KvRewind(g_hConfig);
 	if (!KvJumpToKey(g_hConfig, sProfile) || !KvJumpToKey(g_hConfig, "effects") || !KvGotoFirstSubKey(g_hConfig)) return;
@@ -58,7 +56,7 @@ SlenderSpawnEffects(iBossIndex, EffectEvent:iEvent)
 		return;
 	}
 	
-	new iSlender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new iSlender = NPCGetEntIndex(iBossIndex);
 	decl Float:flBasePos[3], Float:flBaseAng[3];
 	
 	KvRewind(g_hConfig);

@@ -512,32 +512,16 @@ public bool:TraceRayDontHitEntity(entity, mask, any:data)
 
 public bool:TraceRayDontHitPlayers(entity, mask, any:data)
 {
-	if (IsValidClient(entity)) return false;
-	
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		new ent = EntRefToEntIndex(g_iSlender[i]);
-		if (ent && ent != INVALID_ENT_REFERENCE)
-		{
-			if (entity == ent) return false;
-		}
-	}
+	if (entity > 0 && entity <= MaxClients) return false;
 	
 	return true;
 }
 
 public bool:TraceRayDontHitPlayersOrEntity(entity, mask, any:data)
 {
-	if (entity == data || IsValidClient(entity)) return false;
-	
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		new ent = EntRefToEntIndex(g_iSlender[i]);
-		if (ent && ent != INVALID_ENT_REFERENCE)
-		{
-			if (entity == ent) return false;
-		}
-	}
+	if (entity == data) return false;
+
+	if (entity > 0 && entity <= MaxClients) return false;
 	
 	return true;
 }

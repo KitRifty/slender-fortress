@@ -86,9 +86,7 @@ new Handle:g_hSpecialRoundsConfig;
 
 new Handle:g_hPageMusicRanges;
 
-new String:g_strSlenderProfile[MAX_BOSSES][SF2_MAX_PROFILE_NAME_LENGTH];
 new g_iSlenderFlags[MAX_BOSSES];
-new g_iSlender[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderModel[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderPoseEnt[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderCopyMaster[MAX_BOSSES] = { -1, ... };
@@ -513,7 +511,6 @@ new Handle:g_hSDKShouldTransmit;
 #include "sf2/client.sp"
 #include "sf2/slender_stocks.sp"
 #include "sf2/specialround.sp"
-#include "sf2/attributes.sp"
 #include "sf2/adminmenu.sp"
 #include "sf2/playergroups.sp"
 
@@ -1134,7 +1131,6 @@ static StartPlugin()
 	g_iRoundState = SF2RoundState_Invalid;
 	g_hRoundMessagesTimer = CreateTimer(200.0, Timer_RoundMessages, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	g_iRoundMessagesNum = 0;
-	g_iSpecialRoundCount = 0;
 	
 	g_hClientAverageUpdateTimer = CreateTimer(0.2, Timer_ClientAverageUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	g_hBossCountUpdateTimer = CreateTimer(2.0, Timer_BossCountUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
@@ -1270,9 +1266,9 @@ public OnGameFrame()
 	{
 		if (NPCGetUniqueID(i) == -1) continue;
 		
-		new iBoss = EntRefToEntIndex(g_iSlender[i]);
-		
+		new iBoss = NPCGetEntIndex(i);
 		if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
+		
 		if (g_iSlenderFlags[i] & SFF_MARKEDASFAKE) continue;
 		
 		new iType = g_iSlenderType[i];
@@ -2645,7 +2641,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 		for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 		{
 			if (NPCGetUniqueID(iBoss) == -1) continue;
-			if (SlenderArrayIndexToEntIndex(iBoss) == INVALID_ENT_REFERENCE) continue;
+			if (NPCGetEntIndex(iBoss) == INVALID_ENT_REFERENCE) continue;
 			if (g_iSlenderFlags[iBoss] & SFF_FAKE) continue;
 			
 			new Float:flDist = SlenderGetDistanceFromPlayer(iBoss, i);
@@ -2996,7 +2992,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 							continue;
 						}
 						
-						new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+						new iBoss = NPCGetEntIndex(iBossIndex);
 						
 						// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
 						{
@@ -4170,15 +4166,28 @@ stock bool:IsClientParticipating(client)
 {
 	if (!IsValidClient(client)) return false;
 	
-	if (bool:GetEntProp(client, Prop_Send, "m_bIsCoaching")) return false;
+	if (bool:GetEntProp(client, Prop_Send, "m_bIsCoaching")) 
+	{
+		// Who would coach in this game?
+		return false;
+	}
 	
 	new iTeam = GetClientTeam(client);
 	
-	if (g_bPlayerLagCompensation[client]) iTeam = g_iPlayerLagCompensationTeam[client];
+	if (g_bPlayerLagCompensation[client]) 
+	{
+		iTeam = g_iPlayerLagCompensationTeam[client];
+	}
 	
 	switch (iTeam)
 	{
 		case TFTeam_Unassigned, TFTeam_Spectator: return false;
+	}
+	
+	if (_:TF2_GetPlayerClass(client) == 0)
+	{
+		// Player hasn't chosen a class? What.
+		return false;
 	}
 	
 	return true;
@@ -4338,75 +4347,6 @@ public SortQueueList(index1, index2, Handle:array, Handle:hndl)
 //	==========================================================
 //	GENERIC PAGE/BOSS HOOKS AND FUNCTIONS
 //	==========================================================
-
-public Action:Hook_SlenderOnTakeDamage(slender, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	new iBossIndex = NPCGetFromEntIndex(slender);
-	if (iBossIndex == -1) return Plugin_Continue;
-	
-	if (g_iSlenderType[iBossIndex] == 2)
-	{
-		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-		NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
-	
-		if (GetProfileNum(sProfile, "stun_enabled"))
-		{
-			if (damagetype & DMG_ACID) damage *= 2.0; // Critical hits can help ALOT.
-			
-			g_iSlenderHealthUntilStun[iBossIndex] -= RoundToFloor(damage);
-		}
-	}
-	
-	damage = 0.0;
-	return Plugin_Changed;
-}
-
-public Hook_SlenderOnTakeDamagePost(slender, attacker, inflictor, Float:damage, damagetype, weapon, const Float:damageForce[3], const Float:damagePosition[3])
-{
-	if (!g_bEnabled) return;
-
-	new iBossIndex = NPCGetFromEntIndex(slender);
-	if (iBossIndex == -1) return;
-	
-	if (g_iSlenderType[iBossIndex] == 2)
-	{
-		if (damagetype & DMG_ACID)
-		{
-			decl Float:flMyEyePos[3];
-			SlenderGetEyePosition(iBossIndex, flMyEyePos);
-			
-			TE_SetupTFParticleEffect(g_iParticleCriticalHit, flMyEyePos, flMyEyePos);
-			TE_SendToAll();
-			
-			EmitSoundToAll(CRIT_SOUND, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
-		}
-	}
-}
-
-public Action:Hook_SlenderModelSetTransmit(entity, other)
-{
-	if (!g_bEnabled) return Plugin_Continue;
-
-	new iBossIndex = -1;
-	
-	new entref = EntIndexToEntRef(entity);
-	
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		if (NPCGetUniqueID(i) == -1) continue;
-		if (g_iSlenderModel[i] != entref) continue;
-		
-		iBossIndex = i;
-		break;
-	}
-	
-	if (iBossIndex == -1) return Plugin_Continue;
-	
-	if (!IsPlayerAlive(other) || IsClientInDeathCam(other)) return Plugin_Handled;
-	return Plugin_Continue;
-}
 
 public Action:Hook_SlenderObjectSetTransmit(ent, other)
 {
@@ -5550,7 +5490,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 						flSlenderMins, 
 						flSlenderMaxs, 
 						MASK_NPCSOLID, 
-						TraceRayDontHitPlayersOrEntity, 
+						TraceRayDontHitCharactersOrEntity, 
 						slender);
 						
 					new bool:bDidHit = TR_DidHit(hTrace);
@@ -5787,7 +5727,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 
 SlenderChaseBossProcessMovement(iBossIndex)
 {
-	new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new iBoss = NPCGetEntIndex(iBossIndex);
 	new iState = g_iSlenderState[iBossIndex];
 	
 	// Constantly set the monster_generic's NPC state to idle to prevent
@@ -6526,7 +6466,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 	
 	if (g_iSlenderTeleportType[iBossIndex] == 2)
 	{
-		new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+		new iBoss = NPCGetEntIndex(iBossIndex);
 		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
 			if (g_iSlenderType[iBossIndex] == 2)
@@ -6627,7 +6567,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 								decl Float:flAreaSpawnPoint[3];
 								NavMeshArea_GetCenter(iAreaIndex, flAreaSpawnPoint);
 								
-								new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+								new iBoss = NPCGetEntIndex(iBossIndex);
 								
 								// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
 								{
@@ -6721,7 +6661,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 											continue;
 										}
 										
-										new iBossEnt = EntRefToEntIndex(g_iSlender[iBossCheck]);
+										new iBossEnt = NPCGetEntIndex(iBossCheck);
 										if (!iBossEnt || iBossEnt == INVALID_ENT_REFERENCE) continue;
 										
 										decl Float:flTempPos[3];
@@ -7065,7 +7005,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 
 SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAttackFOV)
 {
-	new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new iBoss = NPCGetEntIndex(iBossIndex);
 	
 	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
 	SlenderGetEyePosition(iBossIndex, flMyEyePos);
@@ -7133,7 +7073,7 @@ SlenderPerformVoice(iBossIndex, const String:sSectionName[], iIndex=-1)
 {
 	if (iBossIndex == -1) return;
 
-	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
+	new slender = NPCGetEntIndex(iBossIndex);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
@@ -8585,7 +8525,7 @@ static HandleSpecialRoundState()
 	{
 		if (bContinuousOld)
 		{
-			// Check if there are players who haven't played the boss round yet.
+			// Check if there are players who haven't played the special round yet.
 			for (new i = 1; i <= MaxClients; i++)
 			{
 				if (!IsClientInGame(i) || !IsClientParticipating(i))
@@ -8596,7 +8536,7 @@ static HandleSpecialRoundState()
 				
 				if (!g_bPlayerPlayedSpecialRound[i])
 				{
-					// Someone didn't get to play this yet. Continue the boss round.
+					// Someone didn't get to play this yet. Continue the special round.
 					g_bSpecialRound = true;
 					g_bSpecialRoundContinuous = true;
 					break;
@@ -8607,13 +8547,13 @@ static HandleSpecialRoundState()
 	
 	new iRoundInterval = GetConVarInt(g_cvSpecialRoundInterval);
 	
-	if (iRoundInterval > 0 && g_iNewBossRoundCount >= iRoundInterval)
+	if (iRoundInterval > 0 && g_iSpecialRoundCount >= iRoundInterval)
 	{
 		g_bSpecialRound = true;
 		bForceNew = true;
 	}
 	
-	// Do boss round force override and reset it.
+	// Do special round force override and reset it.
 	if (GetConVarInt(g_cvSpecialRoundForce) >= 0)
 	{
 		g_bSpecialRound = GetConVarBool(g_cvSpecialRoundForce);
@@ -8635,7 +8575,7 @@ static HandleSpecialRoundState()
 			}
 			else
 			{
-				// New "new boss round", but it's not continuous.
+				// New special round, but it's not continuous.
 				g_bSpecialRoundContinuous = false;
 			}
 		}
@@ -9307,32 +9247,17 @@ public Native_GetMaxBosses(Handle:plugin, numParams)
 
 public Native_EntIndexToBossIndex(Handle:plugin, numParams)
 {
-	new iEntIndex = GetNativeCell(1);
-	if (!IsValidEntity(iEntIndex)) return -1;
-	
-	new iEntRef = EntIndexToEntRef(iEntIndex);
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		if (g_iSlender[i] == iEntRef) return i;
-	}
-	
-	return -1;
+	return NPCGetFromEntIndex(GetNativeCell(1));
 }
 
 public Native_BossIndexToEntIndex(Handle:plugin, numParams)
 {
-	return EntRefToEntIndex(g_iSlender[GetNativeCell(1)]);
+	return NPCGetEntIndex(GetNativeCell(1));
 }
 
 public Native_BossIDToBossIndex(Handle:plugin, numParams)
 {
-	new iBossID = GetNativeCell(1);
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		if (NPCGetUniqueID(i) == iBossID) return i;
-	}
-	
-	return -1;
+	return NPCGetFromUniqueID(GetNativeCell(1));
 }
 
 public Native_BossIndexToBossID(Handle:plugin, numParams)

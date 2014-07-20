@@ -137,7 +137,10 @@ public AdminMenu_PlayerForceProxyBoss(Handle:menu, MenuAction:action, param1, pa
 			}
 			else
 			{
-				if (!bool:GetProfileNum(g_strSlenderProfile[iIndex], "proxies", 0) ||
+				decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+				NPCGetProfile(iIndex, sProfile, sizeof(sProfile));
+			
+				if (!bool:GetProfileNum(sProfile, "proxies", 0) ||
 					g_iSlenderCopyMaster[iIndex] != -1)
 				{
 					CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Not Allowed To Have Proxies", param1);
@@ -666,9 +669,12 @@ public AdminMenu_BossAttackWaiters(Handle:menu, MenuAction:action, param1, param
 		}
 		else
 		{
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			NPCGetProfile(iIndex, sProfile, sizeof(sProfile));
+		
 			decl String:sName[SF2_MAX_NAME_LENGTH];
-			GetProfileString(g_strSlenderProfile[iIndex], "name", sName, sizeof(sName));
-			if (!sName[0]) strcopy(sName, sizeof(sName), g_strSlenderProfile[iIndex]);
+			GetProfileString(sProfile, "name", sName, sizeof(sName));
+			if (!sName[0]) strcopy(sName, sizeof(sName), sProfile);
 			
 			new Handle:hMenu = CreateMenu(AdminMenu_BossAttackWaitersConfirm);
 			SetMenuTitle(hMenu, "%t%T\n \n", "SF2 Prefix", "SF2 Admin Menu Boss Attack Waiters Confirm", param1, sName);
@@ -770,9 +776,12 @@ public AdminMenu_BossTeleport(Handle:menu, MenuAction:action, param1, param2)
 		}
 		else
 		{
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			NPCGetProfile(iIndex, sProfile, sizeof(sProfile));
+		
 			decl String:sName[SF2_MAX_NAME_LENGTH];
-			GetProfileString(g_strSlenderProfile[iIndex], "name", sName, sizeof(sName));
-			if (!sName[0]) strcopy(sName, sizeof(sName), g_strSlenderProfile[iIndex]);
+			GetProfileString(sProfile, "name", sName, sizeof(sName));
+			if (!sName[0]) strcopy(sName, sizeof(sName), sProfile);
 			
 			new Handle:hMenu = CreateMenu(AdminMenu_BossTeleportConfirm);
 			SetMenuTitle(hMenu, "%t%T\n \n", "SF2 Prefix", "SF2 Admin Menu Boss Teleport Confirm", param1, sName);

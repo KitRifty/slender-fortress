@@ -1681,7 +1681,7 @@ ClientProcessVisibility(client)
 		
 		NPCGetProfile(i, sProfile, sizeof(sProfile));
 		
-		new iBoss = EntRefToEntIndex(g_iSlender[i]);
+		new iBoss = NPCGetEntIndex(i);
 		
 		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
@@ -3555,7 +3555,7 @@ ClientPerformSightSound(client, iBossIndex)
 		g_flPlayerSightSoundNextTime[client][iMaster] = GetGameTime() + GetRandomFloat(flCooldownMin, flCooldownMax);
 		
 		decl Float:flBossPos[3], Float:flMyPos[3];
-		new iBoss = EntRefToEntIndex(g_iSlender[iBossIndex]);
+		new iBoss = NPCGetEntIndex(iBossIndex);
 		GetClientAbsOrigin(client, flMyPos);
 		GetEntPropVector(iBoss, Prop_Data, "m_vecAbsOrigin", flBossPos);
 		new Float:flDistUnComfortZone = 400.0;
@@ -3642,7 +3642,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 		{
 			if (NPCGetUniqueID(i) == -1) continue;
 			
-			new iSlender = EntRefToEntIndex(g_iSlender[i]);
+			new iSlender = NPCGetEntIndex(i);
 			if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
 			
 			decl Float:flSlenderPos[3];
@@ -4027,7 +4027,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		{
 			if (NPCGetUniqueID(i) == -1) continue;
 			
-			if (SlenderArrayIndexToEntIndex(i) == INVALID_ENT_REFERENCE) continue;
+			if (NPCGetEntIndex(i) == INVALID_ENT_REFERENCE) continue;
 			
 			NPCGetProfile(i, sProfile, sizeof(sProfile));
 			

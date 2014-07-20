@@ -32,139 +32,141 @@ ReloadProfiles()
 	if (!FileToKeyValues(kv, buffer))
 	{
 		CloseHandle(kv);
-		SetFailState("Failed to load profiles! File not found!");
+		LogSF2Message("Boss profiles config file not found! No boss profiles will be loaded.");
 	}
 	else
 	{
+		LogSF2Message("Loading boss profiles from config file...");
+	
 		KvRewind(kv);
 		if (KvGotoFirstSubKey(kv))
 		{
 			g_hConfig = kv;
-		
-			decl String:strName[64];
-			new Handle:hArray = CreateArray(64);
-		
+			
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			decl String:sProfileLoadFailReason[512];
+			
+			new iLoadedCount = 0;
+			
 			do
 			{
-				KvGetSectionName(g_hConfig, strName, sizeof(strName));
-				PushArrayString(hArray, strName);
+				KvGetSectionName(g_hConfig, sProfile, sizeof(sProfile));
+				if (LoadProfile(sProfile, sProfileLoadFailReason, sizeof(sProfileLoadFailReason)))
+				{
+					iLoadedCount++;
+					LogSF2Message("%s...", sProfile);
+				}
+				else
+				{
+					LogSF2Message("%s...FAILED (reason: %s)", sProfile, sProfileLoadFailReason);
+				}
 			}
-			while KvGotoNextKey(g_hConfig);
+			while (KvGotoNextKey(g_hConfig));
 			
-			new size = GetArraySize(hArray);
-			for (new i = 0; i < size; i++)
-			{
-				GetArrayString(hArray, i, strName, sizeof(strName));
-				LoadProfile(strName);
-			}
-			
-			CloseHandle(hArray);
-			
-			LogMessage("Boss profiles successfully loaded!");
+			LogSF2Message("Loaded %d boss profile(s) from config file!", iLoadedCount);
 		}
 		else
 		{
 			CloseHandle(kv);
-			SetFailState("Failed to load boss profiles! No entries found!");
+			
+			LogSF2Message("No boss profiles detected in config file! No boss profiles will be loaded.");
 		}
 	}
 }
 
-static LoadProfile(const String:strName[])
+/**
+ *	Loads a profile in the current KeyValues position in g_hConfig.
+ */
+static bool:LoadProfile(const String:sProfile[], String:sLoadFailReasonBuffer[], iLoadFailReasonBufferLen)
 {
-	if (g_hConfig == INVALID_HANDLE) return;
-	
-	KvRewind(g_hConfig);
-	if (!KvJumpToKey(g_hConfig, strName)) return;
-	if (!KvGotoFirstSubKey(g_hConfig)) return;
-	
-	decl String:sBuffer[64];
-	KvGetString(g_hConfig, "name", sBuffer, sizeof(sBuffer));
-	if (!sBuffer[0]) strcopy(sBuffer, sizeof(sBuffer), strName);
-	
-	decl String:s2[64], String:s3[64], String:s4[PLATFORM_MAX_PATH], String:s5[PLATFORM_MAX_PATH];
-	
-	do
-	{
-		KvGetSectionName(g_hConfig, s2, sizeof(s2));
-		
-		if (!StrContains(s2, "sound_"))
-		{
-			for (new i = 1;; i++)
-			{
-				IntToString(i, s3, sizeof(s3));
-				KvGetString(g_hConfig, s3, s4, sizeof(s4));
-				if (!s4[0]) break;
-				
-				PrecacheSound2(s4);
-			}
-		}
-		else if (StrEqual(s2, "download"))
-		{
-			for (new i = 1;; i++)
-			{
-				IntToString(i, s3, sizeof(s3));
-				KvGetString(g_hConfig, s3, s4, sizeof(s4));
-				if (!s4[0]) break;
-				
-				AddFileToDownloadsTable(s4);
-			}
-		}
-		else if (StrEqual(s2, "mod_precache"))
-		{
-			for (new i = 1;; i++)
-			{
-				IntToString(i, s3, sizeof(s3));
-				KvGetString(g_hConfig, s3, s4, sizeof(s4));
-				if (!s4[0]) break;
-				
-				PrecacheModel(s4, true);
-			}
-		}
-		else if (StrEqual(s2, "mat_download"))
-		{	
-			for (new i = 1;; i++)
-			{
-				IntToString(i, s3, sizeof(s3));
-				KvGetString(g_hConfig, s3, s4, sizeof(s4));
-				if (!s4[0]) break;
-				
-				Format(s5, sizeof(s5), "%s.vtf", s4);
-				AddFileToDownloadsTable(s5);
-				Format(s5, sizeof(s5), "%s.vmt", s4);
-				AddFileToDownloadsTable(s5);
-			}
-		}
-		else if (StrEqual(s2, "mod_download"))
-		{
-			new String:extensions[][] = { ".mdl", ".phy", ".dx80.vtx", ".dx90.vtx", ".sw.vtx", ".vvd" };
-			
-			for (new i = 1;; i++)
-			{
-				IntToString(i, s3, sizeof(s3));
-				KvGetString(g_hConfig, s3, s4, sizeof(s4));
-				if (!s4[0]) break;
-				
-				for (new is = 0; is < sizeof(extensions); is++)
-				{
-					Format(s5, sizeof(s5), "%s%s", s4, extensions[is]);
-					AddFileToDownloadsTable(s5);
-				}
-			}
-		}
-	}
-	while (KvGotoNextKey(g_hConfig));
-	
 	// Add to the boss list.
-	PushArrayString(g_hBossProfileList, strName);
+	PushArrayString(g_hBossProfileList, sProfile);
 	
 	if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1))
 	{
 		// Add to the selectable boss list.
-		PushArrayString(g_hSelectableBossProfileList, strName);
+		PushArrayString(g_hSelectableBossProfileList, sProfile);
 	}
 	
-	LogMessage("Successfully loaded boss %s", sBuffer);
+	if (KvGotoFirstSubKey(g_hConfig))
+	{
+		decl String:s2[64], String:s3[64], String:s4[PLATFORM_MAX_PATH], String:s5[PLATFORM_MAX_PATH];
+		
+		do
+		{
+			KvGetSectionName(g_hConfig, s2, sizeof(s2));
+			
+			if (!StrContains(s2, "sound_"))
+			{
+				for (new i = 1;; i++)
+				{
+					IntToString(i, s3, sizeof(s3));
+					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					if (!s4[0]) break;
+					
+					PrecacheSound2(s4);
+				}
+			}
+			else if (StrEqual(s2, "download"))
+			{
+				for (new i = 1;; i++)
+				{
+					IntToString(i, s3, sizeof(s3));
+					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					if (!s4[0]) break;
+					
+					AddFileToDownloadsTable(s4);
+				}
+			}
+			else if (StrEqual(s2, "mod_precache"))
+			{
+				for (new i = 1;; i++)
+				{
+					IntToString(i, s3, sizeof(s3));
+					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					if (!s4[0]) break;
+					
+					PrecacheModel(s4, true);
+				}
+			}
+			else if (StrEqual(s2, "mat_download"))
+			{	
+				for (new i = 1;; i++)
+				{
+					IntToString(i, s3, sizeof(s3));
+					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					if (!s4[0]) break;
+					
+					Format(s5, sizeof(s5), "%s.vtf", s4);
+					AddFileToDownloadsTable(s5);
+					Format(s5, sizeof(s5), "%s.vmt", s4);
+					AddFileToDownloadsTable(s5);
+				}
+			}
+			else if (StrEqual(s2, "mod_download"))
+			{
+				static const String:extensions[][] = { ".mdl", ".phy", ".dx80.vtx", ".dx90.vtx", ".sw.vtx", ".vvd" };
+				
+				for (new i = 1;; i++)
+				{
+					IntToString(i, s3, sizeof(s3));
+					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					if (!s4[0]) break;
+					
+					for (new is = 0; is < sizeof(extensions); is++)
+					{
+						Format(s5, sizeof(s5), "%s%s", s4, extensions[is]);
+						AddFileToDownloadsTable(s5);
+					}
+				}
+			}
+		}
+		while (KvGotoNextKey(g_hConfig));
+		
+		KvGoBack(g_hConfig);
+	}
+	
+	return true;
 }
 
 bool:IsProfileValid(const String:sProfile[])
