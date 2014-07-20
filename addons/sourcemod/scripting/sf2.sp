@@ -1263,10 +1263,12 @@ public TF2_OnConditionAdded(client, TFCond:cond)
 
 public OnGameFrame()
 {
+	if (!g_bEnabled) return;
+
 	// Process through boss movement.
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (SlenderGetID(i) == -1) continue;
+		if (NPCGetUniqueID(i) == -1) continue;
 		
 		new iBoss = EntRefToEntIndex(g_iSlender[i]);
 		
@@ -2119,10 +2121,13 @@ public Action:Hook_CommandVoiceMenu(client, const String:command[], argc)
 	
 	if (g_bPlayerProxy[client])
 	{
-		new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
+		new iMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[client]);
 		if (iMaster != -1)
 		{
-			if (!bool:GetProfileNum(g_strSlenderProfile[iMaster], "proxies_allownormalvoices", 1))
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			NPCGetProfile(iMaster, sProfile, sizeof(sProfile));
+		
+			if (!bool:GetProfileNum(sProfile, "proxies_allownormalvoices", 1))
 			{
 				return Plugin_Handled;
 			}
@@ -2184,8 +2189,9 @@ public Action:Command_SpawnSlender(client, args)
 	
 	decl String:arg1[32];
 	GetCmdArg(1, arg1, sizeof(arg1));
+	
 	new iBossIndex = StringToInt(arg1);
-	if (!g_strSlenderProfile[iBossIndex][0]) return Plugin_Handled;
+	if (NPCGetUniqueID(iBossIndex) == -1) return Plugin_Handled;
 	
 	decl Float:eyePos[3], Float:eyeAng[3], Float:endPos[3];
 	GetClientEyePosition(client, eyePos);
@@ -2194,10 +2200,14 @@ public Action:Command_SpawnSlender(client, args)
 	new Handle:hTrace = TR_TraceRayFilterEx(eyePos, eyeAng, MASK_NPCSOLID, RayType_Infinite, TraceRayDontHitEntity, client);
 	TR_GetEndPosition(endPos, hTrace);
 	CloseHandle(hTrace);
-
+	
 	SpawnSlender(iBossIndex, endPos);
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Spawned Boss", client);
-	LogAction(client, -1, "%N spawned boss %d! (%s)", client, iBossIndex, g_strSlenderProfile[iBossIndex]);
+	LogAction(client, -1, "%N spawned boss %d! (%s)", client, iBossIndex, sProfile);
 	
 	return Plugin_Handled;
 }
@@ -2214,12 +2224,17 @@ public Action:Command_RemoveSlender(client, args)
 	
 	decl String:arg1[32];
 	GetCmdArg(1, arg1, sizeof(arg1));
+	
 	new iBossIndex = StringToInt(arg1);
-	if (!g_strSlenderProfile[iBossIndex][0]) return Plugin_Handled;
+	if (NPCGetUniqueID(iBossIndex) == -1) return Plugin_Handled;
+	
+	RemoveProfile(iBossIndex);
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Removed Boss", client);
-	LogAction(client, -1, "%N removed boss %d! (%s)", client, iBossIndex, g_strSlenderProfile[iBossIndex]);
-	RemoveProfile(iBossIndex);
+	LogAction(client, -1, "%N removed boss %d! (%s)", client, iBossIndex, sProfile);
 	
 	return Plugin_Handled;
 }
@@ -2229,15 +2244,18 @@ public Action:Command_GetBossIndexes(client, args)
 	if (!g_bEnabled) return Plugin_Continue;
 	
 	decl String:sMessage[512];
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	
 	ClientCommand(client, "echo Active Boss Indexes:");
 	ClientCommand(client, "echo ----------------------------");
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (!g_strSlenderProfile[i][0]) continue;
+		if (NPCGetUniqueID(i) == -1) continue;
 		
-		Format(sMessage, sizeof(sMessage), "%d - %s", i, g_strSlenderProfile[i]);
+		NPCGetProfile(i, sProfile, sizeof(sProfile));
+		
+		Format(sMessage, sizeof(sMessage), "%d - %s", i, sProfile);
 		if (g_iSlenderFlags[i] & SFF_FAKE)
 		{
 			StrCat(sMessage, sizeof(sMessage), " (fake)");
@@ -2274,14 +2292,16 @@ public Action:Command_SlenderAttackWaiters(client, args)
 	GetCmdArg(1, arg1, sizeof(arg1));
 	
 	new iBossIndex = StringToInt(arg1);
-	if (!g_strSlenderProfile[iBossIndex][0]) return Plugin_Handled;
+	if (NPCGetUniqueID(iBossIndex) == -1) return Plugin_Handled;
 	
 	decl String:arg2[32];
 	GetCmdArg(2, arg2, sizeof(arg2));
 	
 	new bool:bState = bool:StringToInt(arg2);
-	
 	new bool:bOldState = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	if (bState)
 	{
@@ -2289,7 +2309,7 @@ public Action:Command_SlenderAttackWaiters(client, args)
 		{
 			g_iSlenderFlags[iBossIndex] |= SFF_ATTACKWAITERS;
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Attack Waiters", client);
-			LogAction(client, -1, "%N forced boss %d to attack waiters! (%s)", client, iBossIndex, g_strSlenderProfile[iBossIndex]);
+			LogAction(client, -1, "%N forced boss %d to attack waiters! (%s)", client, iBossIndex, sProfile);
 		}
 	}
 	else
@@ -2298,7 +2318,7 @@ public Action:Command_SlenderAttackWaiters(client, args)
 		{
 			g_iSlenderFlags[iBossIndex] &= ~SFF_ATTACKWAITERS;
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Do Not Attack Waiters", client);
-			LogAction(client, -1, "%N forced boss %d to not attack waiters! (%s)", client, iBossIndex, g_strSlenderProfile[iBossIndex]);
+			LogAction(client, -1, "%N forced boss %d to not attack waiters! (%s)", client, iBossIndex, sProfile);
 		}
 	}
 	
@@ -2319,14 +2339,16 @@ public Action:Command_SlenderNoTeleport(client, args)
 	GetCmdArg(1, arg1, sizeof(arg1));
 	
 	new iBossIndex = StringToInt(arg1);
-	if (!g_strSlenderProfile[iBossIndex][0]) return Plugin_Handled;
+	if (NPCGetUniqueID(iBossIndex) == -1) return Plugin_Handled;
 	
 	decl String:arg2[32];
 	GetCmdArg(2, arg2, sizeof(arg2));
 	
 	new bool:bState = bool:StringToInt(arg2);
-	
 	new bool:bOldState = bool:(g_iSlenderFlags[iBossIndex] & SFF_NOTELEPORT);
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	if (bState)
 	{
@@ -2334,7 +2356,7 @@ public Action:Command_SlenderNoTeleport(client, args)
 		{
 			g_iSlenderFlags[iBossIndex] |= SFF_NOTELEPORT;
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Should Not Teleport", client);
-			LogAction(client, -1, "%N disabled teleportation of boss %d! (%s)", client, iBossIndex, g_strSlenderProfile[iBossIndex]);
+			LogAction(client, -1, "%N disabled teleportation of boss %d! (%s)", client, iBossIndex, sProfile);
 		}
 	}
 	else
@@ -2343,7 +2365,7 @@ public Action:Command_SlenderNoTeleport(client, args)
 		{
 			g_iSlenderFlags[iBossIndex] &= ~SFF_NOTELEPORT;
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Should Teleport", client);
-			LogAction(client, -1, "%N enabled teleportation of boss %d! (%s)", client, iBossIndex, g_strSlenderProfile[iBossIndex]);
+			LogAction(client, -1, "%N enabled teleportation of boss %d! (%s)", client, iBossIndex, sProfile);
 		}
 	}
 	
@@ -2395,7 +2417,7 @@ public Action:Command_ForceProxy(client, args)
 		ReplyToCommand(client, "Boss index is out of range!");
 		return Plugin_Handled;
 	}
-	else if (!g_strSlenderProfile[iBossIndex][0])
+	else if (NPCGetUniqueID(iBossIndex) == -1)
 	{
 		ReplyToCommand(client, "Boss index is invalid! Boss index not active!");
 		return Plugin_Handled;
@@ -2592,12 +2614,12 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 	
 	if (!g_bEnabled) return Plugin_Stop;
 
-	new iBossCount = SlenderGetCount();
+	new iBossCount = NPCGetCount();
 	new iBossPreferredCount;
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (!g_strSlenderProfile[i][0] ||
+		if (NPCGetUniqueID(i) == -1 ||
 			g_iSlenderCopyMaster[i] != -1 ||
 			(g_iSlenderFlags[i] & SFF_FAKE))
 		{
@@ -2622,7 +2644,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 		
 		for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 		{
-			if (!g_strSlenderProfile[iBoss][0]) continue;
+			if (NPCGetUniqueID(iBoss) == -1) continue;
 			if (SlenderArrayIndexToEntIndex(iBoss) == INVALID_ENT_REFERENCE) continue;
 			if (g_iSlenderFlags[iBoss] & SFF_FAKE) continue;
 			
@@ -2655,7 +2677,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			new bool:bwub = false;
 			for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 			{
-				if (!g_strSlenderProfile[iBoss][0]) continue;
+				if (NPCGetUniqueID(iBoss) == -1) continue;
 				if (g_iSlenderFlags[iBoss] & SFF_FAKE) continue;
 				
 				if (g_iSlenderTarget[iBoss] == iClient)
@@ -2710,11 +2732,13 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 		}
 		else
 		{
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		
 			new iCount = RoundToFloor(FloatAbs(float(iDiff)));
 			// Add new bosses (copy of the first boss).
 			for (new i = 0; i < MAX_BOSSES && iCount > 0; i++)
 			{
-				if (SlenderGetID(i) == -1) continue;
+				if (NPCGetUniqueID(i) == -1) continue;
 				if (g_iSlenderCopyMaster[i] != -1) continue;
 				if (!(g_iSlenderFlags[i] & SFF_COPIES)) continue;
 				
@@ -2722,21 +2746,21 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				new iCopyCount;
 				for (new i2 = 0; i2 < MAX_BOSSES; i2++)
 				{
-					if (!g_strSlenderProfile[i2][0]) continue;
+					if (NPCGetUniqueID(i2) == -1) continue;
 					if (g_iSlenderCopyMaster[i2] != i) continue;
+					
 					iCopyCount++;
 				}
 				
-				if (iCopyCount >= GetProfileNum(g_strSlenderProfile[i], "copy_max", 10)) 
+				NPCGetProfile(i, sProfile, sizeof(sProfile));
+				
+				if (iCopyCount >= GetProfileNum(sProfile, "copy_max", 10)) 
 				{
 					continue;
 				}
 				
-				new iBossIndex = AddProfile(g_strSlenderProfile[i], _, i);
-				if (iBossIndex != -1)
-				{
-				}
-				else
+				new iBossIndex = AddProfile(sProfile, _, i);
+				if (iBossIndex == -1)
 				{
 					LogError("Could not add copy for %d: No free slots!", i);
 				}
@@ -2753,9 +2777,12 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 		{
 			new Handle:hProxyCandidates = CreateArray();
 			
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			
 			for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 			{
-				if (!g_strSlenderProfile[iBossIndex][0]) continue;
+				if (NPCGetUniqueID(iBossIndex) == -1) continue;
+				
 				if (!(g_iSlenderFlags[iBossIndex] & SFF_PROXIES)) continue;
 				
 				if (g_iSlenderCopyMaster[iBossIndex] != -1) continue; // Copies cannot generate proxies.
@@ -2765,7 +2792,9 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[iBossIndex]);
 				if (!iTeleportTarget || iTeleportTarget == INVALID_ENT_REFERENCE) continue; // No teleport target.
 				
-				new iMaxProxies = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_max");
+				NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+				
+				new iMaxProxies = GetProfileNum(sProfile, "proxies_max");
 				new iNumActiveProxies = 0;
 				
 				for (new iClient = 1; iClient <= MaxClients; iClient++)
@@ -2773,7 +2802,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 					if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 					if (!g_bPlayerProxy[iClient]) continue;
 					
-					if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) == iBossIndex)
+					if (NPCGetFromUniqueID(g_iPlayerProxyMaster[iClient]) == iBossIndex)
 					{
 						iNumActiveProxies++;
 					}
@@ -2787,9 +2816,9 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 					continue;
 				}
 				
-				new Float:flSpawnChanceMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_chance_min");
-				new Float:flSpawnChanceMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_chance_max");
-				new Float:flSpawnChanceThreshold = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_chance_threshold") * g_flSlenderAnger[iBossIndex];
+				new Float:flSpawnChanceMin = GetProfileFloat(sProfile, "proxies_spawn_chance_min");
+				new Float:flSpawnChanceMax = GetProfileFloat(sProfile, "proxies_spawn_chance_max");
+				new Float:flSpawnChanceThreshold = GetProfileFloat(sProfile, "proxies_spawn_chance_threshold") * g_flSlenderAnger[iBossIndex];
 				
 				new Float:flChance = GetRandomFloat(flSpawnChanceMin, flSpawnChanceMax);
 				if (flChance > flSpawnChanceThreshold) 
@@ -2802,8 +2831,8 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				
 				new iAvailableProxies = iMaxProxies - iNumActiveProxies;
 				
-				new iSpawnNumMin = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_spawn_num_min");
-				new iSpawnNumMax = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_spawn_num_max");
+				new iSpawnNumMin = GetProfileNum(sProfile, "proxies_spawn_num_min");
+				new iSpawnNumMax = GetProfileNum(sProfile, "proxies_spawn_num_max");
 				
 				new iSpawnNum = 0;
 				
@@ -3068,8 +3097,8 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				CloseHandle(hAreaArray);
 				
 				// Set the cooldown time!
-				new Float:flSpawnCooldownMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_cooldown_min");
-				new Float:flSpawnCooldownMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "proxies_spawn_cooldown_max");
+				new Float:flSpawnCooldownMin = GetProfileFloat(sProfile, "proxies_spawn_cooldown_min");
+				new Float:flSpawnCooldownMax = GetProfileFloat(sProfile, "proxies_spawn_cooldown_max");
 				
 				g_flSlenderTimeUntilNextProxy[iBossIndex] = GetGameTime() + GetRandomFloat(flSpawnCooldownMin, flSpawnCooldownMax);
 				
@@ -3108,11 +3137,11 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 					
 					if (!GetConVarBool(g_cvPlayerProxyAsk))
 					{
-						ClientStartProxyForce(iClient, SlenderGetID(iBossIndex), flDestinationPos);
+						ClientStartProxyForce(iClient, NPCGetUniqueID(iBossIndex), flDestinationPos);
 					}
 					else
 					{
-						DisplayProxyAskMenu(iClient, SlenderGetID(iBossIndex), flDestinationPos);
+						DisplayProxyAskMenu(iClient, NPCGetUniqueID(iBossIndex), flDestinationPos);
 					}
 				}
 				
@@ -3308,14 +3337,17 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 		}
 		else if (g_bPlayerProxy[entity])
 		{
-			new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[entity]);
+			new iMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[entity]);
 			if (iMaster != -1)
 			{
+				decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+				NPCGetProfile(iMaster, sProfile, sizeof(sProfile));
+				
 				switch (channel)
 				{
 					case SNDCHAN_VOICE:
 					{
-						if (!bool:GetProfileNum(g_strSlenderProfile[iMaster], "proxies_allownormalvoices", 1))
+						if (!bool:GetProfileNum(sProfile, "proxies_allownormalvoices", 1))
 						{
 							return Plugin_Handled;
 						}
@@ -3333,7 +3365,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 				
 					for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 					{
-						if (SlenderGetID(iBossIndex) == -1) continue;
+						if (NPCGetUniqueID(iBossIndex) == -1) continue;
 						
 						if (SlenderCanHearPlayer(iBossIndex, entity, SoundType_Voice))
 						{
@@ -3365,7 +3397,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 						
 						for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 						{
-							if (SlenderGetID(iBossIndex) == -1) continue;
+							if (NPCGetUniqueID(iBossIndex) == -1) continue;
 							
 							if (SlenderCanHearPlayer(iBossIndex, entity, SoundType_Footstep))
 							{
@@ -3387,7 +3419,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 					{
 						for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 						{
-							if (SlenderGetID(iBossIndex) == -1) continue;
+							if (NPCGetUniqueID(iBossIndex) == -1) continue;
 							
 							if (SlenderCanHearPlayer(iBossIndex, entity, SoundType_Weapon))
 							{
@@ -3451,7 +3483,7 @@ public MRESReturn:Hook_EntityShouldTransmit(this, Handle:hReturn, Handle:hParams
 	}
 	else
 	{
-		new iBossIndex = SlenderEntIndexToArrayIndex(this);
+		new iBossIndex = NPCGetFromEntIndex(this);
 		if (iBossIndex != -1)
 		{
 			DHookSetReturn(hReturn, FL_EDICT_ALWAYS); // Should always transmit, but our SetTransmit hook gets the final say.
@@ -3527,10 +3559,9 @@ public Action:Hook_PageOnTakeDamage(page, &attacker, &inflictor, &Float:damage, 
 //	==========================================================
 
 
-public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:angles[3], &weapon)
+public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:angles[3], &weapon, &subtype, &cmdnum, &tickcount, &seed, mouse[2])
 {
 	if (!g_bEnabled) return Plugin_Continue;
-	if (!IsValidClient(client)) return Plugin_Continue;
 	
 	ClientDisableFakeLagCompensation(client);
 	
@@ -4312,12 +4343,15 @@ public Action:Hook_SlenderOnTakeDamage(slender, &attacker, &inflictor, &Float:da
 {
 	if (!g_bEnabled) return Plugin_Continue;
 
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
+	new iBossIndex = NPCGetFromEntIndex(slender);
 	if (iBossIndex == -1) return Plugin_Continue;
 	
 	if (g_iSlenderType[iBossIndex] == 2)
 	{
-		if (GetProfileNum(g_strSlenderProfile[iBossIndex], "stun_enabled"))
+		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
+		if (GetProfileNum(sProfile, "stun_enabled"))
 		{
 			if (damagetype & DMG_ACID) damage *= 2.0; // Critical hits can help ALOT.
 			
@@ -4333,7 +4367,7 @@ public Hook_SlenderOnTakeDamagePost(slender, attacker, inflictor, Float:damage, 
 {
 	if (!g_bEnabled) return;
 
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
+	new iBossIndex = NPCGetFromEntIndex(slender);
 	if (iBossIndex == -1) return;
 	
 	if (g_iSlenderType[iBossIndex] == 2)
@@ -4361,7 +4395,7 @@ public Action:Hook_SlenderModelSetTransmit(entity, other)
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (SlenderGetID(i) == -1) continue;
+		if (NPCGetUniqueID(i) == -1) continue;
 		if (g_iSlenderModel[i] != entref) continue;
 		
 		iBossIndex = i;
@@ -4423,7 +4457,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	new slender = EntRefToEntIndex(entref);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return Plugin_Stop;
 	
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
+	new iBossIndex = NPCGetFromEntIndex(slender);
 	if (iBossIndex == -1) return Plugin_Stop;
 	
 	if (timer != g_hSlenderEntityThink[iBossIndex]) return Plugin_Stop;
@@ -4434,7 +4468,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	new Float:flBuffer[3];
 	
 	decl String:sSlenderProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sSlenderProfile, sizeof(sSlenderProfile), g_strSlenderProfile[iBossIndex]);
+	NPCGetProfile(iBossIndex, sSlenderProfile, sizeof(sSlenderProfile));
 	
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsVelocity", flSlenderVelocity);
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
@@ -5075,7 +5109,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					g_bSlenderInvestigatingSound[iBossIndex] = false;
 					g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex] = -1.0;
 					
-					g_flSlenderTimeUntilKill[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "idle_lifetime", 10.0);
+					g_flSlenderTimeUntilKill[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "idle_lifetime", 10.0);
 				}
 				
 				if (iState == STATE_WANDER)
@@ -5089,14 +5123,14 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				{
 					if (iState == STATE_WANDER && (g_iSlenderFlags[iBossIndex] & SFF_WANDERMOVE))
 					{
-						if (GetProfileString(g_strSlenderProfile[iBossIndex], "animation_walk", sAnimation, sizeof(sAnimation)))
+						if (GetProfileString(sSlenderProfile, "animation_walk", sAnimation, sizeof(sAnimation)))
 						{
 							SetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateWalk);
 						}
 					}
 					else
 					{
-						if (GetProfileString(g_strSlenderProfile[iBossIndex], "animation_idle", sAnimation, sizeof(sAnimation)))
+						if (GetProfileString(sSlenderProfile, "animation_idle", sAnimation, sizeof(sAnimation)))
 						{
 							SetAnimation(iModel, sAnimation, _, flPlaybackRateIdle);
 						}
@@ -5116,16 +5150,16 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderTargetSoundMasterPos[iBossIndex][2];
 				}
 				
-				g_flSlenderTimeUntilIdle[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_alert_duration", 5.0);
+				g_flSlenderTimeUntilIdle[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_alert_duration", 5.0);
 				g_flSlenderTimeUntilAlert[iBossIndex] = -1.0;
-				g_flSlenderTimeUntilChase[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_alert_gracetime", 0.5);
+				g_flSlenderTimeUntilChase[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_alert_gracetime", 0.5);
 				
 				bQueueForNewPath = true;
 				
 				// Animation handling.
 				if (iModel && iModel != INVALID_ENT_REFERENCE)
 				{
-					if (GetProfileString(g_strSlenderProfile[iBossIndex], "animation_walk", sAnimation, sizeof(sAnimation)))
+					if (GetProfileString(sSlenderProfile, "animation_walk", sAnimation, sizeof(sAnimation)))
 					{
 						SetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateWalk);
 					}
@@ -5139,10 +5173,10 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				if (iOldState != STATE_ATTACK && iOldState != STATE_CHASE && iOldState != STATE_STUN)
 				{
 					g_flSlenderTimeUntilIdle[iBossIndex] = -1.0;
-					g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration", 10.0);
+					g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration", 10.0);
 					g_flSlenderTimeUntilChase[iBossIndex] = -1.0;
 					
-					new Float:flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_init", 5.0);
+					new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init", 5.0);
 					if (flPersistencyTime >= 0.0)
 					{
 						g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
@@ -5152,15 +5186,15 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				if (iState == STATE_ATTACK)
 				{
 					g_bSlenderAttacking[iBossIndex] = true;
-					g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_delay"), Timer_SlenderChaseBossAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
+					g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(sSlenderProfile, "attack_delay"), Timer_SlenderChaseBossAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
 					
-					new Float:flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_init_attack", -1.0);
+					new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_attack", -1.0);
 					if (flPersistencyTime >= 0.0)
 					{
 						g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
 					}
 					
-					flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_add_attack", 2.0);
+					flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_attack", 2.0);
 					if (flPersistencyTime >= 0.0)
 					{
 						if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
@@ -5180,13 +5214,13 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					
 					if (!bDoChasePersistencyInit)
 					{
-						new Float:flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_init_stun", -1.0);
+						new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_stun", -1.0);
 						if (flPersistencyTime >= 0.0)
 						{
 							g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
 						}
 						
-						flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_add_stun", 2.0);
+						flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_stun", 2.0);
 						if (flPersistencyTime >= 0.0)
 						{
 							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
@@ -5195,14 +5229,14 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					}
 					else
 					{
-						new Float:flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_init", 5.0);
+						new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init", 5.0);
 						if (flPersistencyTime >= 0.0)
 						{
 							g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
 						}
 					}
 					
-					g_flSlenderTimeUntilRecover[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "stun_duration", 1.0);
+					g_flSlenderTimeUntilRecover[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "stun_duration", 1.0);
 					
 					// Sound handling. Ignore time check.
 					SlenderPerformVoice(iBossIndex, "sound_stun");
@@ -5221,23 +5255,23 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				{
 					if (iState == STATE_CHASE)
 					{
-						if (GetProfileString(g_strSlenderProfile[iBossIndex], "animation_run", sAnimation, sizeof(sAnimation)))
+						if (GetProfileString(sSlenderProfile, "animation_run", sAnimation, sizeof(sAnimation)))
 						{
 							SetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateRun);
 						}
 					}
 					else if (iState == STATE_ATTACK)
 					{
-						if (GetProfileString(g_strSlenderProfile[iBossIndex], "animation_attack", sAnimation, sizeof(sAnimation)))
+						if (GetProfileString(sSlenderProfile, "animation_attack", sAnimation, sizeof(sAnimation)))
 						{
-							SetAnimation(iModel, sAnimation, _, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_attack_playbackrate", 1.0));
+							SetAnimation(iModel, sAnimation, _, GetProfileFloat(sSlenderProfile, "animation_attack_playbackrate", 1.0));
 						}
 					}
 					else if (iState == STATE_STUN)
 					{
-						if (GetProfileString(g_strSlenderProfile[iBossIndex], "animation_stun", sAnimation, sizeof(sAnimation)))
+						if (GetProfileString(sSlenderProfile, "animation_stun", sAnimation, sizeof(sAnimation)))
 						{
-							SetAnimation(iModel, sAnimation, _, GetProfileFloat(g_strSlenderProfile[iBossIndex], "animation_stun_playbackrate", 1.0));
+							SetAnimation(iModel, sAnimation, _, GetProfileFloat(sSlenderProfile, "animation_stun_playbackrate", 1.0));
 						}
 					}
 				}
@@ -5336,13 +5370,13 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					if (iOldTarget != iTarget)
 					{
 						// Brand new target! We need a path, and we need to reset our persistency, if needed.
-						new Float:flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_init_newtarget", -1.0);
+						new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_newtarget", -1.0);
 						if (flPersistencyTime >= 0.0)
 						{
 							g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
 						}
 						
-						flPersistencyTime = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_add_newtarget", 2.0);
+						flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_newtarget", 2.0);
 						if (flPersistencyTime >= 0.0)
 						{
 							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
@@ -5387,7 +5421,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 								iGoalAreaIndex,
 								g_flSlenderGoalPos[iBossIndex],
 								SlenderChaseBossShortestPathCost,
-								RoundToFloor(GetProfileFloat(g_strSlenderProfile[iBossIndex], "stepsize", 18.0)),
+								RoundToFloor(GetProfileFloat(sSlenderProfile, "stepsize", 18.0)),
 								iClosestAreaIndex);
 								
 							new iTempAreaIndex = iClosestAreaIndex;
@@ -5463,22 +5497,22 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					{
 						new Float:flDistRatio = flPlayerDists[iTarget] / g_flSlenderSearchRange[iBossIndex];
 						
-						new Float:flChaseDurationTimeAddMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration_add_visible_min", 0.025);
-						new Float:flChaseDurationTimeAddMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration_add_visible_max", 0.2);
+						new Float:flChaseDurationTimeAddMin = GetProfileFloat(sSlenderProfile, "search_chase_duration_add_visible_min", 0.025);
+						new Float:flChaseDurationTimeAddMax = GetProfileFloat(sSlenderProfile, "search_chase_duration_add_visible_max", 0.2);
 						
 						new Float:flChaseDurationAdd = flChaseDurationTimeAddMax - ((flChaseDurationTimeAddMax - flChaseDurationTimeAddMin) * flDistRatio);
 						
 						if (flChaseDurationAdd > 0.0)
 						{
 							g_flSlenderTimeUntilAlert[iBossIndex] += flChaseDurationAdd;
-							if (g_flSlenderTimeUntilAlert[iBossIndex] > (GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration")))
+							if (g_flSlenderTimeUntilAlert[iBossIndex] > (GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration")))
 							{
-								g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration");
+								g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration");
 							}
 						}
 						
-						new Float:flPersistencyTimeAddMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_add_visible_min", 0.05);
-						new Float:flPersistencyTimeAddMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_persistency_time_add_visible_max", 0.15);
+						new Float:flPersistencyTimeAddMin = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_visible_min", 0.05);
+						new Float:flPersistencyTimeAddMax = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_visible_max", 0.15);
 						
 						new Float:flPersistencyTimeAdd = flPersistencyTimeAddMax - ((flPersistencyTimeAddMax - flPersistencyTimeAddMin) * flDistRatio);
 						
@@ -5487,9 +5521,9 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
 						
 							g_flSlenderTimeUntilNoPersistence[iBossIndex] += flPersistencyTimeAdd;
-							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] > (GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration")))
+							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] > (GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration")))
 							{
-								g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_chase_duration");
+								g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration");
 							}
 						}
 					}
@@ -5767,7 +5801,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 	new Float:flMyPos[3], Float:flMyEyeAng[3], Float:flMyVelocity[3];
 	
 	decl String:sSlenderProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sSlenderProfile, sizeof(sSlenderProfile), g_strSlenderProfile[iBossIndex]);
+	NPCGetProfile(iBossIndex, sSlenderProfile, sizeof(sSlenderProfile));
 	
 	GetEntPropVector(iBoss, Prop_Data, "m_vecAbsOrigin", flMyPos);
 	GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
@@ -6222,16 +6256,19 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 	new slender = EntRefToEntIndex(entref);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return Plugin_Stop;
 	
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
+	new iBossIndex = NPCGetFromEntIndex(slender);
 	if (iBossIndex == -1) return Plugin_Stop;
 	
 	if (timer != g_hSlenderEntityThink[iBossIndex]) return Plugin_Stop;
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	if (g_iSlenderType[iBossIndex] == 1)
 	{
 		new bool:bMove = false;
 		
-		if ((GetGameTime() - g_flSlenderLastKill[iBossIndex]) >= GetProfileFloat(g_strSlenderProfile[iBossIndex], "kill_cooldown"))
+		if ((GetGameTime() - g_flSlenderLastKill[iBossIndex]) >= GetProfileFloat(sProfile, "kill_cooldown"))
 		{
 			if (PeopleCanSeeSlender(iBossIndex, false, false) && !PeopleCanSeeSlender(iBossIndex, true, SlenderUsesBlink(iBossIndex)))
 			{
@@ -6287,35 +6324,35 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 					flAng[0] = 0.0;
 					
 					// Take care of position offsets.
-					GetProfileVector(g_strSlenderProfile[iBossIndex], "pos_offset", flBuffer);
+					GetProfileVector(sProfile, "pos_offset", flBuffer);
 					AddVectors(buffer, flBuffer, buffer);
 					
 					TeleportEntity(slender, buffer, flAng, NULL_VECTOR);
 					
-					new Float:flMaxRange = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_range_max");
+					new Float:flMaxRange = GetProfileFloat(sProfile, "teleport_range_max");
 					new Float:flDist = GetVectorDistance(buffer, flPos);
 					
 					decl String:sBuffer[PLATFORM_MAX_PATH];
 					
 					if (flDist < (flMaxRange * 0.33)) 
 					{
-						GetProfileString(g_strSlenderProfile[iBossIndex], "model_closedist", sBuffer, sizeof(sBuffer));
+						GetProfileString(sProfile, "model_closedist", sBuffer, sizeof(sBuffer));
 					}
 					else if (flDist < (flMaxRange * 0.66)) 
 					{
-						GetProfileString(g_strSlenderProfile[iBossIndex], "model_averagedist", sBuffer, sizeof(sBuffer));
+						GetProfileString(sProfile, "model_averagedist", sBuffer, sizeof(sBuffer));
 					}
 					else 
 					{
-						GetProfileString(g_strSlenderProfile[iBossIndex], "model", sBuffer, sizeof(sBuffer));
+						GetProfileString(sProfile, "model", sBuffer, sizeof(sBuffer));
 					}
 					
 					// Fallback if error.
-					if (!sBuffer[0]) GetProfileString(g_strSlenderProfile[iBossIndex], "model", sBuffer, sizeof(sBuffer));
+					if (!sBuffer[0]) GetProfileString(sProfile, "model", sBuffer, sizeof(sBuffer));
 					
 					SetEntProp(slender, Prop_Send, "m_nModelIndex", PrecacheModel(sBuffer));
 					
-					if (flDist <= GetProfileFloat(g_strSlenderProfile[iBossIndex], "kill_radius"))
+					if (flDist <= GetProfileFloat(sProfile, "kill_radius"))
 					{
 						if (g_iSlenderFlags[iBossIndex] & SFF_FAKE)
 						{
@@ -6335,16 +6372,16 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 		if (bMove)
 		{
 			decl String:sBuffer[PLATFORM_MAX_PATH];
-			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_move_single", sBuffer, sizeof(sBuffer));
+			GetRandomStringFromProfile(sProfile, "sound_move_single", sBuffer, sizeof(sBuffer));
 			if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 			
-			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_move", sBuffer, sizeof(sBuffer), 1);
+			GetRandomStringFromProfile(sProfile, "sound_move", sBuffer, sizeof(sBuffer), 1);
 			if (sBuffer[0]) EmitSoundToAll(sBuffer, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING, SND_CHANGEVOL);
 		}
 		else
 		{
 			decl String:sBuffer[PLATFORM_MAX_PATH];
-			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_move", sBuffer, sizeof(sBuffer), 1);
+			GetRandomStringFromProfile(sProfile, "sound_move", sBuffer, sizeof(sBuffer), 1);
 			if (sBuffer[0]) StopSound(slender, SNDCHAN_AUTO, sBuffer);
 		}
 	}
@@ -6357,9 +6394,11 @@ SlenderOnClientStressUpdate(client)
 {
 	new Float:flStress = g_flPlayerStress[client];
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	for (new iBossIndex = 0; iBossIndex < MAX_BOSSES; iBossIndex++)
 	{	
-		if (SlenderGetID(iBossIndex) == -1) continue;
+		if (NPCGetUniqueID(iBossIndex) == -1) continue;
 		
 		new iBossFlags = g_iSlenderFlags[iBossIndex];
 		if (iBossFlags & SFF_MARKEDASFAKE ||
@@ -6367,6 +6406,8 @@ SlenderOnClientStressUpdate(client)
 		{
 			continue;
 		}
+		
+		NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 		
 		new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[iBossIndex]);
 		if (iTeleportTarget && iTeleportTarget != INVALID_ENT_REFERENCE)
@@ -6377,7 +6418,7 @@ SlenderOnClientStressUpdate(client)
 				GetGameTime() >= g_flSlenderTeleportMaxTargetTime[iBossIndex])
 			{
 				// Queue for a new target and mark the old target in the rest period.
-				new Float:flRestPeriod = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_rest_period", 15.0);
+				new Float:flRestPeriod = GetProfileFloat(sProfile, "teleport_target_rest_period", 15.0);
 				flRestPeriod = (flRestPeriod * GetRandomFloat(0.92, 1.08)) / (g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier);
 				
 				g_iSlenderTeleportTarget[iBossIndex] = INVALID_ENT_REFERENCE;
@@ -6395,8 +6436,8 @@ SlenderOnClientStressUpdate(client)
 		{
 			new iPreferredTeleportTarget = INVALID_ENT_REFERENCE;
 			
-			new Float:flTargetStressMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_stress_min", 0.2);
-			new Float:flTargetStressMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_stress_max", 0.9);
+			new Float:flTargetStressMin = GetProfileFloat(sProfile, "teleport_target_stress_min", 0.2);
+			new Float:flTargetStressMax = GetProfileFloat(sProfile, "teleport_target_stress_max", 0.9);
 			
 			new Float:flTargetStress = flTargetStressMax - ((flTargetStressMax - flTargetStressMin) / (g_flRoundDifficultyModifier * g_flSlenderAnger[iBossIndex]));
 			
@@ -6426,7 +6467,7 @@ SlenderOnClientStressUpdate(client)
 			if (iPreferredTeleportTarget && iPreferredTeleportTarget != INVALID_ENT_REFERENCE)
 			{
 				// Set our preferred target to the new guy.
-				new Float:flTargetDuration = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_target_persistency_period", 13.0);
+				new Float:flTargetDuration = GetProfileFloat(sProfile, "teleport_target_persistency_period", 13.0);
 				new Float:flDeviation = GetRandomFloat(0.92, 1.08);
 				flTargetDuration = Pow(flDeviation * flTargetDuration, ((g_flRoundDifficultyModifier * (g_flSlenderAnger[iBossIndex] - 1.0)) / 2.0)) + ((flDeviation * flTargetDuration) - 1.0);
 				
@@ -6503,11 +6544,14 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 		}
 	}
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	if (!g_bRoundGrace)
 	{
 		if (GetGameTime() >= g_flSlenderNextTeleportTime[iBossIndex])
 		{
-			new Float:flTeleportTime = GetRandomFloat(GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_time_min", 5.0), GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_time_max", 9.0));
+			new Float:flTeleportTime = GetRandomFloat(GetProfileFloat(sProfile, "teleport_time_min", 5.0), GetProfileFloat(sProfile, "teleport_time_max", 9.0));
 			g_flSlenderNextTeleportTime[iBossIndex] = GetGameTime() + flTeleportTime;
 			
 			new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[iBossIndex]);
@@ -6666,12 +6710,12 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 								// Check minimum range with boss copies (if supported).
 								if (g_iSlenderFlags[iBossIndex] & SFF_COPIES)
 								{
-									new Float:flMinDistBetweenBosses = GetProfileFloat(g_strSlenderProfile[iBossIndex], "copy_teleport_dist_from_others", 800.0);
+									new Float:flMinDistBetweenBosses = GetProfileFloat(sProfile, "copy_teleport_dist_from_others", 800.0);
 									
 									for (new iBossCheck = 0; iBossCheck < MAX_BOSSES; iBossCheck++)
 									{
 										if (iBossCheck == iBossIndex ||
-											SlenderGetID(iBossCheck) == -1 ||
+											NPCGetUniqueID(iBossCheck) == -1 ||
 											(g_iSlenderCopyMaster[iBossIndex] != iBossCheck && g_iSlenderCopyMaster[iBossIndex] != g_iSlenderCopyMaster[iBossCheck]))
 										{
 											continue;
@@ -6801,13 +6845,13 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							
 							if (PlayerCanSeeSlender(i, iBossIndex, false))
 							{
-								if ((SlenderGetDistanceFromPlayer(iBossIndex, i) <= GetProfileFloat(g_strSlenderProfile[iBossIndex], "jumpscare_distance") &&
+								if ((SlenderGetDistanceFromPlayer(iBossIndex, i) <= GetProfileFloat(sProfile, "jumpscare_distance") &&
 									GetGameTime() >= g_flSlenderNextJumpScare[iBossIndex]) ||
 									PlayerCanSeeSlender(i, iBossIndex))
 								{
 									bDidJumpScare = true;
 								
-									new Float:flJumpScareDuration = GetProfileFloat(g_strSlenderProfile[iBossIndex], "jumpscare_duration");
+									new Float:flJumpScareDuration = GetProfileFloat(sProfile, "jumpscare_duration");
 									ClientDoJumpScare(i, iBossIndex, flJumpScareDuration);
 								}
 							}
@@ -6815,7 +6859,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 						
 						if (bDidJumpScare)
 						{
-							g_flSlenderNextJumpScare[iBossIndex] = GetGameTime() + GetProfileFloat(g_strSlenderProfile[iBossIndex], "jumpscare_cooldown");
+							g_flSlenderNextJumpScare[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "jumpscare_cooldown");
 						}
 					}
 				}
@@ -6839,7 +6883,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	new slender = EntRefToEntIndex(entref);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return;
 	
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
+	new iBossIndex = NPCGetFromEntIndex(slender);
 	if (iBossIndex == -1) return;
 	
 	if (timer != g_hSlenderAttackTimer[iBossIndex]) return;
@@ -6850,11 +6894,14 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 		return;
 	}
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	new bool:bAttackEliminated = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
 	
-	new Float:flDamage = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_damage");
-	new Float:flDamageVsProps = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_damage_vs_props", flDamage);
-	new iDamageType = GetProfileNum(g_strSlenderProfile[iBossIndex], "attack_damagetype");
+	new Float:flDamage = GetProfileFloat(sProfile, "attack_damage");
+	new Float:flDamageVsProps = GetProfileFloat(sProfile, "attack_damage_vs_props", flDamage);
+	new iDamageType = GetProfileNum(sProfile, "attack_damagetype");
 	
 	// Damage all players within range.
 	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
@@ -6864,14 +6911,14 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
 	
 	decl Float:flViewPunch[3];
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "attack_punchvel", flViewPunch);
+	GetProfileVector(sProfile, "attack_punchvel", flViewPunch);
 	
 	decl Float:flTargetDist;
 	decl Handle:hTrace;
 	
-	new Float:flAttackRange = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_range");
-	new Float:flAttackFOV = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
-	new Float:flAttackDamageForce = GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_damageforce");
+	new Float:flAttackRange = GetProfileFloat(sProfile, "attack_range");
+	new Float:flAttackFOV = GetProfileFloat(sProfile, "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
+	new Float:flAttackDamageForce = GetProfileFloat(sProfile, "attack_damageforce");
 	
 	new bool:bHit = false;
 	
@@ -7004,16 +7051,16 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 			AcceptEntityInput(phys, "Kill");
 		}
 		
-		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_hitenemy", sSoundPath, sizeof(sSoundPath));
+		GetRandomStringFromProfile(sProfile, "sound_hitenemy", sSoundPath, sizeof(sSoundPath));
 		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 	}
 	else
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_missenemy", sSoundPath, sizeof(sSoundPath));
+		GetRandomStringFromProfile(sProfile, "sound_missenemy", sSoundPath, sizeof(sSoundPath));
 		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
 	}
 	
-	g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iBossIndex], "attack_endafter"), Timer_SlenderChaseBossAttackEnd, entref, TIMER_FLAG_NO_MAPCHANGE);
+	g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(sProfile, "attack_endafter"), Timer_SlenderChaseBossAttackEnd, entref, TIMER_FLAG_NO_MAPCHANGE);
 }
 
 SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAttackFOV)
@@ -7073,7 +7120,7 @@ public Action:Timer_SlenderChaseBossAttackEnd(Handle:timer, any:entref)
 	new slender = EntRefToEntIndex(entref);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return;
 	
-	new iBossIndex = SlenderEntIndexToArrayIndex(slender);
+	new iBossIndex = NPCGetFromEntIndex(slender);
 	if (iBossIndex == -1) return;
 	
 	if (timer != g_hSlenderAttackTimer[iBossIndex]) return;
@@ -7088,28 +7135,31 @@ SlenderPerformVoice(iBossIndex, const String:sSectionName[], iIndex=-1)
 
 	new slender = EntRefToEntIndex(g_iSlender[iBossIndex]);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return;
-
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl String:sPath[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], sSectionName, sPath, sizeof(sPath), iIndex);
+	GetRandomStringFromProfile(sProfile, sSectionName, sPath, sizeof(sPath), iIndex);
 	if (sPath[0])
 	{
 		decl String:sBuffer[512];
 		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
 		StrCat(sBuffer, sizeof(sBuffer), "_cooldown_min");
-		new Float:flCooldownMin = GetProfileFloat(g_strSlenderProfile[iBossIndex], sBuffer, 1.5);
+		new Float:flCooldownMin = GetProfileFloat(sProfile, sBuffer, 1.5);
 		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
 		StrCat(sBuffer, sizeof(sBuffer), "_cooldown_max");
-		new Float:flCooldownMax = GetProfileFloat(g_strSlenderProfile[iBossIndex], sBuffer, 1.5);
+		new Float:flCooldownMax = GetProfileFloat(sProfile, sBuffer, 1.5);
 		new Float:flCooldown = GetRandomFloat(flCooldownMin, flCooldownMax);
 		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
 		StrCat(sBuffer, sizeof(sBuffer), "_volume");
-		new Float:flVolume = GetProfileFloat(g_strSlenderProfile[iBossIndex], sBuffer, 1.0);
+		new Float:flVolume = GetProfileFloat(sProfile, sBuffer, 1.0);
 		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
 		StrCat(sBuffer, sizeof(sBuffer), "_channel");
-		new iChannel = GetProfileNum(g_strSlenderProfile[iBossIndex], sBuffer, SNDCHAN_AUTO);
+		new iChannel = GetProfileNum(sProfile, sBuffer, SNDCHAN_AUTO);
 		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
 		StrCat(sBuffer, sizeof(sBuffer), "_level");
-		new iLevel = GetProfileNum(g_strSlenderProfile[iBossIndex], sBuffer, SNDLEVEL_SCREAMING);
+		new iLevel = GetProfileNum(sProfile, sBuffer, SNDLEVEL_SCREAMING);
 		
 		g_flSlenderNextVoiceSound[iBossIndex] = GetGameTime() + flCooldown;
 		EmitSoundToAll(sPath, slender, iChannel, iLevel, _, flVolume);
@@ -7171,18 +7221,22 @@ SetPageCount(iNum)
 			g_iRoundTime += g_iRoundTimeGainFromPage;
 			if (g_iRoundTime > g_iRoundTimeLimit) g_iRoundTime = g_iRoundTimeLimit;
 			
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			
 			// Increase anger on selected bosses.
 			for (new i = 0; i < MAX_BOSSES; i++)
 			{
-				if (!g_strSlenderProfile[i][0]) continue;
-			
-				new Float:flPageDiff = GetProfileFloat(g_strSlenderProfile[i], "anger_page_time_diff");
+				if (NPCGetUniqueID(i) == -1) continue;
+				
+				NPCGetProfile(i, sProfile, sizeof(sProfile));
+				
+				new Float:flPageDiff = GetProfileFloat(sProfile, "anger_page_time_diff");
 				if (flPageDiff >= 0.0)
 				{
 					new iDiff = g_iPageCount - iOldPageCount;
 					if ((GetGameTime() - g_flPageFoundLastTime) < flPageDiff)
 					{
-						g_flSlenderAnger[i] += (GetProfileFloat(g_strSlenderProfile[i], "anger_page_add") * float(iDiff));
+						g_flSlenderAnger[i] += (GetProfileFloat(sProfile, "anger_page_add") * float(iDiff));
 					}
 				}
 			}
@@ -7902,17 +7956,20 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dB)
 	// Play any sounds, if any.
 	if (g_bPlayerProxy[client])
 	{
-		new iProxyMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
+		new iProxyMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[client]);
 		if (iProxyMaster != -1)
 		{
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			NPCGetProfile(iProxyMaster, sProfile, sizeof(sProfile));
+		
 			decl String:sBuffer[PLATFORM_MAX_PATH];
-			if (GetRandomStringFromProfile(g_strSlenderProfile[iProxyMaster], "sound_proxy_hurt", sBuffer, sizeof(sBuffer)) && sBuffer[0])
+			if (GetRandomStringFromProfile(sProfile, "sound_proxy_hurt", sBuffer, sizeof(sBuffer)) && sBuffer[0])
 			{
-				new iChannel = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_hurt_channel", SNDCHAN_AUTO);
-				new iLevel = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_hurt_level", SNDLEVEL_NORMAL);
-				new iFlags = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_hurt_flags", SND_NOFLAGS);
-				new Float:flVolume = GetProfileFloat(g_strSlenderProfile[iProxyMaster], "sound_proxy_hurt_volume", SNDVOL_NORMAL);
-				new iPitch = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_hurt_pitch", SNDPITCH_NORMAL);
+				new iChannel = GetProfileNum(sProfile, "sound_proxy_hurt_channel", SNDCHAN_AUTO);
+				new iLevel = GetProfileNum(sProfile, "sound_proxy_hurt_level", SNDLEVEL_NORMAL);
+				new iFlags = GetProfileNum(sProfile, "sound_proxy_hurt_flags", SND_NOFLAGS);
+				new Float:flVolume = GetProfileFloat(sProfile, "sound_proxy_hurt_volume", SNDVOL_NORMAL);
+				new iPitch = GetProfileNum(sProfile, "sound_proxy_hurt_pitch", SNDPITCH_NORMAL);
 				
 				EmitSoundToAll(sBuffer, client, iChannel, iLevel, iFlags, flVolume, iPitch);
 			}
@@ -7993,7 +8050,7 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 			// Notify to other bosses that this player has died.
 			for (new i = 0; i < MAX_BOSSES; i++)
 			{
-				if (SlenderGetID(i) == -1) continue;
+				if (NPCGetUniqueID(i) == -1) continue;
 				
 				if (EntRefToEntIndex(g_iSlenderTarget[i]) == client)
 				{
@@ -8007,17 +8064,20 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 		{
 			// We're a proxy, so play some sounds.
 		
-			new iProxyMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
+			new iProxyMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[client]);
 			if (iProxyMaster != -1)
 			{
+				decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+				NPCGetProfile(iProxyMaster, sProfile, sizeof(sProfile));
+				
 				decl String:sBuffer[PLATFORM_MAX_PATH];
-				if (GetRandomStringFromProfile(g_strSlenderProfile[iProxyMaster], "sound_proxy_death", sBuffer, sizeof(sBuffer)) && sBuffer[0])
+				if (GetRandomStringFromProfile(sProfile, "sound_proxy_death", sBuffer, sizeof(sBuffer)) && sBuffer[0])
 				{
-					new iChannel = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_death_channel", SNDCHAN_AUTO);
-					new iLevel = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_death_level", SNDLEVEL_NORMAL);
-					new iFlags = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_death_flags", SND_NOFLAGS);
-					new Float:flVolume = GetProfileFloat(g_strSlenderProfile[iProxyMaster], "sound_proxy_death_volume", SNDVOL_NORMAL);
-					new iPitch = GetProfileNum(g_strSlenderProfile[iProxyMaster], "sound_proxy_death_pitch", SNDPITCH_NORMAL);
+					new iChannel = GetProfileNum(sProfile, "sound_proxy_death_channel", SNDCHAN_AUTO);
+					new iLevel = GetProfileNum(sProfile, "sound_proxy_death_level", SNDLEVEL_NORMAL);
+					new iFlags = GetProfileNum(sProfile, "sound_proxy_death_flags", SND_NOFLAGS);
+					new Float:flVolume = GetProfileFloat(sProfile, "sound_proxy_death_volume", SNDVOL_NORMAL);
+					new iPitch = GetProfileNum(sProfile, "sound_proxy_death_pitch", SNDPITCH_NORMAL);
 					
 					EmitSoundToAll(sBuffer, client, iChannel, iLevel, iFlags, flVolume, iPitch);
 				}
@@ -9207,7 +9267,7 @@ public Native_GetClientBlinkCount(Handle:plugin, numParams)
 
 public Native_GetClientProxyMaster(Handle:plugin, numParams)
 {
-	return SlenderGetFromID(g_iPlayerProxyMaster[GetNativeCell(1)]);
+	return NPCGetFromUniqueID(g_iPlayerProxyMaster[GetNativeCell(1)]);
 }
 
 public Native_GetClientProxyControlAmount(Handle:plugin, numParams)
@@ -9222,7 +9282,7 @@ public Native_GetClientProxyControlRate(Handle:plugin, numParams)
 
 public Native_SetClientProxyMaster(Handle:plugin, numParams)
 {
-	g_iPlayerProxyMaster[GetNativeCell(1)] = SlenderGetID(GetNativeCell(2));
+	g_iPlayerProxyMaster[GetNativeCell(1)] = NPCGetUniqueID(GetNativeCell(2));
 }
 
 public Native_SetClientProxyControlAmount(Handle:plugin, numParams)
@@ -9269,7 +9329,7 @@ public Native_BossIDToBossIndex(Handle:plugin, numParams)
 	new iBossID = GetNativeCell(1);
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (SlenderGetID(i) == iBossID) return i;
+		if (NPCGetUniqueID(i) == iBossID) return i;
 	}
 	
 	return -1;
@@ -9277,12 +9337,15 @@ public Native_BossIDToBossIndex(Handle:plugin, numParams)
 
 public Native_BossIndexToBossID(Handle:plugin, numParams)
 {
-	return SlenderGetID(GetNativeCell(1));
+	return NPCGetUniqueID(GetNativeCell(1));
 }
 
 public Native_GetBossName(Handle:plugin, numParams)
 {
-	SetNativeString(2, g_strSlenderProfile[GetNativeCell(1)], GetNativeCell(3));
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(GetNativeCell(1), sProfile, sizeof(sProfile));
+	
+	SetNativeString(2, sProfile, GetNativeCell(3));
 }
 
 public Native_GetBossModelEntity(Handle:plugin, numParams)
@@ -9310,13 +9373,7 @@ public Native_IsBossProfileValid(Handle:plugin, numParams)
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	GetNativeString(1, sProfile, SF2_MAX_PROFILE_NAME_LENGTH);
 	
-	if (!sProfile[0]) return false;
-	if (g_hConfig == INVALID_HANDLE) return false;
-	
-	KvRewind(g_hConfig);
-	if (!KvJumpToKey(g_hConfig, sProfile)) return false;
-	
-	return true;
+	return IsProfileValid(sProfile);
 }
 
 public Native_GetBossProfileNum(Handle:plugin, numParams)

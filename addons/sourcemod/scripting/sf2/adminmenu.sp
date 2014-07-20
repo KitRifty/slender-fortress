@@ -130,7 +130,7 @@ public AdminMenu_PlayerForceProxyBoss(Handle:menu, MenuAction:action, param1, pa
 		{
 			decl String:sID[64];
 			GetMenuItem(menu, param2, sID, sizeof(sID));
-			new iIndex = SlenderGetFromID(StringToInt(sID));
+			new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 			if (iIndex == -1)
 			{
 				CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);
@@ -464,14 +464,18 @@ static AddBossTargetsToMenu(Handle:hMenu)
 	decl String:sBuffer[512];
 	decl String:sDisplay[512], String:sInfo[64];
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	new iCount;
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (!g_strSlenderProfile[i][0] || g_iSlenderID[i] == -1) continue;
+		new iUniqueID = NPCGetUniqueID(i);
+		if (iUniqueID == -1) continue;
 		
-		GetProfileString(g_strSlenderProfile[i], "name", sBuffer, sizeof(sBuffer));
-		if (!sBuffer[0]) strcopy(sBuffer, sizeof(sBuffer), g_strSlenderProfile[i]);
+		NPCGetProfile(i, sProfile, sizeof(sProfile));
+		
+		GetProfileString(sProfile, "name", sBuffer, sizeof(sBuffer));
+		if (strlen(sBuffer) == 0) strcopy(sBuffer, sizeof(sBuffer), sProfile);
 		
 		Format(sDisplay, sizeof(sDisplay), "%d - %s", i, sBuffer);
 		if (g_iSlenderCopyMaster[i] != -1)
@@ -485,7 +489,7 @@ static AddBossTargetsToMenu(Handle:hMenu)
 			StrCat(sDisplay, sizeof(sDisplay), " (fake)");
 		}
 		
-		IntToString(g_iSlenderID[i], sInfo, sizeof(sInfo));
+		IntToString(iUniqueID, sInfo, sizeof(sInfo));
 		
 		AddMenuItem(hMenu, sInfo, sDisplay);
 		iCount++;
@@ -538,7 +542,7 @@ public AdminMenu_RemoveBoss(Handle:menu, MenuAction:action, param1, param2)
 	{
 		decl String:sID[64];
 		GetMenuItem(menu, param2, sID, sizeof(sID));
-		new iIndex = SlenderGetFromID(StringToInt(sID));
+		new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 		if (iIndex == -1)
 		{
 			CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);
@@ -596,7 +600,7 @@ public AdminMenu_SpawnBoss(Handle:menu, MenuAction:action, param1, param2)
 	{
 		decl String:sID[64];
 		GetMenuItem(menu, param2, sID, sizeof(sID));
-		new iIndex = SlenderGetFromID(StringToInt(sID));
+		new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 		if (iIndex == -1)
 		{
 			CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);
@@ -654,7 +658,7 @@ public AdminMenu_BossAttackWaiters(Handle:menu, MenuAction:action, param1, param
 	{
 		decl String:sID[64];
 		GetMenuItem(menu, param2, sID, sizeof(sID));
-		new iIndex = SlenderGetFromID(StringToInt(sID));
+		new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 		if (iIndex == -1)
 		{
 			CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);
@@ -696,7 +700,7 @@ public AdminMenu_BossAttackWaitersConfirm(Handle:menu, MenuAction:action, param1
 	{
 		decl String:sID[64];
 		GetMenuItem(menu, param2, sID, sizeof(sID));
-		new iIndex = SlenderGetFromID(StringToInt(sID));
+		new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 		if (iIndex == -1)
 		{
 			CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);
@@ -758,7 +762,7 @@ public AdminMenu_BossTeleport(Handle:menu, MenuAction:action, param1, param2)
 	{
 		decl String:sID[64];
 		GetMenuItem(menu, param2, sID, sizeof(sID));
-		new iIndex = SlenderGetFromID(StringToInt(sID));
+		new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 		if (iIndex == -1)
 		{
 			CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);
@@ -800,7 +804,7 @@ public AdminMenu_BossTeleportConfirm(Handle:menu, MenuAction:action, param1, par
 	{
 		decl String:sID[64];
 		GetMenuItem(menu, param2, sID, sizeof(sID));
-		new iIndex = SlenderGetFromID(StringToInt(sID));
+		new iIndex = NPCGetFromUniqueID(StringToInt(sID));
 		if (iIndex == -1)
 		{
 			CPrintToChat(param1, "%t%T", "SF2 Prefix", "SF2 Boss Does Not Exist", param1);

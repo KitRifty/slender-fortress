@@ -157,7 +157,7 @@ public Hook_ClientPreThink(client)
 						
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
-							if (SlenderGetID(i) == -1 || !g_strSlenderProfile[i][0]) continue;
+							if (NPCGetUniqueID(i) == -1) continue;
 							
 							if (g_iSlenderType[i] == 2)
 							{
@@ -189,7 +189,7 @@ public Hook_ClientPreThink(client)
 						decl iState;
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
-							if (SlenderGetID(i) == -1 || !g_strSlenderProfile[i][0]) continue;
+							if (NPCGetUniqueID(i) == -1) continue;
 							
 							if (g_iSlenderType[i] == 2)
 							{
@@ -213,7 +213,7 @@ public Hook_ClientPreThink(client)
 						
 						for (new i = 0; i < MAX_BOSSES; i++)
 						{
-							if (SlenderGetID(i) == -1 || !g_strSlenderProfile[i][0]) continue;
+							if (NPCGetUniqueID(i) == -1) continue;
 							
 							if ((flCurTime - g_flPlayerScareLastTime[client][i]) <= flScareSprintDuration)
 							{
@@ -344,7 +344,7 @@ public Hook_ClientPreThink(client)
 		
 		if (IsPlayerAlive(client))
 		{
-			new iStaticMaster = SlenderGetFromID(g_iPlayerStaticMaster[client]);
+			new iStaticMaster = NPCGetFromUniqueID(g_iPlayerStaticMaster[client]);
 			if (iStaticMaster != -1 && g_iSlenderFlags[iStaticMaster] & SFF_HASVIEWSHAKE)
 			{
 				bDoShake = true;
@@ -538,7 +538,7 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 				if (g_bPlayerProxy[attacker])
 				{
 					new iMaxHealth = SDKCall(g_hSDKGetMaxHealth, victim);
-					new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[attacker]);
+					new iMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[attacker]);
 					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
 					{
 						if (damagecustom == TF_CUSTOM_TAUNT_GRAND_SLAM ||
@@ -571,7 +571,7 @@ public Action:Hook_ClientOnTakeDamage(victim, &attacker, &inflictor, &Float:dama
 				}
 				else if (g_bPlayerProxy[victim])
 				{
-					new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[victim]);
+					new iMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[victim]);
 					if (iMaster != -1 && g_strSlenderProfile[iMaster][0])
 					{
 						g_iPlayerProxyControl[attacker] += GetProfileNum(g_strSlenderProfile[iMaster], "proxies_controlgain_hitbyenemy");
@@ -1501,7 +1501,7 @@ ClientProcessStaticShake(client)
 	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
 	
 	new bool:bOldStaticShake = g_bPlayerInStaticShake[client];
-	new iOldStaticShakeMaster = SlenderGetFromID(g_iPlayerStaticShakeMaster[client]);
+	new iOldStaticShakeMaster = NPCGetFromUniqueID(g_iPlayerStaticShakeMaster[client]);
 	new iNewStaticShakeMaster = -1;
 	new Float:flNewStaticShakeMasterAnger = -1.0;
 	
@@ -1519,14 +1519,14 @@ ClientProcessStaticShake(client)
 	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (SlenderGetID(i) == -1) continue;
+		if (NPCGetUniqueID(i) == -1) continue;
 		
 		if (g_iPlayerStaticMode[client][i] != Static_Increase) continue;
 		if (!(g_iSlenderFlags[i] & SFF_HASSTATICSHAKE)) continue;
 		
 		if (g_flSlenderAnger[i] > flNewStaticShakeMasterAnger)
 		{
-			new iMaster = SlenderGetFromID(g_iSlenderCopyMaster[i]);
+			new iMaster = NPCGetFromUniqueID(g_iSlenderCopyMaster[i]);
 			if (iMaster == -1) iMaster = i;
 			
 			iNewStaticShakeMaster = iMaster;
@@ -1536,20 +1536,23 @@ ClientProcessStaticShake(client)
 	
 	if (iNewStaticShakeMaster != -1)
 	{
-		g_iPlayerStaticShakeMaster[client] = SlenderGetID(iNewStaticShakeMaster);
+		g_iPlayerStaticShakeMaster[client] = NPCGetUniqueID(iNewStaticShakeMaster);
 		
 		if (iNewStaticShakeMaster != iOldStaticShakeMaster)
 		{
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			NPCGetProfile(iNewStaticShakeMaster, sProfile, sizeof(sProfile));
+		
 			if (g_strPlayerStaticShakeSound[client][0])
 			{
 				StopSound(client, SNDCHAN_STATIC, g_strPlayerStaticShakeSound[client]);
 			}
 			
-			g_flPlayerStaticShakeMinVolume[client] = GetProfileFloat(g_strSlenderProfile[iNewStaticShakeMaster], "sound_static_shake_local_volume_min", 0.0);
-			g_flPlayerStaticShakeMaxVolume[client] = GetProfileFloat(g_strSlenderProfile[iNewStaticShakeMaster], "sound_static_shake_local_volume_max", 1.0);
+			g_flPlayerStaticShakeMinVolume[client] = GetProfileFloat(sProfile, "sound_static_shake_local_volume_min", 0.0);
+			g_flPlayerStaticShakeMaxVolume[client] = GetProfileFloat(sProfile, "sound_static_shake_local_volume_max", 1.0);
 			
 			decl String:sStaticSound[PLATFORM_MAX_PATH];
-			GetRandomStringFromProfile(g_strSlenderProfile[iNewStaticShakeMaster], "sound_static_shake_local", sStaticSound, sizeof(sStaticSound));
+			GetRandomStringFromProfile(sProfile, "sound_static_shake_local", sStaticSound, sizeof(sStaticSound));
 			if (sStaticSound[0])
 			{
 				strcopy(g_strPlayerStaticShakeSound[client], sizeof(g_strPlayerStaticShakeSound[]), sStaticSound);
@@ -1674,10 +1677,9 @@ ClientProcessVisibility(client)
 		g_bPlayerSeesSlender[client][i] = false;
 		g_iPlayerStaticMode[client][i] = Static_None;
 		
-		if (SlenderGetID(i) == -1) continue;
+		if (NPCGetUniqueID(i) == -1) continue;
 		
-		strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[i]);
-		if (!sProfile[0]) continue;
+		NPCGetProfile(i, sProfile, sizeof(sProfile));
 		
 		new iBoss = EntRefToEntIndex(g_iSlender[i]);
 		
@@ -1700,7 +1702,7 @@ ClientProcessVisibility(client)
 		{
 			if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 			{
-				new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[i]);
+				new iCopyMaster = NPCGetFromUniqueID(g_iSlenderCopyMaster[i]);
 				
 				if (!IsPointVisibleToPlayer(client, flSlenderEyePos, true, SlenderUsesBlink(i)))
 				{
@@ -1766,7 +1768,7 @@ ClientProcessVisibility(client)
 							
 							if (g_flPlayerStaticAmount[client] >= 1.0)
 							{
-								ClientStartDeathCam(client, SlenderGetFromID(g_iPlayerStaticMaster[client]), flSlenderPos);
+								ClientStartDeathCam(client, NPCGetFromUniqueID(g_iPlayerStaticMaster[client]), flSlenderPos);
 							}
 							else
 							{
@@ -1778,7 +1780,7 @@ ClientProcessVisibility(client)
 			}
 		}
 		
-		new iMaster = SlenderGetFromID(g_iSlenderCopyMaster[i]);
+		new iMaster = NPCGetFromUniqueID(g_iSlenderCopyMaster[i]);
 		if (iMaster == -1) iMaster = i;
 		
 		// Boss visiblity.
@@ -1875,7 +1877,7 @@ ClientProcessVisibility(client)
 	}
 	
 	// Initialize static timers.
-	new iBossLastStatic = SlenderGetFromID(g_iPlayerStaticMaster[client]);
+	new iBossLastStatic = NPCGetFromUniqueID(g_iPlayerStaticMaster[client]);
 	new iBossNewStatic = -1;
 	if (iBossLastStatic != -1 && g_iPlayerStaticMode[client][iBossLastStatic] == Static_Increase)
 	{
@@ -1899,15 +1901,15 @@ ClientProcessVisibility(client)
 	
 	if (iBossNewStatic != -1)
 	{
-		new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossNewStatic]);
+		new iCopyMaster = NPCGetFromUniqueID(g_iSlenderCopyMaster[iBossNewStatic]);
 		if (iCopyMaster != -1)
 		{
 			iBossNewStatic = iCopyMaster;
-			g_iPlayerStaticMaster[client] = SlenderGetID(iCopyMaster);
+			g_iPlayerStaticMaster[client] = NPCGetUniqueID(iCopyMaster);
 		}
 		else
 		{
-			g_iPlayerStaticMaster[client] = SlenderGetID(iBossNewStatic);
+			g_iPlayerStaticMaster[client] = NPCGetUniqueID(iBossNewStatic);
 		}
 	}
 	else
@@ -1944,10 +1946,12 @@ ClientProcessVisibility(client)
 		}
 		else
 		{
+			NPCGetProfile(iBossNewStatic, sProfile, sizeof(sProfile));
+		
 			strcopy(g_strPlayerStaticSound[client], sizeof(g_strPlayerStaticSound[]), "");
 			
 			new String:sStaticSound[PLATFORM_MAX_PATH];
-			GetRandomStringFromProfile(g_strSlenderProfile[iBossNewStatic], "sound_static", sStaticSound, sizeof(sStaticSound), 1);
+			GetRandomStringFromProfile(sProfile, "sound_static", sStaticSound, sizeof(sStaticSound), 1);
 			
 			if (sStaticSound[0]) 
 			{
@@ -1966,8 +1970,8 @@ ClientProcessVisibility(client)
 			TriggerTimer(g_hPlayerLastStaticTimer[client], true);
 			
 			// Start up our own static timer.
-			new Float:flStaticIncreaseRate = GetProfileFloat(g_strSlenderProfile[iBossNewStatic], "static_rate") / g_flRoundDifficultyModifier;
-			new Float:flStaticDecreaseRate = GetProfileFloat(g_strSlenderProfile[iBossNewStatic], "static_rate_decay");
+			new Float:flStaticIncreaseRate = GetProfileFloat(sProfile, "static_rate") / g_flRoundDifficultyModifier;
+			new Float:flStaticDecreaseRate = GetProfileFloat(sProfile, "static_rate_decay");
 			
 			g_flPlayerStaticIncreaseRate[client] = flStaticIncreaseRate;
 			g_flPlayerStaticDecreaseRate[client] = flStaticDecreaseRate;
@@ -2594,11 +2598,11 @@ ClientResetProxy(client, bool:bResetFull=true)
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetProxy(%d)", client);
 #endif
 
-	new iOldMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
-	new String:sOldProfileName[64];
+	new iOldMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[client]);
+	new String:sOldProfileName[SF2_MAX_PROFILE_NAME_LENGTH];
 	if (iOldMaster >= 0)
 	{
-		strcopy(sOldProfileName, sizeof(sOldProfileName), g_strSlenderProfile[iOldMaster]);
+		NPCGetProfile(iOldMaster, sOldProfileName, sizeof(sOldProfileName));
 	}
 	
 	new bool:bOldProxy = g_bPlayerProxy[client];
@@ -2679,17 +2683,20 @@ public Action:Timer_ClientForceProxy(Handle:timer, any:userid)
 	
 	if (!IsRoundEnding())
 	{
-		new iBossIndex = SlenderGetFromID(g_iPlayerProxyAskMaster[client]);
+		new iBossIndex = NPCGetFromUniqueID(g_iPlayerProxyAskMaster[client]);
 		if (iBossIndex != -1)
 		{
-			new iMaxProxies = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_max");
-			new iNumProxies;
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+		
+			new iMaxProxies = GetProfileNum(sProfile, "proxies_max");
+			new iNumProxies = 0;
 			
 			for (new iClient = 1; iClient <= MaxClients; iClient++)
 			{
 				if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 				if (!g_bPlayerProxy[iClient]) continue;
-				if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) != iBossIndex) continue;
+				if (NPCGetFromUniqueID(g_iPlayerProxyMaster[iClient]) != iBossIndex) continue;
 				
 				iNumProxies++;
 			}
@@ -2753,17 +2760,20 @@ public Menu_ProxyAsk(Handle:menu, MenuAction:action, param1, param2)
 		{
 			if (!IsRoundEnding())
 			{
-				new iBossIndex = SlenderGetFromID(g_iPlayerProxyAskMaster[param1]);
+				new iBossIndex = NPCGetFromUniqueID(g_iPlayerProxyAskMaster[param1]);
 				if (iBossIndex != -1)
 				{
-					new iMaxProxies = GetProfileNum(g_strSlenderProfile[iBossIndex], "proxies_max");
+					decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+					NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+				
+					new iMaxProxies = GetProfileNum(sProfile, "proxies_max");
 					new iNumProxies;
 				
 					for (new iClient = 1; iClient <= MaxClients; iClient++)
 					{
 						if (!IsClientInGame(iClient) || !g_bPlayerEliminated[iClient]) continue;
 						if (!g_bPlayerProxy[iClient]) continue;
-						if (SlenderGetFromID(g_iPlayerProxyMaster[iClient]) != iBossIndex) continue;
+						if (NPCGetFromUniqueID(g_iPlayerProxyMaster[iClient]) != iBossIndex) continue;
 						
 						iNumProxies++;
 					}
@@ -2803,12 +2813,12 @@ public Action:Timer_ClientProxyAvailable(Handle:timer, any:userid)
 
 ClientEnableProxy(client, iBossIndex)
 {
-	if (SlenderGetID(iBossIndex) == -1) return;
+	if (NPCGetUniqueID(iBossIndex) == -1) return;
 	if (!(g_iSlenderFlags[iBossIndex] & SFF_PROXIES)) return;
 	if (g_bPlayerProxy[client]) return;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	PvP_SetPlayerPvPState(client, false, false, false);
 	
@@ -2822,7 +2832,7 @@ ClientEnableProxy(client, iBossIndex)
 	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
 	
 	g_bPlayerProxy[client] = true;
-	g_iPlayerProxyMaster[client] = SlenderGetID(iBossIndex);
+	g_iPlayerProxyMaster[client] = NPCGetUniqueID(iBossIndex);
 	g_iPlayerProxyControl[client] = 100;
 	g_flPlayerProxyControlRate[client] = GetProfileFloat(sProfile, "proxies_controldrainrate");
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
@@ -3011,11 +3021,15 @@ ClientResetJumpScare(client)
 
 ClientDoJumpScare(client, iBossIndex, Float:flLifeTime)
 {
-	g_iPlayerJumpScareBoss[client] = SlenderGetID(iBossIndex);
+	g_iPlayerJumpScareBoss[client] = NPCGetUniqueID(iBossIndex);
 	g_flPlayerJumpScareLifeTime[client] = GetGameTime() + flLifeTime;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_jumpscare", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_jumpscare", sBuffer, sizeof(sBuffer), 1);
+	
 	if (strlen(sBuffer) > 0)
 	{
 		EmitSoundToClient(client, sBuffer, _, MUSIC_CHAN);
@@ -3165,7 +3179,7 @@ ClientResetDeathCam(client)
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientResetDeathCam(%d)", client);
 #endif
 	
-	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
+	new iDeathCamBoss = NPCGetFromUniqueID(g_iPlayerDeathCamBoss[client]);
 	
 	g_iPlayerDeathCamBoss[client] = -1;
 	g_bPlayerDeathCam[client] = false;
@@ -3207,11 +3221,12 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 {
 	if (IsClientInDeathCam(client)) return;
 
-	if (iBossIndex < 0 || iBossIndex >= MAX_BOSSES) return;
+	if (!NPCIsValid(iBossIndex)) return;
 	
 	decl String:buffer[PLATFORM_MAX_PATH];
-	new String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	// Call our forward.
 	Call_StartForward(fOnClientCaughtByBoss);
@@ -3234,7 +3249,7 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 		return;
 	}
 	
-	g_iPlayerDeathCamBoss[client] = SlenderGetID(iBossIndex);
+	g_iPlayerDeathCamBoss[client] = NPCGetUniqueID(iBossIndex);
 	g_bPlayerDeathCam[client] = true;
 	g_bPlayerDeathCamShowOverlay[client] = false;
 	
@@ -3311,10 +3326,13 @@ public Action:Timer_ClientResetDeathCam1(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerDeathCamTimer[client]) return;
 	
-	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
+	new iDeathCamBoss = NPCGetFromUniqueID(g_iPlayerDeathCamBoss[client]);
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iDeathCamBoss, sProfile, sizeof(sProfile));
 	
 	g_bPlayerDeathCamShowOverlay[client] = true;
-	g_hPlayerDeathCamTimer[client] = CreateTimer(GetProfileFloat(g_strSlenderProfile[iDeathCamBoss], "death_cam_time_death"), Timer_ClientResetDeathCamEnd, userid, TIMER_FLAG_NO_MAPCHANGE);
+	g_hPlayerDeathCamTimer[client] = CreateTimer(GetProfileFloat(sProfile, "death_cam_time_death"), Timer_ClientResetDeathCamEnd, userid, TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
@@ -3326,7 +3344,7 @@ public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
 	
 	SetEntProp(client, Prop_Data, "m_takedamage", 2); // We do this because the point_viewcontrol entity changes our damage state.
 	
-	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
+	new iDeathCamBoss = NPCGetFromUniqueID(g_iPlayerDeathCamBoss[client]);
 	if (iDeathCamBoss != -1)
 	{
 		if (SlenderHasAttribute(iDeathCamBoss, "ignite player on death"))
@@ -3454,14 +3472,14 @@ bool:IsClientInGhostMode(client)
 
 ClientPerformScare(client, iBossIndex)
 {
-	if (SlenderGetID(iBossIndex) == -1)
+	if (NPCGetUniqueID(iBossIndex) == -1)
 	{
 		LogError("Could not perform scare on client %d: boss does not exist!", client);
 		return;
 	}
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	g_flPlayerScareLastTime[client][iBossIndex] = GetGameTime();
 	g_flPlayerScareNextTime[client][iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "scare_cooldown");
@@ -3510,7 +3528,7 @@ ClientPerformScare(client, iBossIndex)
 
 ClientPerformSightSound(client, iBossIndex)
 {
-	if (SlenderGetID(iBossIndex) == -1)
+	if (NPCGetUniqueID(iBossIndex) == -1)
 	{
 		LogError("Could not perform sight sound on client %d: boss does not exist!", client);
 		return;
@@ -3518,11 +3536,11 @@ ClientPerformSightSound(client, iBossIndex)
 	
 	if (!(g_iSlenderFlags[iBossIndex] & SFF_HASSIGHTSOUNDS)) return;
 	
-	new iMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]);
+	new iMaster = NPCGetFromUniqueID(g_iSlenderCopyMaster[iBossIndex]);
 	if (iMaster == -1) iMaster = iBossIndex;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	decl String:sSightSound[PLATFORM_MAX_PATH];
 	GetRandomStringFromProfile(sProfile, "sound_sight", sSightSound, sizeof(sSightSound));
@@ -3622,7 +3640,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 		
 		for (new i = 0; i < MAX_BOSSES; i++)
 		{
-			if (SlenderGetID(i) == -1) continue;
+			if (NPCGetUniqueID(i) == -1) continue;
 			
 			new iSlender = EntRefToEntIndex(g_iSlender[i]);
 			if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
@@ -3791,16 +3809,22 @@ Float:ClientGetBlinkRate(client)
 		flValue *= 0.75;
 	}
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
+		if (NPCGetUniqueID(i) == -1) continue;
+		
+		NPCGetProfile(i, sProfile, sizeof(sProfile));
+		
 		if (g_bPlayerSeesSlender[client][i]) 
 		{
-			flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_look_rate_multiply", 1.0);
+			flValue *= GetProfileFloat(sProfile, "blink_look_rate_multiply", 1.0);
 		}
 		
 		else if (g_iPlayerStaticMode[client][i] == Static_Increase)
 		{
-			flValue *= GetProfileFloat(g_strSlenderProfile[i], "blink_static_rate_multiply", 1.0);
+			flValue *= GetProfileFloat(sProfile, "blink_static_rate_multiply", 1.0);
 		}
 	}
 	
@@ -3876,18 +3900,21 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	
 	if (IsRoundInWarmup()) return Plugin_Continue;
 	
-	new iDeathCamBoss = SlenderGetFromID(g_iPlayerDeathCamBoss[client]);
-	new iJumpScareBoss = SlenderGetFromID(g_iPlayerJumpScareBoss[client]);
+	new iDeathCamBoss = NPCGetFromUniqueID(g_iPlayerDeathCamBoss[client]);
+	new iJumpScareBoss = NPCGetFromUniqueID(g_iPlayerJumpScareBoss[client]);
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	decl String:sMaterial[PLATFORM_MAX_PATH];
 	
 	if (IsClientInDeathCam(client) && iDeathCamBoss != -1 && g_bPlayerDeathCamShowOverlay[client])
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[iDeathCamBoss], "overlay_player_death", sMaterial, sizeof(sMaterial), 1);
+		NPCGetProfile(iDeathCamBoss, sProfile, sizeof(sProfile));
+		GetRandomStringFromProfile(sProfile, "overlay_player_death", sMaterial, sizeof(sMaterial), 1);
 	}
 	else if (iJumpScareBoss != -1 && GetGameTime() <= g_flPlayerJumpScareLifeTime[client])
 	{
-		GetRandomStringFromProfile(g_strSlenderProfile[iJumpScareBoss], "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
+		NPCGetProfile(iJumpScareBoss, sProfile, sizeof(sProfile));
+		GetRandomStringFromProfile(sProfile, "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
 	}
 	else if (IsRoundInWarmup() || g_bPlayerEliminated[client] || DidClientEscape(client) && !IsClientInGhostMode(client))
 	{
@@ -3993,10 +4020,16 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 		new Float:fl20DollarsAnger = -1.0;
 		
 		decl Float:flBuffer[3], Float:flBuffer2[3], Float:flBuffer3[3];
+		
+		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		
 		for (new i = 0; i < MAX_BOSSES; i++)
 		{
-			if (!g_strSlenderProfile[i][0]) continue;
+			if (NPCGetUniqueID(i) == -1) continue;
+			
 			if (SlenderArrayIndexToEntIndex(i) == INVALID_ENT_REFERENCE) continue;
+			
+			NPCGetProfile(i, sProfile, sizeof(sProfile));
 			
 			new iBossType = g_iSlenderType[i];
 			
@@ -4017,7 +4050,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 							(iTarget == client || GetVectorDistance(flBuffer, flBuffer2) <= 850.0 || GetVectorDistance(flBuffer, flBuffer3) <= 850.0 || GetVectorDistance(flBuffer, g_flSlenderGoalPos[i]) <= 850.0))
 						{
 							decl String:sPath[PLATFORM_MAX_PATH];
-							GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sPath, sizeof(sPath), 1);
+							GetRandomStringFromProfile(sProfile, "sound_chase_music", sPath, sizeof(sPath), 1);
 							if (sPath[0])
 							{
 								if (g_flSlenderAnger[i] > flAnger)
@@ -4032,7 +4065,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 							{
 								if (iOldChasingSeeBoss == -1 || !PlayerCanSeeSlender(client, iOldChasingSeeBoss, false) || (g_flSlenderAnger[i] > flSeeAnger))
 								{
-									GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_visible", sPath, sizeof(sPath), 1);
+									GetRandomStringFromProfile(sProfile, "sound_chase_visible", sPath, sizeof(sPath), 1);
 									
 									if (sPath[0])
 									{
@@ -4045,7 +4078,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 								{
 									if (iOld20DollarsBoss == -1 || !PlayerCanSeeSlender(client, iOld20DollarsBoss, false) || (g_flSlenderAnger[i] > fl20DollarsAnger))
 									{
-										GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_20dollars_music", sPath, sizeof(sPath), 1);
+										GetRandomStringFromProfile(sProfile, "sound_20dollars_music", sPath, sizeof(sPath), 1);
 										
 										if (sPath[0])
 										{
@@ -4061,7 +4094,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 					if (g_iSlenderState[i] == STATE_ALERT)
 					{
 						decl String:sPath[PLATFORM_MAX_PATH];
-						GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sPath, sizeof(sPath), 1);
+						GetRandomStringFromProfile(sProfile, "sound_alert_music", sPath, sizeof(sPath), 1);
 						if (!sPath[0]) continue;
 					
 						if (!(g_iSlenderFlags[i] & SFF_MARKEDASFAKE))
@@ -4396,16 +4429,20 @@ stock Client20DollarsMusicReset(client)
 	
 	g_iPlayer20DollarsMusicMaster[client] = -1;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		g_hPlayer20DollarsMusicTimer[client][i] = INVALID_HANDLE;
 		g_flPlayer20DollarsMusicVolumes[client][i] = 0.0;
 		
-		if (g_strSlenderProfile[i][0])
+		if (NPCGetUniqueID(i) != -1)
 		{
 			if (IsValidClient(client))
 			{
-				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_20dollars_music", sOldMusic, sizeof(sOldMusic), 1);
+				NPCGetProfile(i, sProfile, sizeof(sProfile));
+			
+				GetRandomStringFromProfile(sProfile, "sound_20dollars_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 			}
 		}
@@ -4419,8 +4456,11 @@ stock Client20DollarsMusicStart(client, iBossIndex)
 	new iOldMaster = g_iPlayer20DollarsMusicMaster[client];
 	if (iOldMaster == iBossIndex) return;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	new String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_20dollars_music", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_20dollars_music", sBuffer, sizeof(sBuffer), 1);
 	
 	if (!sBuffer[0]) return;
 	
@@ -4459,16 +4499,20 @@ stock ClientAlertMusicReset(client)
 	
 	g_iPlayerAlertMusicMaster[client] = -1;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		g_hPlayerAlertMusicTimer[client][i] = INVALID_HANDLE;
 		g_flPlayerAlertMusicVolumes[client][i] = 0.0;
 		
-		if (g_strSlenderProfile[i][0])
+		if (NPCGetUniqueID(i) != -1)
 		{
 			if (IsValidClient(client))
 			{
-				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_alert_music", sOldMusic, sizeof(sOldMusic), 1);
+				NPCGetProfile(i, sProfile, sizeof(sProfile));
+			
+				GetRandomStringFromProfile(sProfile, "sound_alert_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 			}
 		}
@@ -4482,8 +4526,11 @@ stock ClientAlertMusicStart(client, iBossIndex)
 	new iOldMaster = g_iPlayerAlertMusicMaster[client];
 	if (iOldMaster == iBossIndex) return;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	new String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_alert_music", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_alert_music", sBuffer, sizeof(sBuffer), 1);
 	
 	if (!sBuffer[0]) return;
 	
@@ -4522,16 +4569,20 @@ stock ClientChaseMusicReset(client)
 	
 	g_iPlayerChaseMusicMaster[client] = -1;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		g_hPlayerChaseMusicTimer[client][i] = INVALID_HANDLE;
 		g_flPlayerChaseMusicVolumes[client][i] = 0.0;
 		
-		if (g_strSlenderProfile[i][0])
+		if (NPCGetUniqueID(i) != -1)
 		{
 			if (IsValidClient(client))
 			{
-				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_music", sOldMusic, sizeof(sOldMusic), 1);
+				NPCGetProfile(i, sProfile, sizeof(sProfile));
+				
+				GetRandomStringFromProfile(sProfile, "sound_chase_music", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 			}
 		}
@@ -4545,8 +4596,11 @@ stock ClientMusicChaseStart(client, iBossIndex)
 	new iOldMaster = g_iPlayerChaseMusicMaster[client];
 	if (iOldMaster == iBossIndex) return;
 	
-	new String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase_music", sBuffer, sizeof(sBuffer), 1);
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
+	decl String:sBuffer[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(sProfile, "sound_chase_music", sBuffer, sizeof(sBuffer), 1);
 	
 	if (!sBuffer[0]) return;
 	
@@ -4585,16 +4639,20 @@ stock ClientChaseMusicSeeReset(client)
 	
 	g_iPlayerChaseMusicSeeMaster[client] = -1;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
 		g_hPlayerChaseMusicSeeTimer[client][i] = INVALID_HANDLE;
 		g_flPlayerChaseMusicSeeVolumes[client][i] = 0.0;
 		
-		if (g_strSlenderProfile[i][0])
+		if (NPCGetUniqueID(i) != -1)
 		{
 			if (IsClientInGame(client))
 			{
-				GetRandomStringFromProfile(g_strSlenderProfile[i], "sound_chase_visible", sOldMusic, sizeof(sOldMusic), 1);
+				NPCGetProfile(i, sProfile, sizeof(sProfile));
+			
+				GetRandomStringFromProfile(sProfile, "sound_chase_visible", sOldMusic, sizeof(sOldMusic), 1);
 				if (sOldMusic[0]) StopSound(client, MUSIC_CHAN, sOldMusic);
 			}
 		}
@@ -4608,8 +4666,11 @@ stock ClientMusicChaseSeeStart(client, iBossIndex)
 	new iOldMaster = g_iPlayerChaseMusicSeeMaster[client];
 	if (iOldMaster == iBossIndex) return;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	new String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase_visible", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_chase_visible", sBuffer, sizeof(sBuffer), 1);
 	if (!sBuffer[0]) return;
 	
 	g_iPlayerChaseMusicSeeMaster[client] = iBossIndex;
@@ -4728,9 +4789,12 @@ public Action:Timer_PlayerFadeOut20DollarsMusic(Handle:timer, any:userid)
 	
 	if (iBossIndex == -1) return Plugin_Stop;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_20dollars_music", sBuffer, sizeof(sBuffer), 1);
-
+	GetRandomStringFromProfile(sProfile, "sound_20dollars_music", sBuffer, sizeof(sBuffer), 1);
+	
 	if (StrEqual(sBuffer, g_strPlayer20DollarsMusic[client], false))
 	{
 		g_hPlayer20DollarsMusicTimer[client][iBossIndex] = INVALID_HANDLE;
@@ -4799,8 +4863,11 @@ public Action:Timer_PlayerFadeOutAlertMusic(Handle:timer, any:userid)
 	
 	if (iBossIndex == -1) return Plugin_Stop;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_alert_music", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_alert_music", sBuffer, sizeof(sBuffer), 1);
 
 	if (StrEqual(sBuffer, g_strPlayerAlertMusic[client], false))
 	{
@@ -4901,8 +4968,11 @@ public Action:Timer_PlayerFadeOutChaseMusic(Handle:timer, any:userid)
 	
 	if (iBossIndex == -1) return Plugin_Stop;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase_music", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_chase_music", sBuffer, sizeof(sBuffer), 1);
 
 	if (StrEqual(sBuffer, g_strPlayerChaseMusic[client], false))
 	{
@@ -4941,8 +5011,11 @@ public Action:Timer_PlayerFadeOutChaseMusicSee(Handle:timer, any:userid)
 	
 	if (iBossIndex == -1) return Plugin_Stop;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_chase_visible", sBuffer, sizeof(sBuffer), 1);
+	GetRandomStringFromProfile(sProfile, "sound_chase_visible", sBuffer, sizeof(sBuffer), 1);
 
 	if (StrEqual(sBuffer, g_strPlayerChaseMusicSee[client], false))
 	{
@@ -4992,7 +5065,8 @@ stock ClientRemoveMusicFlag(client, iFlag)
 stock ClientStopAllSlenderSounds(client, const String:profileName[], const String:sectionName[], iChannel)
 {
 	if (!client || !IsValidEntity(client)) return;
-	if (g_hConfig == INVALID_HANDLE) return;
+	
+	if (!IsProfileValid(profileName)) return;
 	
 	decl String:buffer[PLATFORM_MAX_PATH];
 	
@@ -5683,12 +5757,12 @@ public Action:Timer_ApplyCustomModel(Handle:timer, any:userid)
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return;
 	
-	new iMaster = SlenderGetFromID(g_iPlayerProxyMaster[client]);
+	new iMaster = NPCGetFromUniqueID(g_iPlayerProxyMaster[client]);
 	
 	if (g_bPlayerProxy[client] && iMaster != -1)
 	{
 		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-		strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iMaster]);
+		NPCGetProfile(iMaster, sProfile, sizeof(sProfile));
 		
 		// Set custom model, if any.
 		decl String:sBuffer[PLATFORM_MAX_PATH];

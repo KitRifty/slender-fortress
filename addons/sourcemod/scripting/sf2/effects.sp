@@ -22,7 +22,7 @@ SlenderSpawnEffects(iBossIndex, EffectEvent:iEvent)
 {
 	if (iBossIndex < 0 || iBossIndex >= MAX_BOSSES) return;
 	
-	new iBossID = SlenderGetID(iBossIndex);
+	new iBossID = NPCGetUniqueID(iBossIndex);
 	if (iBossID == -1) return;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];

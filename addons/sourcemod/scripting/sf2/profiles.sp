@@ -226,7 +226,14 @@ stock bool:GetProfileColor(const String:strName[],
 	KvRewind(g_hConfig);
 	KvJumpToKey(g_hConfig, strName);
 	
-	KvGetColor(g_hConfig, keyValue, r, g, b, a);
+	decl String:sValue[64];
+	KvGetString(g_hConfig, keyValue, sValue, sizeof(sValue));
+	
+	if (strlen(sValue) != 0)
+	{
+		KvGetColor(g_hConfig, keyValue, r, g, b, a);
+	}
+	
 	return true;
 }
 

@@ -9,24 +9,44 @@
 
 static g_iSlenderGlobalID = -1;
 
-new g_iSlenderID[MAX_BOSSES] = { -1, ... };
-
-SlenderGetID(iBossIndex)
-{
-	return g_iSlenderID[iBossIndex];
-}
+static g_iSlenderID[MAX_BOSSES] = { -1, ... };
 
 public SlenderOnConfigsExecuted()
 {
 	g_iSlenderGlobalID = -1;
 }
 
-SlenderGetCount()
+bool:NPCIsValid(iNPCIndex)
+{
+	return bool:(iNPCIndex >= 0 && iNPCIndex < MAX_BOSSES && NPCGetUniqueID(iNPCIndex) != -1);
+}
+
+NPCGetUniqueID(iNPCIndex)
+{
+	return g_iSlenderID[iNPCIndex];
+}
+
+NPCGetFromUniqueID(iNPCUniqueID)
+{
+	if (iNPCUniqueID == -1) return -1;
+	
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		if (NPCGetUniqueID(i) == iNPCUniqueID)
+		{
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
+NPCGetCount()
 {
 	new iCount;
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (SlenderGetID(i) == -1) continue;
+		if (NPCGetUniqueID(i) == -1) continue;
 		if (g_iSlenderFlags[i] & SFF_FAKE) continue;
 		
 		iCount++;
@@ -35,19 +55,33 @@ SlenderGetCount()
 	return iCount;
 }
 
+bool:NPCGetProfile(iNPCIndex, String:buffer[], bufferlen)
+{
+	strcopy(buffer, bufferlen, g_strSlenderProfile[iNPCIndex]);
+	return true;
+}
+
+NPCSetProfile(iNPCIndex, const String:sProfile[])
+{
+	strcopy(g_strSlenderProfile[iNPCIndex], sizeof(g_strSlenderProfile[]), sProfile);
+}
+
 bool:SlenderCanRemove(iBossIndex)
 {
-	if (SlenderGetID(iBossIndex) == -1) return false;
+	if (NPCGetUniqueID(iBossIndex) == -1) return false;
 	
 	if (PeopleCanSeeSlender(iBossIndex, _, false)) return false;
 	
-	new iTeleportType = GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_type");
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
+	new iTeleportType = GetProfileNum(sProfile, "teleport_type");
 	
 	switch (iTeleportType)
 	{
 		case 0:
 		{
-			if (GetProfileNum(g_strSlenderProfile[iBossIndex], "static_on_radius"))
+			if (GetProfileNum(sProfile, "static_on_radius"))
 			{
 				decl Float:flSlenderPos[3], Float:flBuffer[3];
 				SlenderGetAbsOrigin(iBossIndex, flSlenderPos);
@@ -63,7 +97,7 @@ bool:SlenderCanRemove(iBossIndex)
 					if (!IsPointVisibleToPlayer(i, flSlenderPos, false, false)) continue;
 					
 					GetClientAbsOrigin(i, flBuffer);
-					if (GetVectorDistance(flBuffer, flSlenderPos) <= GetProfileFloat(g_strSlenderProfile[iBossIndex], "static_radius"))
+					if (GetVectorDistance(flBuffer, flSlenderPos) <= GetProfileFloat(sProfile, "static_radius"))
 					{
 						return false;
 					}
@@ -100,15 +134,18 @@ bool:SlenderCanRemove(iBossIndex)
 bool:SlenderGetAbsOrigin(iBossIndex, Float:buffer[3], const Float:flDefaultValue[3]={ 0.0, 0.0, 0.0 })
 {
 	for (new i = 0; i < 3; i++) buffer[i] = flDefaultValue[i];
-
-	if (iBossIndex < 0 || !g_strSlenderProfile[iBossIndex][0]) return false;
+	
+	if (iBossIndex < 0 || NPCGetUniqueID(iBossIndex) == -1) return false;
 	
 	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return false;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl Float:flPos[3], Float:flOffset[3];
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flPos);
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "pos_offset", flOffset, flDefaultValue);
+	GetProfileVector(sProfile, "pos_offset", flOffset, flDefaultValue);
 	SubtractVectors(flPos, flOffset, buffer);
 	
 	return true;
@@ -117,15 +154,18 @@ bool:SlenderGetAbsOrigin(iBossIndex, Float:buffer[3], const Float:flDefaultValue
 bool:SlenderGetEyePosition(iBossIndex, Float:buffer[3], const Float:flDefaultValue[3]={ 0.0, 0.0, 0.0 })
 {
 	for (new i = 0; i < 3; i++) buffer[i] = flDefaultValue[i];
-
-	if (iBossIndex < 0 || !g_strSlenderProfile[iBossIndex][0]) return false;
+	
+	if (iBossIndex < 0 || NPCGetUniqueID(iBossIndex) == -1) return false;
 	
 	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return false;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl Float:flPos[3], Float:flEyePos[3];
 	SlenderGetAbsOrigin(iBossIndex, flPos);
-	GetProfileVector(g_strSlenderProfile[iBossIndex], "eye_pos", flEyePos);
+	GetProfileVector(sProfile, "eye_pos", flEyePos);
 	AddVectors(flPos, flEyePos, buffer);
 	
 	return true;
@@ -149,7 +189,8 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	
 	++g_iSlenderGlobalID;
 	
-	strcopy(g_strSlenderProfile[iBossIndex], sizeof(g_strSlenderProfile[]), sProfile);
+	NPCSetProfile(iBossIndex, sProfile);
+	
 	g_iSlenderType[iBossIndex] = GetProfileNum(sProfile, "type");
 	g_iSlenderID[iBossIndex] = g_iSlenderGlobalID;
 	GetProfileVector(sProfile, "eye_pos", g_flSlenderEyePosOffset[iBossIndex]);
@@ -234,7 +275,7 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 	
 	g_hSlenderThink[iBossIndex] = CreateTimer(0.1, Timer_SlenderTeleportThink, iBossIndex, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
-	if (iCopyMaster >= 0 && iCopyMaster < MAX_BOSSES && SlenderGetID(iCopyMaster) != -1)
+	if (iCopyMaster >= 0 && iCopyMaster < MAX_BOSSES && NPCGetUniqueID(iCopyMaster) != -1)
 	{
 		g_iSlenderCopyMaster[iBossIndex] = iCopyMaster;
 		g_flSlenderAnger[iBossIndex] = g_flSlenderAnger[iCopyMaster];
@@ -292,7 +333,7 @@ AddProfile(const String:strName[], iFlags=0, iCopyMaster=-1, bool:bSpawnCompanio
 {
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (SlenderGetID(i) == -1)
+		if (NPCGetUniqueID(i) == -1)
 		{
 			if (SelectProfile(i, strName, iFlags, iCopyMaster, bSpawnCompanions, bPlaySpawnSound))
 			{
@@ -315,6 +356,9 @@ RemoveProfile(iBossIndex)
 	Call_PushCell(iBossIndex);
 	Call_Finish();
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	// Remove all possible sounds, for emergencies.
 	for (new i = 1; i <= MaxClients; i++)
 	{
@@ -323,7 +367,7 @@ RemoveProfile(iBossIndex)
 		// Remove chase music.
 		if (g_iPlayerChaseMusicMaster[i] == iBossIndex)
 		{
-			ClientStopAllSlenderSounds(i, g_strSlenderProfile[iBossIndex], "sound_chase", SNDCHAN_AUTO);
+			ClientStopAllSlenderSounds(i, sProfile, "sound_chase", SNDCHAN_AUTO);
 		}
 	}
 	
@@ -341,7 +385,7 @@ RemoveProfile(iBossIndex)
 		
 		if (IsClientInGame(i))
 		{
-			if (SlenderGetID(iBossIndex) == g_iPlayerStaticMaster[i])
+			if (NPCGetUniqueID(iBossIndex) == g_iPlayerStaticMaster[i])
 			{
 				g_iPlayerStaticMaster[i] = -1;
 				
@@ -367,7 +411,7 @@ RemoveProfile(iBossIndex)
 	// Remove all copies associated with me.
 	for (new i = 0; i < MAX_BOSSES; i++)
 	{
-		if (i == iBossIndex || SlenderGetID(i) == -1) continue;
+		if (i == iBossIndex || NPCGetUniqueID(i) == -1) continue;
 		
 		if (g_iSlenderCopyMaster[i] == iBossIndex)
 		{
@@ -376,7 +420,8 @@ RemoveProfile(iBossIndex)
 		}
 	}
 	
-	strcopy(g_strSlenderProfile[iBossIndex], sizeof(g_strSlenderProfile[]), "");
+	NPCSetProfile(iBossIndex, "");
+	
 	g_iSlenderFlags[iBossIndex] = 0;
 	g_iSlenderCopyMaster[iBossIndex] = -1;
 	g_iSlenderID[iBossIndex] = -1;
@@ -420,7 +465,7 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 	RemoveSlender(iBossIndex);
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	decl Float:flTruePos[3];
 	GetProfileVector(sProfile, "pos_offset", flTruePos);
@@ -576,18 +621,21 @@ SpawnSlender(iBossIndex, const Float:pos[3])
 
 RemoveSlender(iBossIndex)
 {
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+
 	new iBoss = SlenderArrayIndexToEntIndex(iBossIndex);
 	g_iSlender[iBossIndex] = INVALID_ENT_REFERENCE;
 	
 	if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 	{
 		// Stop all possible looping sounds.
-		ClientStopAllSlenderSounds(iBoss, g_strSlenderProfile[iBossIndex], "sound_move", SNDCHAN_AUTO);
+		ClientStopAllSlenderSounds(iBoss, sProfile, "sound_move", SNDCHAN_AUTO);
 		
 		if (g_iSlenderFlags[iBossIndex] & SFF_HASSTATICLOOPLOCALSOUND)
 		{
 			decl String:sLoopSound[PLATFORM_MAX_PATH];
-			GetRandomStringFromProfile(g_strSlenderProfile[iBossIndex], "sound_static_loop_local", sLoopSound, sizeof(sLoopSound), 1);
+			GetRandomStringFromProfile(sProfile, "sound_static_loop_local", sLoopSound, sizeof(sLoopSound), 1);
 			
 			if (sLoopSound[0])
 			{
@@ -606,11 +654,14 @@ stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
 	new iSlender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (!iSlender || iSlender == INVALID_ENT_REFERENCE) return false;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl Float:flHisPos[3], Float:flMyPos[3];
 	GetClientAbsOrigin(client, flHisPos);
 	SlenderGetAbsOrigin(iBossIndex, flMyPos);
 	
-	new Float:flHearRadius = GetProfileFloat(g_strSlenderProfile[iBossIndex], "search_sound_range", 1024.0);
+	new Float:flHearRadius = GetProfileFloat(sProfile, "search_sound_range", 1024.0);
 	if (flHearRadius <= 0.0) return false;
 	
 	new Float:flDistance = GetVectorDistance(flHisPos, flMyPos);
@@ -673,7 +724,7 @@ stock bool:SlenderCanHearPlayer(iBossIndex, client, SoundType:iSoundType)
 	return true;
 }
 
-stock SlenderEntIndexToArrayIndex(entity)
+stock NPCGetFromEntIndex(entity)
 {
 	if (!entity || !IsValidEntity(entity)) return -1;
 	
@@ -752,6 +803,9 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 	new slender = SlenderArrayIndexToEntIndex(iBossIndex);
 	if (!slender || slender == INVALID_ENT_REFERENCE) return false;
 	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
 	decl Float:flSlenderPos[3], Float:flPos[3], Float:flReferenceAng[3], Float:hisEyeAng[3], Float:tempDir[3], Float:tempPos[3];
 	GetClientEyePosition(iBestPlayer, flPos);
 	
@@ -764,8 +818,8 @@ bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 	SubtractVectors(flPos, flSlenderPos, flReferenceAng);
 	GetVectorAngles(flReferenceAng, flReferenceAng);
 	for (new i = 0; i < 3; i++) flReferenceAng[i] = AngleNormalize(flReferenceAng[i]);
-	new Float:flDist = GetProfileFloat(g_strSlenderProfile[iBossIndex], "speed") * g_flRoundDifficultyModifier;
-	if (flDist < GetProfileFloat(g_strSlenderProfile[iBossIndex], "kill_radius")) flDist = GetProfileFloat(g_strSlenderProfile[iBossIndex], "kill_radius") / 2.0;
+	new Float:flDist = GetProfileFloat(sProfile, "speed") * g_flRoundDifficultyModifier;
+	if (flDist < GetProfileFloat(sProfile, "kill_radius")) flDist = GetProfileFloat(sProfile, "kill_radius") / 2.0;
 	new Float:flWithinFOV = 45.0;
 	new Float:flWithinFOVSide = 90.0;
 	
@@ -1012,6 +1066,9 @@ bool:SlenderChaseBossCalculateNewPlace(iBossIndex, const Float:flActiveAreaCente
 
 bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=false, bool:bProxy=false, iProxyPlayer=-1, &iBestPlayer=-1)
 {
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+
 	new Float:flPercent = 0.0;
 	if (g_iPageMax > 0)
 	{
@@ -1053,7 +1110,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 					// Get the boss that's targeting this player, if any.
 					for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 					{
-						if (iBossIndex == iBoss || SlenderGetID(iBoss) == -1) continue;
+						if (iBossIndex == iBoss || NPCGetUniqueID(iBoss) == -1) continue;
 						
 						if (EntRefToEntIndex(g_iSlenderTarget[iBoss]) == iBossPlayer)
 						{
@@ -1081,7 +1138,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 		if (GetArraySize(hArray))
 		{
 			if (g_iSlenderCopyMaster[iBossIndex] == -1 ||
-				GetProfileNum(g_strSlenderProfile[iBossIndex], "copy_calculatepagecount", 0))
+				GetProfileNum(sProfile, "copy_calculatepagecount", 0))
 			{
 				new tempBestPageCount = -1;
 				
@@ -1144,8 +1201,8 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	
 	new iRange = 1;
 	new Float:flChance = GetRandomFloat(0.0, 1.0);
-	new Float:flMaxRangeN = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_range_max");
-	new Float:flMinRangeN = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_range_min");
+	new Float:flMaxRangeN = GetProfileFloat(sProfile, "teleport_range_max");
+	new Float:flMinRangeN = GetProfileFloat(sProfile, "teleport_range_min");
 	
 	new bool:bVisiblePls = false;
 	new bool:bBeCreepy = false;
@@ -1153,14 +1210,14 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	if (!bProxy)
 	{
 		// Are we gonna teleport in front of a player this time?
-		if (GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_ignorevis_enable"))
+		if (GetProfileNum(sProfile, "teleport_ignorevis_enable"))
 		{
-			if (GetRandomFloat(0.0, 1.0) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_ignorevis_chance") * g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier)
+			if (GetRandomFloat(0.0, 1.0) < GetProfileFloat(sProfile, "teleport_ignorevis_chance") * g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier)
 			{
 				bVisiblePls = true;
 			}
 			
-			if (GetRandomFloat(0.0, 1.0) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_creepy_chance", 0.33))
+			if (GetRandomFloat(0.0, 1.0) < GetProfileFloat(sProfile, "teleport_creepy_chance", 0.33))
 			{
 				bBeCreepy = true;
 			}
@@ -1172,8 +1229,8 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 	
 	if (bVisiblePls)
 	{
-		flMaxRange = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_ignorevis_range_max", flMaxRangeN);
-		flMinRange = GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_ignorevis_range_min", flMinRangeN);
+		flMaxRange = GetProfileFloat(sProfile, "teleport_ignorevis_range_max", flMaxRangeN);
+		flMinRange = GetProfileFloat(sProfile, "teleport_ignorevis_range_min", flMinRangeN);
 	}
 	
 	// Get distances.
@@ -1291,8 +1348,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				for (new i2 = 0; i2 < MAX_BOSSES; i2++)
 				{
 					if (i2 == iBossIndex) continue;
-					if (SlenderGetID(i2) == -1) continue;
-					if (!g_strSlenderProfile[i2][0]) continue;
+					if (NPCGetUniqueID(i2) == -1) continue;
 					
 					// If I'm a main boss, only check the distance between my copies and me.
 					if (g_iSlenderCopyMaster[iBossIndex] == -1)
@@ -1310,7 +1366,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 					if (!iSlender || iSlender == INVALID_ENT_REFERENCE) continue;
 					
 					SlenderGetAbsOrigin(i2, flBuffer);
-					if (GetVectorDistance(flBuffer, tempPos) < GetProfileFloat(g_strSlenderProfile[iBossIndex], "teleport_dist_from_other_copies", 800.0))
+					if (GetVectorDistance(flBuffer, tempPos) < GetProfileFloat(sProfile, "teleport_dist_from_other_copies", 800.0))
 					{
 						bTooClose = true;
 						break;
@@ -1322,7 +1378,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			
 			// Check from top to bottom of me.
 			
-			new bool:bCheckBlink = bool:GetProfileNum(g_strSlenderProfile[iBossIndex], "teleport_use_blink");
+			new bool:bCheckBlink = bool:GetProfileNum(sProfile, "teleport_use_blink");
 			
 			// Check if my copy master or my fellow copies could see this position.
 			new bool:bDontAddPosition = false;
@@ -1372,7 +1428,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				for (new i3 = 0; i3 < MAX_BOSSES; i3++)
 				{
 					if (i3 == iBossIndex) continue;
-					if (SlenderGetID(i3) == -1) continue;
+					if (NPCGetUniqueID(i3) == -1) continue;
 					
 					new iBoss = SlenderArrayIndexToEntIndex(i3);
 					if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
@@ -1517,14 +1573,14 @@ public Action:Timer_SlenderMarkedAsFake(Handle:timer, any:data)
 
 stock SpawnSlenderModel(iBossIndex, const Float:pos[3])
 {
-	if (!g_strSlenderProfile[iBossIndex][0])
+	if (NPCGetUniqueID(iBossIndex) == -1)
 	{
-		LogError("Could not spawn boss model: profile is invalid!");
+		LogError("Could not spawn boss model: boss does not exist!");
 		return -1;
 	}
 	
 	decl String:buffer[PLATFORM_MAX_PATH], String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	strcopy(sProfile, sizeof(sProfile), g_strSlenderProfile[iBossIndex]);
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	GetProfileString(sProfile, "model", buffer, sizeof(buffer));
 	if (!buffer[0])
@@ -1606,17 +1662,7 @@ stock bool:PlayerCanSeeSlender(client, iBossIndex, bool:bCheckFOV=true, bool:bCh
 
 stock SlenderGetFromID(iID)
 {
-	if (iID == -1) return -1;
-	
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		if (SlenderGetID(i) == iID)
-		{
-			return i;
-		}
-	}
-	
-	return -1;
+	return NPCGetFromUniqueID(iID);
 }
 
 stock bool:PeopleCanSeeSlender(iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink=false)
@@ -1651,7 +1697,7 @@ public bool:TraceRayBossVisibility(entity, mask, any:data)
 {
 	if (entity == data || IsValidClient(entity)) return false;
 	
-	new iBossIndex = SlenderEntIndexToArrayIndex(entity);
+	new iBossIndex = NPCGetFromEntIndex(entity);
 	if (iBossIndex != -1) return false;
 	
 	if (IsValidEdict(entity))
