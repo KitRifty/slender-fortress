@@ -252,7 +252,7 @@ enum PlayerPreferences
 new bool:g_bPlayerHints[MAXPLAYERS + 1][PlayerHint_MaxNum];
 new g_iPlayerPreferences[MAXPLAYERS + 1][PlayerPreferences];
 
-// Player data. Holy crap this is a lot of data.
+// Player data.
 new g_iPlayerLastButtons[MAXPLAYERS + 1];
 new bool:g_bPlayerChoseTeam[MAXPLAYERS + 1];
 new bool:g_bPlayerEliminated[MAXPLAYERS + 1];
@@ -261,12 +261,6 @@ new g_iPlayerPageCount[MAXPLAYERS + 1];
 new g_iPlayerQueuePoints[MAXPLAYERS + 1];
 new bool:g_bPlayerPlaying[MAXPLAYERS + 1];
 new Handle:g_hPlayerOverlayCheck[MAXPLAYERS + 1];
-
-// Anti-camping data.
-new g_iPlayerCampingStrikes[MAXPLAYERS + 1];
-new Handle:g_hPlayerCampingTimer[MAXPLAYERS + 1];
-new Float:g_flPlayerCampingLastPosition[MAXPLAYERS + 1][3];
-new bool:g_bPlayerCampingFirstTime[MAXPLAYERS + 1];
 
 new Handle:g_hPlayerSwitchBlueTimer[MAXPLAYERS + 1];
 
@@ -327,9 +321,6 @@ new Float:g_flRoundDifficultyModifier = DIFFICULTY_NORMAL;
 new bool:g_bRoundInfiniteFlashlight = false;
 new bool:g_bRoundInfiniteBlink = false;
 
-new bool:g_bSpecialRound = false;
-new g_iSpecialRoundType = 0;
-
 static Handle:g_hRoundGraceTimer = INVALID_HANDLE;
 static Handle:g_hRoundTimer = INVALID_HANDLE;
 static Handle:g_hVoteTimer = INVALID_HANDLE;
@@ -355,11 +346,20 @@ static String:g_strRoundIntroMusic[PLATFORM_MAX_PATH] = "";
 
 static bool:g_bRoundWaitingForPlayers = false;
 
+// Special round variables.
+new bool:g_bSpecialRound = false;
+new g_iSpecialRoundType = 0;
+new bool:g_bSpecialRoundNew = false;
+new bool:g_bSpecialRoundContinuous = false;
+new g_iSpecialRoundCount = 1;
+new bool:g_bPlayerPlayedSpecialRound[MAXPLAYERS + 1] = { true, ... };
+
+// New boss round variables.
 static bool:g_bNewBossRound = false;
 static bool:g_bNewBossRoundNew = false;
 static bool:g_bNewBossRoundContinuous = false;
-static g_iNewBossRoundCount = 0;
-static bool:g_bPlayerPlayedNewBossRound[MAXPLAYERS + 1] = { false, ... };
+static g_iNewBossRoundCount = 1;
+static bool:g_bPlayerPlayedNewBossRound[MAXPLAYERS + 1] = { true, ... };
 static String:g_strNewBossRoundProfile[64] = "";
 
 static Handle:g_hRoundMessagesTimer = INVALID_HANDLE;
@@ -518,7 +518,7 @@ new Handle:g_hSDKShouldTransmit;
 #include "sf2/playergroups.sp"
 
 
-#define PJSOUND "ui/item_acquired.wav"
+#define SF2_PROJECTED_FLASHLIGHT_CONFIRM_SOUND "ui/item_acquired.wav"
 
 //	==========================================================
 //	GENERAL PLUGIN HOOK FUNCTIONS
@@ -766,6 +766,8 @@ public OnPluginStart()
 	
 	AddTempEntHook("Fire Bullets", Hook_TEFireBullets);
 	
+	InitializeProfiles();
+	
 	SetupMenus();
 	
 	SetupAdminMenu();
@@ -988,7 +990,7 @@ static SetupHooks()
 	CloseHandle(hConfig);
 }
 
-SetupClassDefaultWeapons()
+static SetupClassDefaultWeapons()
 {
 	// Scout
 	g_hSDKWeaponScattergun = PrepareItemHandle("tf_weapon_scattergun", 13, 0, 0, "");
@@ -1111,11 +1113,13 @@ static StartPlugin()
 	
 	PrecacheStuff();
 	
-	ReloadProfiles();
-	ReloadRestrictedWeapons();
-	ReloadSpecialRounds();
-	
 	// Reset special round.
+	g_bSpecialRound = false;
+	g_bSpecialRoundNew = false;
+	g_bSpecialRoundContinuous = false;
+	g_iSpecialRoundCount = 1;
+	g_iSpecialRoundType = 0;
+	
 	SpecialRoundReset();
 	
 	// Reset boss rounds.
@@ -1136,6 +1140,12 @@ static StartPlugin()
 	g_hBossCountUpdateTimer = CreateTimer(2.0, Timer_BossCountUpdate, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	
 	SetRoundState(SF2RoundState_Waiting);
+	
+	ReloadProfiles();
+	ReloadRestrictedWeapons();
+	ReloadSpecialRounds();
+	
+	SlenderOnConfigsExecuted();
 	
 	// Late load compensation.
 	for (new i = 1; i <= MaxClients; i++)
@@ -1168,7 +1178,7 @@ static PrecacheStuff()
 	PrecacheSound2(MUSIC_GOTPAGES3_SOUND);
 	PrecacheSound2(MUSIC_GOTPAGES4_SOUND);
 	
-	PrecacheSound2(PJSOUND);
+	PrecacheSound2(SF2_PROJECTED_FLASHLIGHT_CONFIRM_SOUND);
 	
 	for (new i = 0; i < sizeof(g_strPlayerBreathSounds); i++)
 	{
@@ -1894,7 +1904,7 @@ public Menu_ResetQueuePoints(Handle:menu, MenuAction:action, param1, param2)
 					// Special round.
 					if (g_bSpecialRound) 
 					{
-						g_bPlayerDidSpecialRound[param1] = true;
+						g_bPlayerPlayedSpecialRound[param1] = true;
 					}
 					
 					// new boss round
@@ -1947,7 +1957,7 @@ public Action:Command_ToggleFlashlight(client, args)
 	
 	if (!IsClientInGame(client) || !IsPlayerAlive(client)) return Plugin_Handled;
 	
-	if (!IsRoundInWarmup() && !IsRoundInIntro() && !IsRoundEnding() && !g_bPlayerEscaped[client])
+	if (!IsRoundInWarmup() && !IsRoundInIntro() && !IsRoundEnding() && !DidClientEscape(client))
 	{
 		if (GetGameTime() >= ClientGetFlashlightNextInputTime(client))
 		{
@@ -2604,7 +2614,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			g_bPlayerEliminated[i] ||
 			IsClientInGhostMode(i) ||
 			IsClientInDeathCam(i) ||
-			g_bPlayerEscaped[i]) continue;
+			DidClientEscape(i)) continue;
 		
 		// Check if we're near any bosses.
 		new iClosest = -1;
@@ -2637,7 +2647,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				g_bPlayerEliminated[iClient] ||
 				IsClientInGhostMode(iClient) ||
 				IsClientInDeathCam(iClient) ||
-				g_bPlayerEscaped[iClient]) 
+				DidClientEscape(iClient)) 
 			{
 				continue;
 			}
@@ -3015,7 +3025,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 							if (!IsClientInGame(iClient) ||
 								!IsPlayerAlive(iClient) ||
 								g_bPlayerEliminated[iClient] ||
-								g_bPlayerEscaped[iClient] ||
+								DidClientEscape(iClient) ||
 								g_bPlayerProxy[iClient] ||
 								IsClientInGhostMode(iClient))
 							{
@@ -3407,7 +3417,7 @@ public Action:Hook_NormalSound(clients[64], &numClients, String:sample[PLATFORM_
 				{
 					if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 					{
-						if (!g_bPlayerEliminated[entity] && !g_bPlayerEscaped[entity])
+						if (!g_bPlayerEliminated[entity] && !DidClientEscape(entity))
 						{
 							bCanHearSound = false;
 						}
@@ -3465,7 +3475,7 @@ public Hook_TriggerOnStartTouch(const String:output[], caller, activator, Float:
 	{
 		if (IsRoundInEscapeObjective())
 		{
-			if (IsValidClient(activator) && IsPlayerAlive(activator) && !IsClientInDeathCam(activator) && !g_bPlayerEliminated[activator] && !g_bPlayerEscaped[activator])
+			if (IsValidClient(activator) && IsPlayerAlive(activator) && !IsClientInDeathCam(activator) && !g_bPlayerEliminated[activator] && !DidClientEscape(activator))
 			{
 				ClientEscape(activator);
 				TeleportClientToEscapePoint(activator);
@@ -3605,7 +3615,7 @@ public OnClientPutInServer(client)
 	g_bPlayerEscaped[client] = false;
 	g_bPlayerEliminated[client] = true;
 	g_bPlayerChoseTeam[client] = false;
-	g_bPlayerDidSpecialRound[client] = true;
+	g_bPlayerPlayedSpecialRound[client] = true;
 	g_bPlayerPlayedNewBossRound[client] = true;
 	
 	g_iPlayerPreferences[client][PlayerPreference_PvPAutoSpawn] = false;
@@ -3663,7 +3673,7 @@ public OnClientPutInServer(client)
 	
 	if (!IsFakeClient(client))
 	{
-		// See if the player is using the custom flashlight.
+		// See if the player is using the projected flashlight.
 		QueryClientConVar(client, "mat_supportflashlight", OnClientGetProjectedFlashlightSetting);
 		
 		// Get desired FOV.
@@ -3712,47 +3722,52 @@ public OnClientDisconnect(client)
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START OnClientDisconnect(%d)", client);
 #endif
 	
+	g_bPlayerEscaped[client] = false;
+	
 	// Save and reset settings for the next client.
 	ClientSaveCookies(client);
 	ClientSetPlayerGroup(client, -1);
 	
-	g_iPlayerQueuePoints[client] = 0;
-	
+	// Reset variables.
 	g_iPlayerPreferences[client][PlayerPreference_ShowHints] = true;
 	g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode_Normal;
 	g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = true;
 	g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight] = false;
 	
+	// Reset any client functions that may be still active.
+	ClientResetOverlay(client);
 	ClientResetFlashlight(client);
 	ClientDeactivateUltravision(client);
-	
 	ClientSetGhostModeState(client, false);
-	
 	ClientResetInteractiveGlow(client);
+	ClientDisableConstantGlow(client);
+	
 	ClientStopProxyForce(client);
-	ClientResetOverlay(client);
 	
 	if (!IsRoundInWarmup())
 	{
-		if (g_bRoundGrace)
+		if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
 		{
-			if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
+			if (g_bRoundGrace)
 			{
+				// Force the next player in queue to take my place, if any.
 				ForceInNextPlayersInQueue(1, true);
 			}
-		}
-		else
-		{
-			if (g_bPlayerPlaying[client] && !g_bPlayerEliminated[client])
+			else
 			{
+				// Reset my queue points.
 				ClientSetQueuePoints(client, 0);
+				
+				if (!IsRoundEnding()) 
+				{
+					CreateTimer(0.2, Timer_CheckRoundWinConditions, _, TIMER_FLAG_NO_MAPCHANGE);
+				}
 			}
-		
-			if (!IsRoundEnding()) CreateTimer(0.2, Timer_CheckRoundWinConditions, _, TIMER_FLAG_NO_MAPCHANGE);
 		}
 	}
 	
-	g_bPlayerEscaped[client] = false;
+	// Reset queue points global variable.
+	g_iPlayerQueuePoints[client] = 0;
 	
 	PvP_OnClientDisconnect(client);
 	
@@ -3779,84 +3794,6 @@ public TF2_OnWaitingForPlayersEnd()
 SF2RoundState:GetRoundState()
 {
 	return g_iRoundState;
-}
-
-static GetRoundIntroParameters()
-{
-	g_iRoundIntroFadeColor[0] = 0;
-	g_iRoundIntroFadeColor[1] = 0;
-	g_iRoundIntroFadeColor[2] = 0;
-	g_iRoundIntroFadeColor[3] = 255;
-	
-	g_flRoundIntroFadeHoldTime = GetConVarFloat(g_cvIntroDefaultHoldTime);
-	g_flRoundIntroFadeDuration = GetConVarFloat(g_cvIntroDefaultFadeTime);
-	
-	new ent = -1;
-	while ((ent = FindEntityByClassname(ent, "env_fade")) != -1)
-	{
-		decl String:sName[32];
-		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-		if (StrEqual(sName, "sf2_intro_fade", false))
-		{
-			new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
-			if (iColorOffset != -1)
-			{
-				g_iRoundIntroFadeColor[0] = GetEntData(ent, iColorOffset, 1);
-				g_iRoundIntroFadeColor[1] = GetEntData(ent, iColorOffset + 1, 1);
-				g_iRoundIntroFadeColor[2] = GetEntData(ent, iColorOffset + 2, 1);
-				g_iRoundIntroFadeColor[3] = GetEntData(ent, iColorOffset + 3, 1);
-			}
-			
-			g_flRoundIntroFadeHoldTime = GetEntPropFloat(ent, Prop_Data, "m_HoldTime");
-			g_flRoundIntroFadeDuration = GetEntPropFloat(ent, Prop_Data, "m_Duration");
-			
-			break;
-		}
-	}
-	
-	// Get the intro music.
-	strcopy(g_strRoundIntroMusic, sizeof(g_strRoundIntroMusic), SF2_INTRO_DEFAULT_MUSIC);
-	
-	ent = -1;
-	while ((ent = FindEntityByClassname(ent, "ambient_generic")) != -1)
-	{
-		decl String:sName[64];
-		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-		
-		if (StrEqual(sName, "sf2_intro_music", false))
-		{
-			decl String:sSongPath[PLATFORM_MAX_PATH];
-			GetEntPropString(ent, Prop_Data, "m_iszSound", sSongPath, sizeof(sSongPath));
-			
-			if (strlen(sSongPath) == 0)
-			{
-				LogError("Found sf2_intro_music entity, but it has no sound path specified! Default intro music will be used instead.");
-			}
-			else
-			{
-				strcopy(g_strRoundIntroMusic, sizeof(g_strRoundIntroMusic), sSongPath);
-			}
-			
-			break;
-		}
-	}
-}
-
-static GetRoundEscapeParameters()
-{
-	g_iRoundEscapePointEntity = INVALID_ENT_REFERENCE;
-	
-	decl String:sName[64];
-	new ent = -1;
-	while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
-	{
-		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
-		if (!StrContains(sName, "sf2_escape_spawnpoint", false))
-		{
-			g_iRoundEscapePointEntity = EntIndexToEntRef(ent);
-			break;
-		}
-	}
 }
 
 SetRoundState(SF2RoundState:iRoundState)
@@ -4065,7 +4002,7 @@ public Action:Timer_ClientAverageUpdate(Handle:timer)
 		{
 			if (!g_bPlayerEliminated[i])
 			{
-				if (g_bPlayerEscaped[i]) continue;
+				if (DidClientEscape(i)) continue;
 				
 				new iMaxBars = 12;
 				new iBars = RoundToCeil(float(iMaxBars) * ClientGetBlinkMeter(i));
@@ -4257,7 +4194,7 @@ SetClientPlayState(client, bool:bState, bool:bEnablePlay=true)
 		
 		if (g_bSpecialRound) 
 		{
-			g_bPlayerDidSpecialRound[client] = true;
+			g_bPlayerPlayedSpecialRound[client] = true;
 		}
 		
 		if (g_bNewBossRound) 
@@ -4473,7 +4410,7 @@ stock bool:IsTargetValidForSlender(iTarget, bool:bIncludeEliminated=false)
 			IsClientInDeathCam(iTarget) || 
 			(!bIncludeEliminated && g_bPlayerEliminated[iTarget]) ||
 			IsClientInGhostMode(iTarget) || 
-			g_bPlayerEscaped[iTarget]) return false;
+			DidClientEscape(iTarget)) return false;
 	}
 	
 	return true;
@@ -6303,7 +6240,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 				
 				for (new i = 1; i <= MaxClients; i++)
 				{
-					if (!IsClientInGame(i) || !IsPlayerAlive(i) || IsClientInDeathCam(i) || g_bPlayerEliminated[i] || g_bPlayerEscaped[i] || IsClientInGhostMode(i) || !PlayerCanSeeSlender(i, iBossIndex, false, false)) continue;
+					if (!IsClientInGame(i) || !IsPlayerAlive(i) || IsClientInDeathCam(i) || g_bPlayerEliminated[i] || DidClientEscape(i) || IsClientInGhostMode(i) || !PlayerCanSeeSlender(i, iBossIndex, false, false)) continue;
 					PushArrayCell(hArray, i);
 				}
 				
@@ -6435,7 +6372,7 @@ SlenderOnClientStressUpdate(client)
 		if (iTeleportTarget && iTeleportTarget != INVALID_ENT_REFERENCE)
 		{
 			if (g_bPlayerEliminated[iTeleportTarget] ||
-				g_bPlayerEscaped[iTeleportTarget] ||
+				DidClientEscape(iTeleportTarget) ||
 				flStress >= g_flSlenderTeleportMaxTargetStress[iBossIndex] ||
 				GetGameTime() >= g_flSlenderTeleportMaxTargetTime[iBossIndex])
 			{
@@ -6471,7 +6408,7 @@ SlenderOnClientStressUpdate(client)
 					!IsPlayerAlive(i) ||
 					g_bPlayerEliminated[i] ||
 					IsClientInGhostMode(i) ||
-					g_bPlayerEscaped[i])
+					DidClientEscape(i))
 				{
 					continue;
 				}
@@ -6709,7 +6646,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 										!IsPlayerAlive(iClient) ||
 										g_bPlayerEliminated[iClient] ||
 										IsClientInGhostMode(iClient) || 
-										g_bPlayerEscaped[iClient])
+										DidClientEscape(iClient))
 									{
 										continue;
 									}
@@ -7629,7 +7566,7 @@ public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 			}
 			
 			// Special round.
-			if (g_bSpecialRound) g_bPlayerDidSpecialRound[client] = true;
+			if (g_bSpecialRound) g_bPlayerPlayedSpecialRound[client] = true;
 			
 			// Boss round.
 			if (g_bNewBossRound) g_bPlayerPlayedNewBossRound[client] = true;
@@ -7642,7 +7579,7 @@ public Event_PlayerTeam(Handle:event, const String:name[], bool:dB)
 				
 				if (g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight])
 				{
-					EmitSoundToClient(client, PJSOUND);
+					EmitSoundToClient(client, SF2_PROJECTED_FLASHLIGHT_CONFIRM_SOUND);
 					CPrintToChat(client, "{olive}Your flashlight mode has been set to {lightgreen}Projected{olive}.");
 				}
 				else
@@ -7742,7 +7679,7 @@ HandlePlayerHUD(client)
 	{
 		if (!g_bPlayerEliminated[client])
 		{
-			if (!g_bPlayerEscaped[client])
+			if (!DidClientEscape(client))
 			{
 				// Player is in the game; disable normal HUD.
 				SetEntProp(client, Prop_Send, "m_iHideHUD", HIDEHUD_CROSSHAIR | HIDEHUD_HEALTH);
@@ -7833,7 +7770,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 				ClientStartDrainingBlinkMeter(client);
 				ClientSetScareBoostEndTime(client, -1.0);
 				
-				g_hPlayerCampingTimer[client] = CreateTimer(5.0, Timer_ClientCheckCamp, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+				ClientStartCampingTimer(client);
 				
 				HandlePlayerIntroState(client);
 				
@@ -7845,7 +7782,7 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dB)
 				
 				ClientActivateUltravision(client);
 				
-				if (g_bPlayerEscaped[client])
+				if (DidClientEscape(client))
 				{
 					CreateTimer(0.1, Timer_TeleportPlayerToEscapePoint, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 				}
@@ -8036,7 +7973,7 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 		{
 			if (!g_bPlayerEliminated[client])
 			{
-				if (g_bRoundGrace || g_bPlayerEscaped[client])
+				if (g_bRoundGrace || DidClientEscape(client))
 				{
 					CreateTimer(0.3, Timer_RespawnPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 				}
@@ -8284,7 +8221,7 @@ public Action:Timer_RoundTimeEscape(Handle:timer)
 	{
 		for (new i = 1; i <= MaxClients; i++)
 		{
-			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i) || g_bPlayerEscaped[i]) continue;
+			if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i) || DidClientEscape(i)) continue;
 			
 			decl Float:flBuffer[3];
 			GetClientAbsOrigin(i, flBuffer);
@@ -8570,23 +8507,106 @@ static InitializeMapEntities()
 #endif
 }
 
+static HandleSpecialRoundState()
+{
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START HandleSpecialRoundState()");
+#endif
+	
+	new bool:bOld = g_bSpecialRound;
+	new bool:bContinuousOld = g_bSpecialRoundContinuous;
+	g_bSpecialRound = false;
+	g_bSpecialRoundNew = false;
+	g_bSpecialRoundContinuous = false;
+	
+	new bool:bForceNew = false;
+	
+	if (bOld)
+	{
+		if (bContinuousOld)
+		{
+			// Check if there are players who haven't played the boss round yet.
+			for (new i = 1; i <= MaxClients; i++)
+			{
+				if (!IsClientInGame(i) || !IsClientParticipating(i))
+				{
+					g_bPlayerPlayedSpecialRound[i] = true;
+					continue;
+				}
+				
+				if (!g_bPlayerPlayedSpecialRound[i])
+				{
+					// Someone didn't get to play this yet. Continue the boss round.
+					g_bSpecialRound = true;
+					g_bSpecialRoundContinuous = true;
+					break;
+				}
+			}
+		}
+	}
+	
+	new iRoundInterval = GetConVarInt(g_cvSpecialRoundInterval);
+	
+	if (iRoundInterval > 0 && g_iNewBossRoundCount >= iRoundInterval)
+	{
+		g_bSpecialRound = true;
+		bForceNew = true;
+	}
+	
+	// Do boss round force override and reset it.
+	if (GetConVarInt(g_cvSpecialRoundForce) >= 0)
+	{
+		g_bSpecialRound = GetConVarBool(g_cvSpecialRoundForce);
+		SetConVarInt(g_cvSpecialRoundForce, -1);
+	}
+	
+	if (g_bSpecialRound)
+	{
+		if (bForceNew || !bOld || !bContinuousOld)
+		{
+			g_bSpecialRoundNew = true;
+		}
+		
+		if (g_bSpecialRoundNew)
+		{
+			if (GetConVarInt(g_cvSpecialRoundBehavior) == 1)
+			{
+				g_bSpecialRoundContinuous = true;
+			}
+			else
+			{
+				// New "new boss round", but it's not continuous.
+				g_bSpecialRoundContinuous = false;
+			}
+		}
+	}
+	else
+	{
+		g_bSpecialRoundContinuous = false;
+	}
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END HandleSpecialRoundState() -> g_bSpecialRound = %d (count = %d, new = %d, continuous = %d)", g_bSpecialRound, g_iSpecialRoundCount, g_bSpecialRoundNew, g_bSpecialRoundContinuous);
+#endif
+}
+
 static HandleNewBossRoundState()
 {
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START HandleNewBossRoundState()");
 #endif
 	
-	new bool:bBossOld = g_bNewBossRound;
-	new bool:bBossContinuousOld = g_bNewBossRoundContinuous;
+	new bool:bOld = g_bNewBossRound;
+	new bool:bContinuousOld = g_bNewBossRoundContinuous;
 	g_bNewBossRound = false;
 	g_bNewBossRoundNew = false;
 	g_bNewBossRoundContinuous = false;
 	
 	new bool:bForceNew = false;
 	
-	if (bBossOld)
+	if (bOld)
 	{
-		if (bBossContinuousOld)
+		if (bContinuousOld)
 		{
 			// Check if there are players who haven't played the boss round yet.
 			for (new i = 1; i <= MaxClients; i++)
@@ -8634,11 +8654,9 @@ static HandleNewBossRoundState()
 		}
 	}
 	
-	CloseHandle(hSelectableBossList);
-	
 	if (g_bNewBossRound)
 	{
-		if (bForceNew || !bBossOld || !bBossContinuousOld)
+		if (bForceNew || !bOld || !bContinuousOld)
 		{
 			g_bNewBossRoundNew = true;
 		}
@@ -8710,12 +8728,87 @@ static SelectStartingBossesForRound()
 		}
 	}
 	
-	CloseHandle(hBossList);
-	CloseHandle(hSelectableBossList);
-	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("END SelectStartingBossesForRound() -> boss: %s", g_strRoundBossProfile);
 #endif
+}
+
+static GetRoundIntroParameters()
+{
+	g_iRoundIntroFadeColor[0] = 0;
+	g_iRoundIntroFadeColor[1] = 0;
+	g_iRoundIntroFadeColor[2] = 0;
+	g_iRoundIntroFadeColor[3] = 255;
+	
+	g_flRoundIntroFadeHoldTime = GetConVarFloat(g_cvIntroDefaultHoldTime);
+	g_flRoundIntroFadeDuration = GetConVarFloat(g_cvIntroDefaultFadeTime);
+	
+	new ent = -1;
+	while ((ent = FindEntityByClassname(ent, "env_fade")) != -1)
+	{
+		decl String:sName[32];
+		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
+		if (StrEqual(sName, "sf2_intro_fade", false))
+		{
+			new iColorOffset = FindSendPropOffs("CBaseEntity", "m_clrRender");
+			if (iColorOffset != -1)
+			{
+				g_iRoundIntroFadeColor[0] = GetEntData(ent, iColorOffset, 1);
+				g_iRoundIntroFadeColor[1] = GetEntData(ent, iColorOffset + 1, 1);
+				g_iRoundIntroFadeColor[2] = GetEntData(ent, iColorOffset + 2, 1);
+				g_iRoundIntroFadeColor[3] = GetEntData(ent, iColorOffset + 3, 1);
+			}
+			
+			g_flRoundIntroFadeHoldTime = GetEntPropFloat(ent, Prop_Data, "m_HoldTime");
+			g_flRoundIntroFadeDuration = GetEntPropFloat(ent, Prop_Data, "m_Duration");
+			
+			break;
+		}
+	}
+	
+	// Get the intro music.
+	strcopy(g_strRoundIntroMusic, sizeof(g_strRoundIntroMusic), SF2_INTRO_DEFAULT_MUSIC);
+	
+	ent = -1;
+	while ((ent = FindEntityByClassname(ent, "ambient_generic")) != -1)
+	{
+		decl String:sName[64];
+		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
+		
+		if (StrEqual(sName, "sf2_intro_music", false))
+		{
+			decl String:sSongPath[PLATFORM_MAX_PATH];
+			GetEntPropString(ent, Prop_Data, "m_iszSound", sSongPath, sizeof(sSongPath));
+			
+			if (strlen(sSongPath) == 0)
+			{
+				LogError("Found sf2_intro_music entity, but it has no sound path specified! Default intro music will be used instead.");
+			}
+			else
+			{
+				strcopy(g_strRoundIntroMusic, sizeof(g_strRoundIntroMusic), sSongPath);
+			}
+			
+			break;
+		}
+	}
+}
+
+static GetRoundEscapeParameters()
+{
+	g_iRoundEscapePointEntity = INVALID_ENT_REFERENCE;
+	
+	decl String:sName[64];
+	new ent = -1;
+	while ((ent = FindEntityByClassname(ent, "info_target")) != -1)
+	{
+		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
+		if (!StrContains(sName, "sf2_escape_spawnpoint", false))
+		{
+			g_iRoundEscapePointEntity = EntIndexToEntRef(ent);
+			break;
+		}
+	}
 }
 
 InitializeNewGame()
@@ -8743,120 +8836,57 @@ InitializeNewGame()
 		SetConVarString(g_cvProfileOverride, "");
 	}
 	
-	g_bSpecialRoundNew = false;
-	
-	if (!g_bSpecialRound)
-	{
-		g_iSpecialRoundCount++;
-		
-		if (GetConVarInt(g_cvSpecialRoundInterval) > 0)
-		{
-			new iCount = g_iSpecialRoundCount;
-			while (iCount > 0) iCount -= GetConVarInt(g_cvSpecialRoundInterval);
-			if (iCount == 0) 
-			{
-				g_bSpecialRound = true;
-				g_bSpecialRoundNew = true;
-			}
-		}
-	}
-	else
-	{
-		if (GetConVarInt(g_cvSpecialRoundBehavior) == 0)
-		{
-			g_bSpecialRound = false;
-		}
-		else
-		{
-			new iSpecialCount;
-			for (new i = 1; i <= MaxClients; i++)
-			{
-				if (!IsClientInGame(i)) continue;
-				
-				if (!g_bPlayerDidSpecialRound[i] && IsClientParticipating(i))
-				{
-					iSpecialCount++;
-				}
-			}
-			
-			if (!iSpecialCount) 
-			{
-				g_bSpecialRound = false;
-			}
-			else
-			{
-				g_bSpecialRoundNew = false;
-			}
-		}
-	}
-	
-	// Do special round force override and reset it.
-	if (GetConVarInt(g_cvSpecialRoundForce) >= 0)
-	{
-		g_bSpecialRound = GetConVarBool(g_cvSpecialRoundForce);
-		SetConVarInt(g_cvSpecialRoundForce, -1);
-		
-		if (g_bSpecialRound)
-		{
-			g_bSpecialRoundNew = true;
-		}
-	}
+	HandleSpecialRoundState();
 	
 	// Was a new special round initialized?
 	if (g_bSpecialRound)
 	{
 		if (g_bSpecialRoundNew)
 		{
-			g_iSpecialRoundCount = 0; // Reset round count
+			g_iSpecialRoundCount = 1;
+			
+			if (g_bSpecialRoundContinuous)
+			{
+				// It's the start of a continuous special round.
+			
+				// Initialize all players' values.
+				for (new i = 1; i <= MaxClients; i++)
+				{
+					if (!IsClientParticipating(i))
+					{
+						g_bPlayerPlayedSpecialRound[i] = true;
+						continue;
+					}
+					
+					if (!IsClientParticipating(i))
+					{
+						g_bPlayerPlayedSpecialRound[i] = true;
+						continue;
+					}
+					
+					g_bPlayerPlayedSpecialRound[i] = false;
+				}
+			}
 			
 			SpecialRoundCycleStart();
-			
-			// Reset all players' values.
-			for (new i = 1; i <= MaxClients; i++)
-			{
-				if (!IsClientParticipating(i))
-				{
-					g_bPlayerDidSpecialRound[i] = true;
-					continue;
-				}
-				
-				g_bPlayerDidSpecialRound[i] = false;
-			}
 		}
 		else
 		{
 			SpecialRoundStart();
 			
-			// Display the current special round going on to late players.
-			CreateTimer(3.0, Timer_DisplaySpecialRound, _, TIMER_FLAG_NO_MAPCHANGE);
+			if (g_bSpecialRoundContinuous)
+			{
+				// Display the current special round going on to late players.
+				CreateTimer(3.0, Timer_DisplaySpecialRound, _, TIMER_FLAG_NO_MAPCHANGE);
+			}
 		}
 	}
 	else
 	{
+		g_iSpecialRoundCount++;
+	
 		SpecialRoundReset();
 	}
-	
-	// Initialize pages and entities.
-	GetPageMusicRanges();
-	
-	if (GetArraySize(g_hPageMusicRanges) > 0)
-	{
-		decl String:sPath[PLATFORM_MAX_PATH];
-	
-		for (new i = 0; i < GetArraySize(g_hPageMusicRanges); i++)
-		{
-			new ent = EntRefToEntIndex(GetArrayCell(g_hPageMusicRanges, i));
-			if (!ent || ent == INVALID_ENT_REFERENCE) continue;
-			
-			GetEntPropString(ent, Prop_Data, "m_iszSound", sPath, sizeof(sPath));
-			if (sPath[0])
-			{
-				PrecacheSound(sPath);
-			}
-		}
-	}
-	
-	InitializeMapEntities();
 	
 	// Determine boss round state.
 	HandleNewBossRoundState();
@@ -8895,6 +8925,28 @@ InitializeNewGame()
 	else
 	{
 		g_iNewBossRoundCount++;
+	}
+	
+	InitializeMapEntities();
+	
+	// Initialize pages and entities.
+	GetPageMusicRanges();
+	
+	if (GetArraySize(g_hPageMusicRanges) > 0)
+	{
+		decl String:sPath[PLATFORM_MAX_PATH];
+	
+		for (new i = 0; i < GetArraySize(g_hPageMusicRanges); i++)
+		{
+			new ent = EntRefToEntIndex(GetArrayCell(g_hPageMusicRanges, i));
+			if (!ent || ent == INVALID_ENT_REFERENCE) continue;
+			
+			GetEntPropString(ent, Prop_Data, "m_iszSound", sPath, sizeof(sPath));
+			if (sPath[0])
+			{
+				PrecacheSound(sPath);
+			}
+		}
 	}
 	
 	SelectStartingBossesForRound();
@@ -9073,7 +9125,7 @@ CheckRoundWinConditions()
 		if (!g_bPlayerEliminated[i] && !IsClientInDeathCam(i)) 
 		{
 			iAliveCount++;
-			if (g_bPlayerEscaped[i]) iEscapedCount++;
+			if (DidClientEscape(i)) iEscapedCount++;
 		}
 	}
 	

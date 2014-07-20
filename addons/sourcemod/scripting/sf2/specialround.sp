@@ -12,12 +12,9 @@
 
 static Handle:g_hSpecialRoundCycleNames = INVALID_HANDLE;
 
-new bool:g_bSpecialRoundNew = false;
-new Handle:g_hSpecialRoundTimer = INVALID_HANDLE;
-new g_iSpecialRoundCycleNum = 0;
-new Float:g_flSpecialRoundCycleEndTime = -1.0;
-new g_iSpecialRoundCount = 0;
-new bool:g_bPlayerDidSpecialRound[MAXPLAYERS + 1] = { false, ... };
+static Handle:g_hSpecialRoundTimer = INVALID_HANDLE;
+static g_iSpecialRoundCycleNum = 0;
+static Float:g_flSpecialRoundCycleEndTime = -1.0;
 
 ReloadSpecialRounds()
 {
@@ -335,8 +332,6 @@ public Action:Timer_DisplaySpecialRound(Handle:timer)
 
 SpecialRoundReset()
 {
-	g_bSpecialRound = false;
-	g_bSpecialRoundNew = false;
 	g_iSpecialRoundType = 0;
 	g_hSpecialRoundTimer = INVALID_HANDLE;
 	g_iSpecialRoundCycleNum = 0;

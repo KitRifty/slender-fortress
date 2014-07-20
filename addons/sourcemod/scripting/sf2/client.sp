@@ -85,6 +85,13 @@ static Float:g_flPlayerJumpScareLifeTime[MAXPLAYERS + 1] = { -1.0, ... };
 
 static Float:g_flPlayerScareBoostEndTime[MAXPLAYERS + 1] = { -1.0, ... };
 
+// Anti-camping data.
+static g_iPlayerCampingStrikes[MAXPLAYERS + 1] = { 0, ... };
+static Handle:g_hPlayerCampingTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+static Float:g_flPlayerCampingLastPosition[MAXPLAYERS + 1][3];
+static bool:g_bPlayerCampingFirstTime[MAXPLAYERS + 1] = { true, ... };
+
+
 //	==========================================================
 //	GENERAL CLIENT HOOK FUNCTIONS
 //	==========================================================
@@ -130,7 +137,7 @@ public Hook_ClientPreThink(client)
 	}
 	else if (!g_bPlayerEliminated[client] || g_bPlayerProxy[client])
 	{
-		if (!IsRoundEnding() && !IsRoundInWarmup() && !g_bPlayerEscaped[client])
+		if (!IsRoundEnding() && !IsRoundInWarmup() && !DidClientEscape(client))
 		{
 			new iRoundState = _:GameRules_GetRoundState();
 		
@@ -372,7 +379,7 @@ public Action:Hook_ClientSetTransmit(client, other)
 			// SPECIAL ROUND: Singleplayer
 			if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 			{
-				if (!g_bPlayerEliminated[client] && !g_bPlayerEliminated[other] && !g_bPlayerEscaped[other]) return Plugin_Handled; 
+				if (!g_bPlayerEliminated[client] && !g_bPlayerEliminated[other] && !DidClientEscape(other)) return Plugin_Handled; 
 			}
 			
 			// pvp
@@ -680,9 +687,14 @@ ClientShowHint(client, iHint)
 	}
 }
 
+bool:DidClientEscape(client)
+{
+	return g_bPlayerEscaped[client];
+}
+
 ClientEscape(client)
 {
-	if (g_bPlayerEscaped[client]) return;
+	if (DidClientEscape(client)) return;
 
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 1) DebugMessage("START ClientEscape(%d)", client);
@@ -720,7 +732,7 @@ public Action:Timer_TeleportPlayerToEscapePoint(Handle:timer, any:userid)
 	new client = GetClientOfUserId(userid);
 	if (client <= 0) return;
 	
-	if (!g_bPlayerEscaped[client]) return;
+	if (!DidClientEscape(client)) return;
 	
 	if (IsPlayerAlive(client))
 	{
@@ -1973,7 +1985,7 @@ ClientProcessVisibility(client)
 ClientProcessViewAngles(client)
 {
 	if ((!g_bPlayerEliminated[client] || g_bPlayerProxy[client]) && 
-		!g_bPlayerEscaped[client])
+		!DidClientEscape(client))
 	{
 		// Process view bobbing, if enabled.
 		// This code is based on the code in this page: https://developer.valvesoftware.com/wiki/Camera_Bob
@@ -3017,7 +3029,7 @@ ClientHandleSprint(client, bool:bSprint)
 {
 	if (!IsPlayerAlive(client) || 
 		g_bPlayerEliminated[client] || 
-		g_bPlayerEscaped[client] || 
+		DidClientEscape(client) || 
 		g_bPlayerProxy[client] || 
 		IsClientInGhostMode(client)) return;
 	
@@ -3052,7 +3064,7 @@ ClientOnButtonPress(client, button)
 				if (!IsRoundInWarmup() &&
 					!IsRoundInIntro() &&
 					!IsRoundEnding() && 
-					!g_bPlayerEscaped[client])
+					!DidClientEscape(client))
 				{
 					if (GetGameTime() >= ClientGetFlashlightNextInputTime(client))
 					{
@@ -3074,7 +3086,7 @@ ClientOnButtonPress(client, button)
 					if (!IsRoundEnding() && 
 						!IsRoundInWarmup() &&
 						!IsRoundInIntro() &&
-						!g_bPlayerEscaped[client])
+						!DidClientEscape(client))
 					{
 						ClientBlink(client);
 					}
@@ -3111,7 +3123,7 @@ ClientOnJump(client)
 {
 	if (!g_bPlayerEliminated[client])
 	{
-		if (!IsRoundEnding() && !IsRoundInWarmup() && !g_bPlayerEscaped[client])
+		if (!IsRoundEnding() && !IsRoundInWarmup() && !DidClientEscape(client))
 		{
 			g_iPlayerSprintPoints[client] -= 7;
 			if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
@@ -3400,7 +3412,7 @@ ClientGhostModeNextTarget(client)
 	new iFirstTarget = -1;
 	for (new i = 1; i <= MaxClients; i++)
 	{
-		if (IsClientInGame(i) && (!g_bPlayerEliminated[i] || g_bPlayerProxy[i]) && !IsClientInGhostMode(i) && !g_bPlayerEscaped[i] && IsPlayerAlive(i))
+		if (IsClientInGame(i) && (!g_bPlayerEliminated[i] || g_bPlayerProxy[i]) && !IsClientInGhostMode(i) && !DidClientEscape(i) && IsPlayerAlive(i))
 		{
 			if (iFirstTarget == -1) iFirstTarget = i;
 			if (i > iLastTarget) 
@@ -3580,6 +3592,11 @@ stock ClientResetCampingStats(client)
 #endif
 }
 
+ClientStartCampingTimer(client)
+{
+	g_hPlayerCampingTimer[client] = CreateTimer(5.0, Timer_ClientCheckCamp, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+}
+
 public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 {
 	if (IsRoundInWarmup()) return Plugin_Stop;
@@ -3589,7 +3606,7 @@ public Action:Timer_ClientCheckCamp(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerCampingTimer[client]) return Plugin_Stop;
 	
-	if (IsRoundEnding() || !IsPlayerAlive(client) || g_bPlayerEliminated[client] || g_bPlayerEscaped[client]) return Plugin_Stop;
+	if (IsRoundEnding() || !IsPlayerAlive(client) || g_bPlayerEliminated[client] || DidClientEscape(client)) return Plugin_Stop;
 	
 	if (!g_bPlayerCampingFirstTime[client])
 	{
@@ -3695,7 +3712,7 @@ ClientResetBlink(client)
  */
 ClientBlink(client)
 {
-	if (IsRoundInWarmup() || g_bPlayerEscaped[client]) return;
+	if (IsRoundInWarmup() || DidClientEscape(client)) return;
 	
 	if (IsClientBlinking(client)) return;
 	
@@ -3872,7 +3889,7 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	{
 		GetRandomStringFromProfile(g_strSlenderProfile[iJumpScareBoss], "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
 	}
-	else if (IsRoundInWarmup() || g_bPlayerEliminated[client] || g_bPlayerEscaped[client] && !IsClientInGhostMode(client))
+	else if (IsRoundInWarmup() || g_bPlayerEliminated[client] || DidClientEscape(client) && !IsClientInGhostMode(client))
 	{
 		return Plugin_Continue;
 	}
@@ -3898,7 +3915,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 	new iAlertBoss = -1;
 	new i20DollarsBoss = -1;
 	
-	if (IsRoundEnding() || !IsClientInGame(client) || IsFakeClient(client) || g_bPlayerEscaped[client] || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) 
+	if (IsRoundEnding() || !IsClientInGame(client) || IsFakeClient(client) || DidClientEscape(client) || (g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !g_bPlayerProxy[client])) 
 	{
 		g_iPlayerMusicFlags[client] = 0;
 		g_iPlayerPageMusicMaster[client] = INVALID_ENT_REFERENCE;
@@ -5042,9 +5059,9 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 			{
 				if (g_bSpecialRound && g_iSpecialRoundType == SPECIALROUND_SINGLEPLAYER)
 				{
-					if (g_bPlayerEscaped[i])
+					if (DidClientEscape(i))
 					{
-						if (!g_bPlayerEscaped[client])
+						if (!DidClientEscape(client))
 						{
 							SetListenOverride(client, i, Listen_No);
 						}
@@ -5055,7 +5072,7 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 					}
 					else
 					{
-						if (!g_bPlayerEscaped[client])
+						if (!DidClientEscape(client))
 						{
 							SetListenOverride(client, i, Listen_No);
 						}
@@ -5099,7 +5116,7 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 					if (bCanHear)
 					{
 						if (IsClientInGhostMode(i) != IsClientInGhostMode(client) &&
-							g_bPlayerEscaped[i] != g_bPlayerEscaped[client])
+							DidClientEscape(i) != DidClientEscape(client))
 						{
 							bCanHear = false;
 						}
