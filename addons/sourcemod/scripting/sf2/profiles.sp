@@ -194,40 +194,40 @@ bool:IsProfileValid(const String:sProfile[])
 	return bool:(FindStringInArray(GetBossProfileList(), sProfile) != -1);
 }
 
-stock GetProfileNum(const String:strName[], const String:keyValue[], defaultValue=0)
+stock GetProfileNum(const String:sProfile[], const String:keyValue[], defaultValue=0)
 {
-	if (!IsProfileValid(strName)) return defaultValue;
+	if (!IsProfileValid(sProfile)) return defaultValue;
 	
 	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, strName);
+	KvJumpToKey(g_hConfig, sProfile);
 	
 	return KvGetNum(g_hConfig, keyValue, defaultValue);
 }
 
-stock Float:GetProfileFloat(const String:strName[], const String:keyValue[], Float:defaultValue=0.0)
+stock Float:GetProfileFloat(const String:sProfile[], const String:keyValue[], Float:defaultValue=0.0)
 {
-	if (!IsProfileValid(strName)) return defaultValue;
+	if (!IsProfileValid(sProfile)) return defaultValue;
 	
 	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, strName);
+	KvJumpToKey(g_hConfig, sProfile);
 	
 	return KvGetFloat(g_hConfig, keyValue, defaultValue);
 }
 
-stock bool:GetProfileVector(const String:strName[], const String:keyValue[], Float:buffer[3], const Float:defaultValue[3]=NULL_VECTOR)
+stock bool:GetProfileVector(const String:sProfile[], const String:keyValue[], Float:buffer[3], const Float:defaultValue[3]=NULL_VECTOR)
 {
 	for (new i = 0; i < 3; i++) buffer[i] = defaultValue[i];
 	
-	if (!IsProfileValid(strName)) return false;
+	if (!IsProfileValid(sProfile)) return false;
 	
 	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, strName);
+	KvJumpToKey(g_hConfig, sProfile);
 	
 	KvGetVector(g_hConfig, keyValue, buffer, defaultValue);
 	return true;
 }
 
-stock bool:GetProfileColor(const String:strName[], 
+stock bool:GetProfileColor(const String:sProfile[], 
 	const String:keyValue[], 
 	&r, 
 	&g, 
@@ -243,10 +243,10 @@ stock bool:GetProfileColor(const String:strName[],
 	b = db;
 	a = da;
 	
-	if (!IsProfileValid(strName)) return false;
+	if (!IsProfileValid(sProfile)) return false;
 	
 	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, strName);
+	KvJumpToKey(g_hConfig, sProfile);
 	
 	decl String:sValue[64];
 	KvGetString(g_hConfig, keyValue, sValue, sizeof(sValue));
@@ -259,28 +259,28 @@ stock bool:GetProfileColor(const String:strName[],
 	return true;
 }
 
-stock bool:GetProfileString(const String:strName[], const String:keyValue[], String:buffer[], bufferlen, const String:defaultValue[]="")
+stock bool:GetProfileString(const String:sProfile[], const String:keyValue[], String:buffer[], bufferlen, const String:defaultValue[]="")
 {
 	strcopy(buffer, bufferlen, defaultValue);
 	
-	if (!IsProfileValid(strName)) return false;
+	if (!IsProfileValid(sProfile)) return false;
 	
 	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, strName);
+	KvJumpToKey(g_hConfig, sProfile);
 	
 	KvGetString(g_hConfig, keyValue, buffer, bufferlen, defaultValue);
 	return true;
 }
 
 // Code originally from FF2. Credits to the original authors Rainbolt Dash and FlaminSarge.
-stock bool:GetRandomStringFromProfile(const String:strName[], const String:strKeyValue[], String:buffer[], bufferlen, index=-1)
+stock bool:GetRandomStringFromProfile(const String:sProfile[], const String:strKeyValue[], String:buffer[], bufferlen, index=-1)
 {
 	strcopy(buffer, bufferlen, "");
 	
-	if (!IsProfileValid(strName)) return false;
+	if (!IsProfileValid(sProfile)) return false;
 	
 	KvRewind(g_hConfig);
-	KvJumpToKey(g_hConfig, strName);
+	KvJumpToKey(g_hConfig, sProfile);
 	
 	if (!KvJumpToKey(g_hConfig, strKeyValue)) return false;
 	

@@ -3388,7 +3388,6 @@ ClientSetGhostModeState(client, bool:bState)
 		if (IsClientInGame(client))
 		{
 			TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
-			SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
 		}
 	}
 }
@@ -3407,7 +3406,6 @@ ClientHandleGhostMode(client, bool:bForceSpawn=false)
 	if (!TF2_IsPlayerInCondition(client, TFCond_HalloweenGhostMode) || bForceSpawn)
 	{
 		TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
-		//SetEntProp(client, Prop_Send, "m_CollisionGroup", 1); // COLLISION_GROUP_DEBRIS
 		
 		// Set first observer target.
 		ClientGhostModeNextTarget(client);
@@ -3841,7 +3839,7 @@ Float:ClientGetBlinkRate(client)
 		NormalizeVector(flDirection, flDirection);
 		ScaleVector(flDirection, flLength);
 		AddVectors(endPos, flDirection, endPos);
-		new Handle:hTrace = TR_TraceRayFilterEx(startPos, endPos, MASK_VISIBLE, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, client);
+		new Handle:hTrace = TR_TraceRayFilterEx(startPos, endPos, MASK_VISIBLE, RayType_EndPoint, TraceRayDontHitCharactersOrEntity, client);
 		TR_GetEndPosition(endPos, hTrace);
 		new bool:bHit = TR_DidHit(hTrace);
 		CloseHandle(hTrace);
@@ -5171,7 +5169,7 @@ stock ClientUpdateListeningFlags(client, bool:bReset=false)
 						
 						if (GetConVarFloat(g_cvPlayerVoiceWallScale) > 0.0)
 						{
-							new Handle:hTrace = TR_TraceRayFilterEx(flMyPos, flHisPos, MASK_SOLID_BRUSHONLY, RayType_EndPoint, TraceRayDontHitPlayers);
+							new Handle:hTrace = TR_TraceRayFilterEx(flMyPos, flHisPos, MASK_SOLID_BRUSHONLY, RayType_EndPoint, TraceRayDontHitCharacters);
 							new bool:bDidHit = TR_DidHit(hTrace);
 							CloseHandle(hTrace);
 							
@@ -5409,7 +5407,7 @@ stock bool:IsPointVisibleToPlayer(client, const Float:pos[3], bool:bCheckFOV=tru
 		}
 	}
 	
-	new Handle:hTrace = TR_TraceRayFilterEx(eyePos, pos, CONTENTS_SOLID | CONTENTS_MOVEABLE | CONTENTS_MIST, RayType_EndPoint, TraceRayDontHitPlayersOrEntity, client);
+	new Handle:hTrace = TR_TraceRayFilterEx(eyePos, pos, CONTENTS_SOLID | CONTENTS_MOVEABLE | CONTENTS_MIST, RayType_EndPoint, TraceRayDontHitCharactersOrEntity, client);
 	new bool:bHit = TR_DidHit(hTrace);
 	CloseHandle(hTrace);
 	

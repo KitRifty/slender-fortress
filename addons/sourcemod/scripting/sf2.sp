@@ -6299,7 +6299,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 					
 					SetEntProp(slender, Prop_Send, "m_nModelIndex", PrecacheModel(sBuffer));
 					
-					if (flDist <= GetProfileFloat(sProfile, "kill_radius"))
+					if (flDist <= g_flSlenderInstaKillRange[iBossIndex])
 					{
 						if (g_iSlenderFlags[iBossIndex] & SFF_FAKE)
 						{
