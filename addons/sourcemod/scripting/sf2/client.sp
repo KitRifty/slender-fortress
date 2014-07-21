@@ -165,14 +165,14 @@ public Hook_ClientPreThink(client)
 								iState = g_iSlenderState[i];
 								
 								if ((iState == STATE_CHASE || iState == STATE_ATTACK || iState == STATE_STUN) &&
-									((iBossTarget && iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || SlenderGetDistanceFromPlayer(i, client) < 512.0 || PlayerCanSeeSlender(client, i, false)))
+									((iBossTarget && iBossTarget != INVALID_ENT_REFERENCE && (iBossTarget == client || ClientGetDistanceFromEntity(client, iBossTarget) < 512.0)) || NPCGetDistanceFromEntity(i, client) < 512.0 || PlayerCanSeeSlender(client, i, false)))
 								{
 									bDanger = true;
 									ClientSetScareBoostEndTime(client, GetGameTime() + 5.0);
 									
 									// Induce client stress levels.
 									new Float:flUnComfortZoneDist = 512.0;
-									new Float:flStressScalar = (flUnComfortZoneDist / SlenderGetDistanceFromPlayer(i, client));
+									new Float:flStressScalar = (flUnComfortZoneDist / NPCGetDistanceFromEntity(i, client));
 									ClientAddStress(client, 0.025 * flStressScalar);
 									
 									break;
@@ -1686,7 +1686,7 @@ ClientProcessVisibility(client)
 		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
 			SlenderGetAbsOrigin(i, flSlenderPos);
-			SlenderGetEyePosition(i, flSlenderEyePos);
+			NPCGetEyePosition(i, flSlenderEyePos);
 			
 			decl Float:flSlenderMins[3], Float:flSlenderMaxs[3];
 			GetEntPropVector(iBoss, Prop_Send, "m_vecMins", flSlenderMins);
@@ -4361,7 +4361,7 @@ stock ClientUpdateMusicSystem(client, bool:bInitialize=false)
 				// Excitement, though, really depends on how close the boss is in relation to the
 				// player.
 				
-				new Float:flBossDist = SlenderGetDistanceFromPlayer(iBossToUse, client);
+				new Float:flBossDist = NPCGetDistanceFromEntity(iBossToUse, client);
 				new Float:flScalar = flBossDist / 700.0
 				if (flScalar > 1.0) flScalar = 1.0;
 				new Float:flStressAdd = 0.1 * (1.0 - flScalar);

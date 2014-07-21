@@ -661,7 +661,7 @@ public OnPluginStart()
 	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.");
 	HookConVarChange(g_cv20Dollars, OnConVarChanged);
 	
-	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players than can be in one round.");
+	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players than can be in one round.", _, true, 1.0);
 	HookConVarChange(g_cvMaxPlayers, OnConVarChanged);
 	
 	g_cvCampingEnabled = CreateConVar("sf2_anticamping_enabled", "1", "Enable/Disable anti-camping system for RED.");
@@ -1233,11 +1233,19 @@ static StopPlugin()
 	hCvar = FindConVar("mat_supportflashlight");
 	if (hCvar != INVALID_HANDLE) SetConVarBool(hCvar, false);
 	
+	// Cleanup bosses.
+	NPCRemoveAll();
+	
+	// Cleanup clients.
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		ClientResetFlashlight(i);
 		ClientDeactivateUltravision(i);
+		ClientDisableConstantGlow(i);
+		ClientRemoveInteractiveGlow(i);
 	}
+	
+	ProfilesOnMapEnd();
 }
 
 public OnMapEnd()
@@ -2224,7 +2232,7 @@ public Action:Command_RemoveSlender(client, args)
 	new iBossIndex = StringToInt(arg1);
 	if (NPCGetUniqueID(iBossIndex) == -1) return Plugin_Handled;
 	
-	RemoveProfile(iBossIndex);
+	NPCRemove(iBossIndex);
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
@@ -2644,7 +2652,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			if (NPCGetEntIndex(iBoss) == INVALID_ENT_REFERENCE) continue;
 			if (g_iSlenderFlags[iBoss] & SFF_FAKE) continue;
 			
-			new Float:flDist = SlenderGetDistanceFromPlayer(iBoss, i);
+			new Float:flDist = NPCGetDistanceFromEntity(iBoss, i);
 			if (flDist < flBestDist)
 			{
 				iClosest = iBoss;
@@ -2715,8 +2723,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				
 				if (SlenderCanRemove(i))
 				{
-					RemoveSlender(i);
-					RemoveProfile(i);
+					NPCRemove(i);
 					iCount--;
 				}
 				
@@ -4493,7 +4500,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		if (!IsTargetValidForSlender(i, bAttackEliminated)) continue;
 		
 		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-		SlenderGetEyePosition(iBossIndex, flTraceStartPos);
+		NPCGetEyePosition(iBossIndex, flTraceStartPos);
 		GetClientEyePosition(i, flTraceEndPos);
 		
 		new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
@@ -4572,7 +4579,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		
 		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
 		GetClientEyePosition(i, flTraceStartPos);
-		SlenderGetEyePosition(iBossIndex, flTraceEndPos);
+		NPCGetEyePosition(iBossIndex, flTraceEndPos);
 		
 		if (GetVectorDistance(flTraceStartPos, flTraceEndPos) <= SF2_FLASHLIGHT_LENGTH)
 		{
@@ -4726,7 +4733,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				if (GetGameTime() >= g_flSlenderTimeUntilChase[iBossIndex] || bPlayerNear[iBestNewTarget])
 				{
 					decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-					SlenderGetEyePosition(iBossIndex, flTraceStartPos);
+					NPCGetEyePosition(iBossIndex, flTraceStartPos);
 					
 					if (IsValidClient(iBestNewTarget)) GetClientEyePosition(iBestNewTarget, flTraceEndPos);
 					else
@@ -4841,7 +4848,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				if (IsValidEdict(iTarget))
 				{
 					decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-					SlenderGetEyePosition(iBossIndex, flTraceStartPos);
+					NPCGetEyePosition(iBossIndex, flTraceStartPos);
 					
 					if (IsValidClient(iTarget))
 					{
@@ -5572,7 +5579,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					// Try to see if we can look ahead.
 					
 					decl Float:flMyEyePos[3];
-					SlenderGetEyePosition(iBossIndex, flMyEyePos);
+					NPCGetEyePosition(iBossIndex, flMyEyePos);
 					
 					new Float:flNodeLookAheadDist = g_flSlenderPathNodeLookAhead[iBossIndex];
 					if (flNodeLookAheadDist > 0.0)
@@ -6785,7 +6792,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							
 							if (PlayerCanSeeSlender(i, iBossIndex, false))
 							{
-								if ((SlenderGetDistanceFromPlayer(iBossIndex, i) <= GetProfileFloat(sProfile, "jumpscare_distance") &&
+								if ((NPCGetDistanceFromEntity(iBossIndex, i) <= GetProfileFloat(sProfile, "jumpscare_distance") &&
 									GetGameTime() >= g_flSlenderNextJumpScare[iBossIndex]) ||
 									PlayerCanSeeSlender(i, iBossIndex))
 								{
@@ -6845,7 +6852,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	
 	// Damage all players within range.
 	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
-	SlenderGetEyePosition(iBossIndex, flMyEyePos);
+	NPCGetEyePosition(iBossIndex, flMyEyePos);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
 	AddVectors(g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
@@ -7008,7 +7015,7 @@ SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAt
 	new iBoss = NPCGetEntIndex(iBossIndex);
 	
 	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
-	SlenderGetEyePosition(iBossIndex, flMyEyePos);
+	NPCGetEyePosition(iBossIndex, flMyEyePos);
 	GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
 	AddVectors(g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
@@ -7361,10 +7368,7 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dB)
 	g_hVoteTimer = INVALID_HANDLE;
 	
 	// Remove all bosses from the game.
-	for (new i = 0; i < MAX_BOSSES; i++)
-	{
-		RemoveProfile(i);
-	}
+	NPCRemoveAll();
 	
 	// Refresh groups.
 	for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
@@ -8643,12 +8647,10 @@ static HandleNewBossRoundState()
 		SetConVarInt(g_cvNewBossRoundForce, -1);
 	}
 	
-	new Handle:hSelectableBossList = GetSelectableBossProfileList();
-	
 	// Check if we have enough bosses.
 	if (g_bNewBossRound)
 	{
-		if (GetArraySize(hSelectableBossList) < 2)
+		if (GetArraySize(GetSelectableBossProfileList()) < 2)
 		{
 			g_bNewBossRound = false; // Not enough bosses.
 		}
@@ -8690,14 +8692,13 @@ static SelectStartingBossesForRound()
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("START SelectStartingBossesForRound()");
 #endif
 
-	new Handle:hBossList = GetBossProfileList();
 	new Handle:hSelectableBossList = GetSelectableBossProfileList();
 
 	// Select which boss profile to use.
 	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH];
 	GetConVarString(g_cvProfileOverride, sProfileOverride, sizeof(sProfileOverride));
 	
-	if (sProfileOverride[0] && FindStringInArray(hBossList, sProfileOverride) != -1)
+	if (strlen(sProfileOverride) > 0 && IsProfileValid(sProfileOverride))
 	{
 		// Pick the overridden boss.
 		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfileOverride);
@@ -8717,14 +8718,17 @@ static SelectStartingBossesForRound()
 		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 		GetConVarString(g_cvBossMain, sProfile, sizeof(sProfile));
 		
-		if (sProfile[0] && FindStringInArray(hBossList, sProfile) != -1)
+		if (strlen(sProfile) > 0 && IsProfileValid(sProfile))
 		{
 			strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfile);
 		}
 		else
 		{
-			// Pick the first boss in our array if the main boss doesn't exist.
-			GetArrayString(hSelectableBossList, 0, g_strRoundBossProfile, sizeof(g_strRoundBossProfile));
+			if (GetArraySize(hSelectableBossList) > 0)
+			{
+				// Pick the first boss in our array if the main boss doesn't exist.
+				GetArrayString(hSelectableBossList, 0, g_strRoundBossProfile, sizeof(g_strRoundBossProfile));
+			}
 		}
 	}
 	

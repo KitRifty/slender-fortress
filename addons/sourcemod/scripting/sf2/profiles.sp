@@ -10,8 +10,21 @@ static Handle:g_hSelectableBossProfileList = INVALID_HANDLE;
 
 InitializeProfiles()
 {
-	g_hBossProfileList = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
-	g_hSelectableBossProfileList = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
+}
+
+public ProfilesOnMapEnd()
+{
+	if (g_hBossProfileList != INVALID_HANDLE)
+	{
+		CloseHandle(g_hBossProfileList);
+		g_hBossProfileList = INVALID_HANDLE;
+	}
+	
+	if (g_hSelectableBossProfileList != INVALID_HANDLE)
+	{
+		CloseHandle(g_hSelectableBossProfileList);
+		g_hSelectableBossProfileList = INVALID_HANDLE;
+	}
 }
 
 ReloadProfiles()
@@ -22,9 +35,16 @@ ReloadProfiles()
 		g_hConfig = INVALID_HANDLE;
 	}
 	
-	// Clear the lists.
-	ClearArray(g_hBossProfileList);
-	ClearArray(g_hSelectableBossProfileList);
+	// Clear and reload the lists.
+	if (g_hBossProfileList == INVALID_HANDLE)
+	{
+		g_hBossProfileList = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
+	}
+	
+	if (g_hSelectableBossProfileList == INVALID_HANDLE)
+	{
+		g_hSelectableBossProfileList = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
+	}
 	
 	decl String:buffer[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, buffer, sizeof(buffer), FILE_PROFILES);
@@ -80,12 +100,12 @@ ReloadProfiles()
 static bool:LoadProfile(const String:sProfile[], String:sLoadFailReasonBuffer[], iLoadFailReasonBufferLen)
 {
 	// Add to the boss list.
-	PushArrayString(g_hBossProfileList, sProfile);
+	PushArrayString(GetBossProfileList(), sProfile);
 	
 	if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1))
 	{
 		// Add to the selectable boss list.
-		PushArrayString(g_hSelectableBossProfileList, sProfile);
+		PushArrayString(GetSelectableBossProfileList(), sProfile);
 	}
 	
 	if (KvGotoFirstSubKey(g_hConfig))

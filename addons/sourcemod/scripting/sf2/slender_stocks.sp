@@ -88,6 +88,21 @@ NPCSetProfile(iNPCIndex, const String:sProfile[])
 	strcopy(g_strSlenderProfile[iNPCIndex], sizeof(g_strSlenderProfile[]), sProfile);
 }
 
+NPCRemove(iNPCIndex)
+{
+	if (!NPCIsValid(iNPCIndex)) return;
+	
+	RemoveProfile(iNPCIndex);
+}
+
+NPCRemoveAll()
+{
+	for (new i = 0; i < MAX_BOSSES; i++)
+	{
+		NPCRemove(i);
+	}
+}
+
 stock bool:SlenderHasAttribute(iBossIndex, const String:sAttribute[])
 {
 	if (NPCGetUniqueID(iBossIndex) == -1) return false;
@@ -196,21 +211,36 @@ bool:SlenderGetAbsOrigin(iBossIndex, Float:buffer[3], const Float:flDefaultValue
 
 bool:SlenderGetEyePosition(iBossIndex, Float:buffer[3], const Float:flDefaultValue[3]={ 0.0, 0.0, 0.0 })
 {
-	for (new i = 0; i < 3; i++) buffer[i] = flDefaultValue[i];
+	return NPCGetEyePosition(iBossIndex, buffer, flDefaultValue);
+}
+
+NPCGetEyePositionOffset(iNPCIndex, Float:buffer[3])
+{
+	buffer[0] = g_flSlenderEyePosOffset[iNPCIndex][0];
+	buffer[1] = g_flSlenderEyePosOffset[iNPCIndex][1];
+	buffer[2] = g_flSlenderEyePosOffset[iNPCIndex][2];
+}
+
+/**
+ *	Returns the boss's eye position (eye pos offset + absorigin).
+ */
+bool:NPCGetEyePosition(iNPCIndex, Float:buffer[3], const Float:flDefaultValue[3]={ 0.0, 0.0, 0.0 })
+{
+	buffer[0] = flDefaultValue[0];
+	buffer[1] = flDefaultValue[1];
+	buffer[2] = flDefaultValue[2];
 	
-	if (iBossIndex < 0 || NPCGetUniqueID(iBossIndex) == -1) return false;
+	if (!NPCIsValid(iNPCIndex)) return false;
 	
-	new slender = NPCGetEntIndex(iBossIndex);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return false;
+	new iNPC = NPCGetEntIndex(iNPCIndex);
+	if (!iNPC || iNPC == INVALID_ENT_REFERENCE) return false;
 	
-	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	// @TODO: Replace SlenderGetAbsOrigin with GetEntPropVector
+	decl Float:flPos[3], Float:flEyePosOffset[3];
+	SlenderGetAbsOrigin(iNPCIndex, flPos);
+	NPCGetEyePositionOffset(iNPCIndex, flEyePosOffset);
 	
-	decl Float:flPos[3], Float:flEyePos[3];
-	SlenderGetAbsOrigin(iBossIndex, flPos);
-	GetProfileVector(sProfile, "eye_pos", flEyePos);
-	AddVectors(flPos, flEyePos, buffer);
-	
+	AddVectors(flPos, flEyePosOffset, buffer);
 	return true;
 }
 
@@ -228,7 +258,7 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iFlags=0, iCopyMaster=-1
 		return false;
 	}
 	
-	RemoveProfile(iBossIndex);
+	NPCRemove(iBossIndex);
 	
 	NPCSetProfile(iBossIndex, sProfile);
 	
@@ -457,7 +487,7 @@ RemoveProfile(iBossIndex)
 		if (g_iSlenderCopyMaster[i] == iBossIndex)
 		{
 			LogMessage("Removed boss index %d because it is a copy of boss index %d", i, iBossIndex);
-			RemoveProfile(i);
+			NPCRemove(i);
 		}
 	}
 	
@@ -1187,7 +1217,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 				g_bPlayerEliminated[i] || 
 				g_bPlayerEscaped[i]) continue;
 			
-			if (SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]) != -1 && !bIgnoreCopies)
+			if (NPCGetFromUniqueID(g_iSlenderCopyMaster[iBossIndex]) != -1 && !bIgnoreCopies)
 			{
 				new bool:bwub = false;
 			
@@ -1477,7 +1507,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 			
 			// Check if my copy master or my fellow copies could see this position.
 			new bool:bDontAddPosition = false;
-			new iCopyMaster = SlenderGetFromID(g_iSlenderCopyMaster[iBossIndex]);
+			new iCopyMaster = NPCGetFromUniqueID(g_iSlenderCopyMaster[iBossIndex]);
 			
 			decl Float:flCopyCheckPositions[6];
 			for (new i2 = 0; i2 < 3; i2++) flCopyCheckPositions[i2] = tempPos[i2];
@@ -1529,7 +1559,7 @@ bool:SlenderCalculateNewPlace(iBossIndex, Float:buffer[3], bool:bIgnoreCopies=fa
 					if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
 					
 					if (i3 == iCopyMaster || 
-						(iCopyMaster != -1 && SlenderGetFromID(g_iSlenderCopyMaster[i3]) == iCopyMaster))
+						(iCopyMaster != -1 && NPCGetFromUniqueID(g_iSlenderCopyMaster[i3]) == iCopyMaster))
 					{
 					}
 					else continue;
@@ -1663,7 +1693,7 @@ public Action:Timer_SlenderMarkedAsFake(Handle:timer, any:data)
 {
 	if (timer != g_hSlenderFakeTimer[data]) return;
 	
-	RemoveProfile(data);
+	NPCRemove(data);
 }
 
 stock SpawnSlenderModel(iBossIndex, const Float:pos[3])
@@ -1741,51 +1771,66 @@ stock SpawnSlenderModel(iBossIndex, const Float:pos[3])
 
 stock bool:PlayerCanSeeSlender(client, iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink=false, bool:bCheckEliminated=true)
 {
-	if (iBossIndex < 0) return false;
-
-	new slender = NPCGetEntIndex(iBossIndex);
-	if (slender && slender != INVALID_ENT_REFERENCE)
-	{
-		decl Float:myPos[3];
-		SlenderGetAbsOrigin(iBossIndex, myPos);
-		AddVectors(myPos, g_flSlenderEyePosOffset[iBossIndex], myPos);
-		return IsPointVisibleToPlayer(client, myPos, bCheckFOV, bCheckBlink, bCheckEliminated);
-	}
-	
-	return false;
-}
-
-stock SlenderGetFromID(iID)
-{
-	return NPCGetFromUniqueID(iID);
+	return IsNPCVisibleToPlayer(iBossIndex, client, bCheckFOV, bCheckBlink, bCheckEliminated);
 }
 
 stock bool:PeopleCanSeeSlender(iBossIndex, bool:bCheckFOV=true, bool:bCheckBlink=false)
 {
-	new slender = NPCGetEntIndex(iBossIndex);
-	if (slender && slender != INVALID_ENT_REFERENCE)
+	return IsNPCVisibleToAPlayer(iBossIndex, bCheckFOV, bCheckBlink);
+}
+
+// TODO: bCheckBlink and bCheckEliminated should NOT be function arguments!
+bool:IsNPCVisibleToPlayer(iNPCIndex, client, bool:bCheckFOV=true, bool:bCheckBlink=false, bool:bCheckEliminated=true)
+{
+	if (!NPCIsValid(iNPCIndex)) return false;
+	
+	new iNPC = NPCGetEntIndex(iNPCIndex);
+	if (iNPC && iNPC != INVALID_ENT_REFERENCE)
 	{
-		decl Float:myPos[3];
-		SlenderGetAbsOrigin(iBossIndex, myPos);
-		AddVectors(myPos, g_flSlenderEyePosOffset[iBossIndex], myPos);
-		return IsPointVisibleToAPlayer(myPos, bCheckFOV, bCheckBlink);
+		decl Float:flEyePos[3];
+		NPCGetEyePosition(iNPCIndex, flEyePos);
+		return IsPointVisibleToPlayer(client, flEyePos, bCheckFOV, bCheckBlink, bCheckEliminated);
 	}
 	
 	return false;
 }
 
-stock Float:SlenderGetDistanceFromPlayer(iBossIndex, client)
+// TODO: bCheckBlink and bCheckEliminated should NOT be function arguments!
+bool:IsNPCVisibleToAPlayer(iNPCIndex, bool:bCheckFOV=true, bool:bCheckBlink=false, bool:bCheckEliminated=true)
 {
-	new slender = NPCGetEntIndex(iBossIndex);
-	if (slender && slender != INVALID_ENT_REFERENCE)
+	for (new client = 1; client <= MaxClients; client++)
 	{
-		decl Float:myPos[3], Float:flHisPos[3];
-		SlenderGetAbsOrigin(iBossIndex, myPos);
-		GetClientAbsOrigin(client, flHisPos);
-		return GetVectorDistance(flHisPos, myPos);
+		if (IsNPCVisibleToPlayer(iNPCIndex, client, bCheckFOV, bCheckBlink, bCheckEliminated))
+		{
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+Float:NPCGetDistanceFromPoint(iNPCIndex, const Float:flPoint[3], bool:bSquared=false)
+{
+	new iNPC = NPCGetEntIndex(iNPCIndex);
+	if (iNPC && iNPC != INVALID_ENT_REFERENCE)
+	{
+		decl Float:flPos[3];
+		SlenderGetAbsOrigin(iNPCIndex, flPos);
+		
+		return GetVectorDistance(flPos, flPoint, bSquared);
 	}
 	
 	return -1.0;
+}
+
+Float:NPCGetDistanceFromEntity(iNPCIndex, ent, bool:bSquared=false)
+{
+	if (!IsValidEntity(ent)) return -1.0;
+	
+	decl Float:flPos[3];
+	GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
+	
+	return NPCGetDistanceFromPoint(iNPCIndex, flPos, bSquared);
 }
 
 public bool:TraceRayBossVisibility(entity, mask, any:data)
