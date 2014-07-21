@@ -277,7 +277,6 @@ SpecialRoundStart()
 			decl String:sBuffer[SF2_MAX_PROFILE_NAME_LENGTH];
 			new Handle:hSelectableBosses = GetSelectableBossProfileList();
 			GetArrayString(hSelectableBosses, GetRandomInt(0, GetArraySize(hSelectableBosses) - 1), sBuffer, sizeof(sBuffer));
-			CloseHandle(hSelectableBosses);
 			
 			AddProfile(sBuffer);
 		}

@@ -19,7 +19,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.3f"
+#define PLUGIN_VERSION "0.2.3g"
 
 public Plugin:myinfo = 
 {
