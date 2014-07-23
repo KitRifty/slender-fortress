@@ -19,7 +19,7 @@
 
 //#define DEBUG
 
-#define PLUGIN_VERSION "0.2.3g"
+#define PLUGIN_VERSION "0.2.3h"
 
 public Plugin:myinfo = 
 {
@@ -86,7 +86,6 @@ new Handle:g_hSpecialRoundsConfig;
 
 new Handle:g_hPageMusicRanges;
 
-new g_iSlenderFlags[MAX_BOSSES];
 new g_iSlenderModel[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderPoseEnt[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 new g_iSlenderCopyMaster[MAX_BOSSES] = { -1, ... };
@@ -97,22 +96,11 @@ new Float:g_flSlenderDetectMaxs[MAX_BOSSES][3];
 new Handle:g_hSlenderThink[MAX_BOSSES];
 new Handle:g_hSlenderEntityThink[MAX_BOSSES];
 new Handle:g_hSlenderFakeTimer[MAX_BOSSES];
-new Float:g_flSlenderAnger[MAX_BOSSES];
 new Float:g_flSlenderLastKill[MAX_BOSSES];
-new g_iSlenderType[MAX_BOSSES];
 new g_iSlenderState[MAX_BOSSES];
 new g_iSlenderTarget[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
-new Float:g_flSlenderSpeed[MAX_BOSSES];
 new Float:g_flSlenderAcceleration[MAX_BOSSES];
-new Float:g_flSlenderWalkSpeed[MAX_BOSSES];
-new Float:g_flSlenderAirSpeed[MAX_BOSSES];
-new Float:g_flSlenderTurnRate[MAX_BOSSES];
-new Float:g_flSlenderFOV[MAX_BOSSES];
 new Float:g_flSlenderGoalPos[MAX_BOSSES][3];
-new Float:g_flSlenderSearchRange[MAX_BOSSES];
-new Float:g_flSlenderWakeRange[MAX_BOSSES];
-new Float:g_flSlenderInstaKillRange[MAX_BOSSES];
-new Float:g_flSlenderScareRadius[MAX_BOSSES];
 new Float:g_flSlenderStaticRadius[MAX_BOSSES];
 new Float:g_flSlenderChaseDeathPosition[MAX_BOSSES][3];
 new bool:g_bSlenderChaseDeathPosition[MAX_BOSSES];
@@ -122,13 +110,11 @@ new Float:g_flSlenderRunAnimationPlaybackRate[MAX_BOSSES];
 new Float:g_flSlenderJumpSpeed[MAX_BOSSES];
 new Float:g_flSlenderPathNodeTolerance[MAX_BOSSES];
 new Float:g_flSlenderPathNodeLookAhead[MAX_BOSSES];
-new Float:g_flSlenderStepSize[MAX_BOSSES];
 new bool:g_bSlenderFeelerReflexAdjustment[MAX_BOSSES];
 new Float:g_flSlenderFeelerReflexAdjustmentPos[MAX_BOSSES][3];
 
 new g_iSlenderTeleportTarget[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 
-new g_iSlenderTeleportType[MAX_BOSSES] = { -1, ... };
 new Float:g_flSlenderNextTeleportTime[MAX_BOSSES] = { -1.0, ... };
 new Float:g_flSlenderTeleportTargetTime[MAX_BOSSES] = { -1.0, ... };
 new Float:g_flSlenderTeleportMinRange[MAX_BOSSES] = { -1.0, ... };
@@ -140,7 +126,6 @@ new Float:g_flSlenderTeleportPlayersRestTime[MAX_BOSSES][MAXPLAYERS + 1];
 // For boss type 2
 // General variables
 new g_iSlenderHealth[MAX_BOSSES];
-new g_iSlenderHealthUntilStun[MAX_BOSSES];
 new Handle:g_hSlenderPath[MAX_BOSSES];
 new g_iSlenderCurrentPathNode[MAX_BOSSES] = { -1, ... };
 new bool:g_bSlenderAttacking[MAX_BOSSES];
@@ -509,7 +494,7 @@ new Handle:g_hSDKShouldTransmit;
 #include "sf2/effects.sp"
 #include "sf2/pvp.sp"
 #include "sf2/client.sp"
-#include "sf2/slender_stocks.sp"
+#include "sf2/npc.sp"
 #include "sf2/specialround.sp"
 #include "sf2/adminmenu.sp"
 #include "sf2/playergroups.sp"
@@ -763,7 +748,7 @@ public OnPluginStart()
 	
 	AddTempEntHook("Fire Bullets", Hook_TEFireBullets);
 	
-	InitializeProfiles();
+	InitializeBossProfiles();
 	
 	SetupMenus();
 	
@@ -1137,11 +1122,11 @@ static StartPlugin()
 	
 	SetRoundState(SF2RoundState_Waiting);
 	
-	ReloadProfiles();
+	ReloadBossProfiles();
 	ReloadRestrictedWeapons();
 	ReloadSpecialRounds();
 	
-	SlenderOnConfigsExecuted();
+	NPCOnConfigsExecuted();
 	
 	// Late load compensation.
 	for (new i = 1; i <= MaxClients; i++)
@@ -1245,7 +1230,7 @@ static StopPlugin()
 		ClientRemoveInteractiveGlow(i);
 	}
 	
-	ProfilesOnMapEnd();
+	BossProfilesOnMapEnd();
 }
 
 public OnMapEnd()
@@ -1277,13 +1262,13 @@ public OnGameFrame()
 		new iBoss = NPCGetEntIndex(i);
 		if (!iBoss || iBoss == INVALID_ENT_REFERENCE) continue;
 		
-		if (g_iSlenderFlags[i] & SFF_MARKEDASFAKE) continue;
+		if (NPCGetFlags(i) & SFF_MARKEDASFAKE) continue;
 		
-		new iType = g_iSlenderType[i];
+		new iType = NPCGetType(i);
 		
 		switch (iType)
 		{
-			case 0:
+			case SF2BossType_Static:
 			{
 				decl Float:myPos[3], Float:hisPos[3];
 				SlenderGetAbsOrigin(i, myPos);
@@ -1315,7 +1300,7 @@ public OnGameFrame()
 					
 					if (!SlenderOnlyLooksIfNotSeen(i) || !IsPointVisibleToAPlayer(myPos, false, SlenderUsesBlink(i)))
 					{
-						new Float:flTurnRate = g_flSlenderTurnRate[i];
+						new Float:flTurnRate = NPCGetTurnRate(i);
 					
 						if (flTurnRate > 0.0)
 						{
@@ -1337,7 +1322,7 @@ public OnGameFrame()
 					}
 				}
 			}
-			case 2:
+			case SF2BossType_Chaser:
 			{
 				SlenderChaseBossProcessMovement(i);
 			}
@@ -2232,10 +2217,10 @@ public Action:Command_RemoveSlender(client, args)
 	new iBossIndex = StringToInt(arg1);
 	if (NPCGetUniqueID(iBossIndex) == -1) return Plugin_Handled;
 	
-	NPCRemove(iBossIndex);
-	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
+	NPCRemove(iBossIndex);
 	
 	CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Removed Boss", client);
 	LogAction(client, -1, "%N removed boss %d! (%s)", client, iBossIndex, sProfile);
@@ -2260,7 +2245,7 @@ public Action:Command_GetBossIndexes(client, args)
 		NPCGetProfile(i, sProfile, sizeof(sProfile));
 		
 		Format(sMessage, sizeof(sMessage), "%d - %s", i, sProfile);
-		if (g_iSlenderFlags[i] & SFF_FAKE)
+		if (NPCGetFlags(i) & SFF_FAKE)
 		{
 			StrCat(sMessage, sizeof(sMessage), " (fake)");
 		}
@@ -2301,8 +2286,10 @@ public Action:Command_SlenderAttackWaiters(client, args)
 	decl String:arg2[32];
 	GetCmdArg(2, arg2, sizeof(arg2));
 	
+	new iBossFlags = NPCGetFlags(iBossIndex);
+	
 	new bool:bState = bool:StringToInt(arg2);
-	new bool:bOldState = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
+	new bool:bOldState = bool:(iBossFlags & SFF_ATTACKWAITERS);
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
@@ -2311,7 +2298,7 @@ public Action:Command_SlenderAttackWaiters(client, args)
 	{
 		if (!bOldState)
 		{
-			g_iSlenderFlags[iBossIndex] |= SFF_ATTACKWAITERS;
+			NPCSetFlags(iBossIndex, iBossFlags | SFF_ATTACKWAITERS);
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Attack Waiters", client);
 			LogAction(client, -1, "%N forced boss %d to attack waiters! (%s)", client, iBossIndex, sProfile);
 		}
@@ -2320,7 +2307,7 @@ public Action:Command_SlenderAttackWaiters(client, args)
 	{
 		if (bOldState)
 		{
-			g_iSlenderFlags[iBossIndex] &= ~SFF_ATTACKWAITERS;
+			NPCSetFlags(iBossIndex, iBossFlags & ~SFF_ATTACKWAITERS);
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Do Not Attack Waiters", client);
 			LogAction(client, -1, "%N forced boss %d to not attack waiters! (%s)", client, iBossIndex, sProfile);
 		}
@@ -2348,8 +2335,10 @@ public Action:Command_SlenderNoTeleport(client, args)
 	decl String:arg2[32];
 	GetCmdArg(2, arg2, sizeof(arg2));
 	
+	new iBossFlags = NPCGetFlags(iBossIndex);
+	
 	new bool:bState = bool:StringToInt(arg2);
-	new bool:bOldState = bool:(g_iSlenderFlags[iBossIndex] & SFF_NOTELEPORT);
+	new bool:bOldState = bool:(iBossFlags & SFF_NOTELEPORT);
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
@@ -2358,7 +2347,7 @@ public Action:Command_SlenderNoTeleport(client, args)
 	{
 		if (!bOldState)
 		{
-			g_iSlenderFlags[iBossIndex] |= SFF_NOTELEPORT;
+			NPCSetFlags(iBossIndex, iBossFlags | SFF_NOTELEPORT);
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Should Not Teleport", client);
 			LogAction(client, -1, "%N disabled teleportation of boss %d! (%s)", client, iBossIndex, sProfile);
 		}
@@ -2367,7 +2356,7 @@ public Action:Command_SlenderNoTeleport(client, args)
 	{
 		if (bOldState)
 		{
-			g_iSlenderFlags[iBossIndex] &= ~SFF_NOTELEPORT;
+			NPCSetFlags(iBossIndex, iBossFlags & ~SFF_NOTELEPORT);
 			CPrintToChat(client, "%t%T", "SF2 Prefix", "SF2 Boss Should Teleport", client);
 			LogAction(client, -1, "%N enabled teleportation of boss %d! (%s)", client, iBossIndex, sProfile);
 		}
@@ -2625,7 +2614,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 	{
 		if (NPCGetUniqueID(i) == -1 ||
 			g_iSlenderCopyMaster[i] != -1 ||
-			(g_iSlenderFlags[i] & SFF_FAKE))
+			(NPCGetFlags(i) & SFF_FAKE))
 		{
 			continue;
 		}
@@ -2650,7 +2639,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 		{
 			if (NPCGetUniqueID(iBoss) == -1) continue;
 			if (NPCGetEntIndex(iBoss) == INVALID_ENT_REFERENCE) continue;
-			if (g_iSlenderFlags[iBoss] & SFF_FAKE) continue;
+			if (NPCGetFlags(iBoss) & SFF_FAKE) continue;
 			
 			new Float:flDist = NPCGetDistanceFromEntity(iBoss, i);
 			if (flDist < flBestDist)
@@ -2682,7 +2671,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			for (new iBoss = 0; iBoss < MAX_BOSSES; iBoss++)
 			{
 				if (NPCGetUniqueID(iBoss) == -1) continue;
-				if (g_iSlenderFlags[iBoss] & SFF_FAKE) continue;
+				if (NPCGetFlags(iBoss) & SFF_FAKE) continue;
 				
 				if (g_iSlenderTarget[iBoss] == iClient)
 				{
@@ -2719,7 +2708,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			{
 				if (g_iSlenderCopyMaster[i] == -1) continue;
 				if (PeopleCanSeeSlender(i, _, false)) continue;
-				if (g_iSlenderFlags[i] & SFF_FAKE) continue;
+				if (NPCGetFlags(i) & SFF_FAKE) continue;
 				
 				if (SlenderCanRemove(i))
 				{
@@ -2743,7 +2732,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			{
 				if (NPCGetUniqueID(i) == -1) continue;
 				if (g_iSlenderCopyMaster[i] != -1) continue;
-				if (!(g_iSlenderFlags[i] & SFF_COPIES)) continue;
+				if (!(NPCGetFlags(i) & SFF_COPIES)) continue;
 				
 				// Get the number of copies I already have and see if I can have more copies.
 				new iCopyCount;
@@ -2786,7 +2775,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 			{
 				if (NPCGetUniqueID(iBossIndex) == -1) continue;
 				
-				if (!(g_iSlenderFlags[iBossIndex] & SFF_PROXIES)) continue;
+				if (!(NPCGetFlags(iBossIndex) & SFF_PROXIES)) continue;
 				
 				if (g_iSlenderCopyMaster[iBossIndex] != -1) continue; // Copies cannot generate proxies.
 				
@@ -2821,7 +2810,7 @@ public Action:Timer_BossCountUpdate(Handle:timer)
 				
 				new Float:flSpawnChanceMin = GetProfileFloat(sProfile, "proxies_spawn_chance_min");
 				new Float:flSpawnChanceMax = GetProfileFloat(sProfile, "proxies_spawn_chance_max");
-				new Float:flSpawnChanceThreshold = GetProfileFloat(sProfile, "proxies_spawn_chance_threshold") * g_flSlenderAnger[iBossIndex];
+				new Float:flSpawnChanceThreshold = GetProfileFloat(sProfile, "proxies_spawn_chance_threshold") * NPCGetAnger(iBossIndex);
 				
 				new Float:flChance = GetRandomFloat(flSpawnChanceMin, flSpawnChanceMax);
 				if (flChance > flSpawnChanceThreshold) 
@@ -4409,7 +4398,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	
 	if (timer != g_hSlenderEntityThink[iBossIndex]) return Plugin_Stop;
 	
-	if (g_iSlenderFlags[iBossIndex] & SFF_MARKEDASFAKE) return Plugin_Stop;
+	if (NPCGetFlags(iBossIndex) & SFF_MARKEDASFAKE) return Plugin_Stop;
 	
 	decl Float:flSlenderVelocity[3], Float:flMyPos[3], Float:flMyEyeAng[3];
 	new Float:flBuffer[3];
@@ -4420,21 +4409,24 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsVelocity", flSlenderVelocity);
 	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
 	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	AddVectors(flMyEyeAng, g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng);
+	AddVectors(flMyEyeAng, g_flSlenderEyeAngOffset[iBossIndex], flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
+	
+	new iDifficulty = GetConVarInt(g_cvDifficulty);
 	
 	new Float:flVelocityRatio;
 	new Float:flVelocityRatioWalk;
-	new Float:flOriginalSpeed = g_flSlenderSpeed[iBossIndex];
-	new Float:flOriginalWalkSpeed = g_flSlenderWalkSpeed[iBossIndex];
-	new Float:flMaxSpeed = GetProfileFloat(sSlenderProfile, "speed_max");
-	new Float:flMaxWalkSpeed = GetProfileFloat(sSlenderProfile, "walkspeed_max");
 	
-	new Float:flSpeed = flOriginalSpeed * g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier;
+	new Float:flOriginalSpeed = NPCGetSpeed(iBossIndex, iDifficulty);
+	new Float:flOriginalWalkSpeed = NPCChaserGetWalkSpeed(iBossIndex, iDifficulty);
+	new Float:flMaxSpeed = NPCGetMaxSpeed(iBossIndex, iDifficulty);
+	new Float:flMaxWalkSpeed = NPCChaserGetMaxWalkSpeed(iBossIndex, iDifficulty);
+	
+	new Float:flSpeed = flOriginalSpeed * NPCGetAnger(iBossIndex) * g_flRoundDifficultyModifier;
 	if (flSpeed < flOriginalSpeed) flSpeed = flOriginalSpeed;
 	if (flSpeed > flMaxSpeed) flSpeed = flMaxSpeed;
 	
-	new Float:flWalkSpeed = flOriginalWalkSpeed * g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier;
+	new Float:flWalkSpeed = flOriginalWalkSpeed * NPCGetAnger(iBossIndex) * g_flRoundDifficultyModifier;
 	if (flWalkSpeed < flOriginalWalkSpeed) flWalkSpeed = flOriginalWalkSpeed;
 	if (flWalkSpeed > flMaxWalkSpeed) flWalkSpeed = flMaxWalkSpeed;
 	
@@ -4460,17 +4452,17 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	if (flOriginalWalkSpeed <= 0.0) flVelocityRatioWalk = 0.0;
 	else flVelocityRatioWalk = GetVectorLength(flSlenderVelocity) / flOriginalWalkSpeed;
 	
-	new Float:flAttackRange = GetProfileFloat(sSlenderProfile, "attack_range");
-	new Float:flAttackFOV = GetProfileFloat(sSlenderProfile, "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
-	new Float:flAttackBeginRange = GetProfileFloat(sSlenderProfile, "attack_begin_range", flAttackRange);
-	new Float:flAttackBeginFOV = GetProfileFloat(sSlenderProfile, "attack_begin_fov", 70.0);
+	new Float:flAttackRange = NPCChaserGetAttackRange(iBossIndex, 0);
+	new Float:flAttackFOV = NPCChaserGetAttackSpread(iBossIndex, 0);
+	new Float:flAttackBeginRange = NPCChaserGetAttackBeginRange(iBossIndex, 0);
+	new Float:flAttackBeginFOV = NPCChaserGetAttackBeginFOV(iBossIndex, 0);
 	
 	
 	new iOldState = g_iSlenderState[iBossIndex];
 	new iOldTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
 	
 	new iBestNewTarget = INVALID_ENT_REFERENCE;
-	new Float:flSearchRange = g_flSlenderSearchRange[iBossIndex];
+	new Float:flSearchRange = NPCGetSearchRadius(iBossIndex);
 	new Float:flBestNewTargetDist = flSearchRange;
 	new iState = iOldState;
 	
@@ -4479,8 +4471,8 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	new Float:flPlayerDists[MAXPLAYERS + 1];
 	new bool:bPlayerVisible[MAXPLAYERS + 1];
 	
-	new bool:bAttackEliminated = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
-	new bool:bStunEnabled = bool:GetProfileNum(sSlenderProfile, "stun_enabled");
+	new bool:bAttackEliminated = bool:(NPCGetFlags(iBossIndex) & SFF_ATTACKWAITERS);
+	new bool:bStunEnabled = NPCChaserIsStunEnabled(iBossIndex);
 	
 	decl Float:flSlenderMins[3], Float:flSlenderMaxs[3];
 	GetEntPropVector(slender, Prop_Send, "m_vecMins", flSlenderMins);
@@ -4521,7 +4513,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		
 		// Near radius check.
 		if (bIsVisible &&
-			GetVectorDistance(flTraceStartPos, flTraceEndPos) <= g_flSlenderWakeRange[iBossIndex])
+			GetVectorDistance(flTraceStartPos, flTraceEndPos) <= NPCChaserGetWakeRadius(iBossIndex))
 		{
 			bPlayerNear[i] = true;
 		}
@@ -4530,7 +4522,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 		SubtractVectors(flTraceEndPos, flTraceStartPos, flBuffer);
 		GetVectorAngles(flBuffer, flBuffer);
 		
-		if (FloatAbs(AngleDiff(flMyEyeAng[1], flBuffer[1])) <= (g_flSlenderFOV[iBossIndex] * 0.5))
+		if (FloatAbs(AngleDiff(flMyEyeAng[1], flBuffer[1])) <= (NPCGetFOV(iBossIndex) * 0.5))
 		{
 			bPlayerInFOV[i] = true;
 		}
@@ -4614,9 +4606,12 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	{
 		if (bStunEnabled)
 		{
-			if (g_iSlenderHealthUntilStun[iBossIndex] > 0)
+			if (NPCChaserIsStunByFlashlightEnabled(iBossIndex))
 			{
-				g_iSlenderHealthUntilStun[iBossIndex] -= GetProfileNum(sSlenderProfile, "stun_damage_flashlight");
+				if (NPCChaserGetStunHealth(iBossIndex) > 0)
+				{
+					NPCChaserAddStunHealth(iBossIndex, -NPCChaserGetStunFlashlightDamage(iBossIndex));
+				}
 			}
 		}
 	}
@@ -4806,7 +4801,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				
 				new bool:bBlockingProp = false;
 				
-				if (g_iSlenderFlags[iBossIndex] & SFF_ATTACKPROPS)
+				if (NPCGetFlags(iBossIndex) & SFF_ATTACKPROPS)
 				{
 					new prop = -1;
 					while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
@@ -4909,7 +4904,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 						GetVectorAngles(flAttackDirection, flAttackDirection);
 						
 						if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= flAttackBeginRange &&
-							(FloatAbs(AngleDiff(flAttackDirection[0], flMyEyeAng[0])) + FloatAbs(AngleDiff(flAttackDirection[1], flMyEyeAng[1]))) <= flAttackBeginFOV)
+							(FloatAbs(AngleDiff(flAttackDirection[0], flMyEyeAng[0])) + FloatAbs(AngleDiff(flAttackDirection[1], flMyEyeAng[1]))) <= flAttackBeginFOV / 2.0)
 						{
 							// ENOUGH TALK! HAVE AT YOU!
 							iState = STATE_ATTACK;
@@ -4918,7 +4913,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 						{
 							new bool:bBlockingProp = false;
 							
-							if (g_iSlenderFlags[iBossIndex] & SFF_ATTACKPROPS)
+							if (NPCGetFlags(iBossIndex) & SFF_ATTACKPROPS)
 							{
 								new prop = -1;
 								while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
@@ -4991,7 +4986,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 			{
 				if (GetGameTime() >= g_flSlenderTimeUntilRecover[iBossIndex])
 				{
-					g_iSlenderHealthUntilStun[iBossIndex] = GetProfileNum(sSlenderProfile, "stun_health", 85);
+					NPCChaserSetStunHealth(iBossIndex, NPCChaserGetStunInitialHealth(iBossIndex));
 					
 					if (IsValidClient(iTarget))
 					{
@@ -5014,7 +5009,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 	{
 		if (bStunEnabled)
 		{
-			if (g_iSlenderHealthUntilStun[iBossIndex] <= 0)
+			if (NPCChaserGetStunHealth(iBossIndex) <= 0)
 			{
 				if (iState != STATE_CHASE && iState != STATE_ATTACK)
 				{
@@ -5068,7 +5063,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				// Animation handling.
 				if (iModel && iModel != INVALID_ENT_REFERENCE)
 				{
-					if (iState == STATE_WANDER && (g_iSlenderFlags[iBossIndex] & SFF_WANDERMOVE))
+					if (iState == STATE_WANDER && (NPCGetFlags(iBossIndex) & SFF_WANDERMOVE))
 					{
 						if (GetProfileString(sSlenderProfile, "animation_walk", sAnimation, sizeof(sAnimation)))
 						{
@@ -5133,7 +5128,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				if (iState == STATE_ATTACK)
 				{
 					g_bSlenderAttacking[iBossIndex] = true;
-					g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(sSlenderProfile, "attack_delay"), Timer_SlenderChaseBossAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
+					g_hSlenderAttackTimer[iBossIndex] = CreateTimer(NPCChaserGetAttackDamageDelay(iBossIndex, 0), Timer_SlenderChaseBossAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
 					
 					new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_attack", -1.0);
 					if (flPersistencyTime >= 0.0)
@@ -5183,7 +5178,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 						}
 					}
 					
-					g_flSlenderTimeUntilRecover[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "stun_duration", 1.0);
+					g_flSlenderTimeUntilRecover[iBossIndex] = GetGameTime() + NPCChaserGetStunDuration(iBossIndex);
 					
 					// Sound handling. Ignore time check.
 					SlenderPerformVoice(iBossIndex, "sound_stun");
@@ -5257,7 +5252,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					new Float:flMax = GetProfileFloat(sSlenderProfile, "search_wander_time_max", 6.5);
 					g_flSlenderNextWanderPos[iBossIndex] = GetGameTime() + GetRandomFloat(flMin, flMax);
 					
-					if (g_iSlenderFlags[iBossIndex] & SFF_WANDERMOVE)
+					if (NPCGetFlags(iBossIndex) & SFF_WANDERMOVE)
 					{
 						// We're allowed to move in wander mode. Get a new wandering position and create a path to follow.
 						// If the position can't be reached, then just get to the closest area that we can get.
@@ -5442,7 +5437,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				
 					if (bPlayerInFOV[iTarget] && bPlayerVisible[iTarget])
 					{
-						new Float:flDistRatio = flPlayerDists[iTarget] / g_flSlenderSearchRange[iBossIndex];
+						new Float:flDistRatio = flPlayerDists[iTarget] / NPCGetSearchRadius(iBossIndex);
 						
 						new Float:flChaseDurationTimeAddMin = GetProfileFloat(sSlenderProfile, "search_chase_duration_add_visible_min", 0.025);
 						new Float:flChaseDurationTimeAddMax = GetProfileFloat(sSlenderProfile, "search_chase_duration_add_visible_max", 0.2);
@@ -5694,7 +5689,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				// Animation playback speed handling.
 				if (iModel && iModel != INVALID_ENT_REFERENCE)
 				{
-					if (iState == STATE_WANDER && !(g_iSlenderFlags[iBossIndex] & SFF_WANDERMOVE))
+					if (iState == STATE_WANDER && !(NPCGetFlags(iBossIndex) & SFF_WANDERMOVE))
 					{
 						SetVariantFloat(flPlaybackRateIdle);
 						AcceptEntityInput(iModel, "SetPlaybackRate");
@@ -5875,7 +5870,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 	{
 		case STATE_WANDER:
 		{
-			if (g_iSlenderFlags[iBossIndex] & SFF_WANDERMOVE)
+			if (NPCGetFlags(iBossIndex) & SFF_WANDERMOVE)
 			{
 				SubtractVectors(flGoalPosition, flMyPos, flDesiredVelocity);
 				flDesiredVelocity[2] = 0.0;
@@ -5914,11 +5909,11 @@ SlenderChaseBossProcessMovement(iBossIndex)
 	{
 		flDesiredVelocity[2] = 0.0;
 		NormalizeVector(flDesiredVelocity, flDesiredVelocity);
-		ScaleVector(flDesiredVelocity, g_flSlenderAirSpeed[iBossIndex]);
+		ScaleVector(flDesiredVelocity, NPCChaserGetAirSpeed(iBossIndex, GetConVarInt(g_cvDifficulty)));
 	}
 	
 	new bool:bSlenderTeleportedOnStep = false;
-	new Float:flSlenderStepSize = g_flSlenderStepSize[iBossIndex];
+	new Float:flSlenderStepSize = NPCChaserGetStepSize(iBossIndex);
 	
 	// Check our stepsize in case we need to elevate ourselves a step.
 	if (bSlenderOnGround && GetVectorLength(flDesiredVelocity) > 0.0)
@@ -6150,7 +6145,7 @@ SlenderChaseBossProcessMovement(iBossIndex)
 			GetVectorAngles(flMoveAng, flMoveAng);
 		}
 		
-		new Float:flTurnRate = g_flSlenderTurnRate[iBossIndex];
+		new Float:flTurnRate = NPCGetTurnRate(iBossIndex);
 		if (iState == STATE_CHASE) flTurnRate *= 2.0;
 		
 		flMoveAng[0] = 0.0;
@@ -6211,7 +6206,7 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
-	if (g_iSlenderType[iBossIndex] == 1)
+	if (NPCGetType(iBossIndex) == SF2BossType_Creeper)
 	{
 		new bool:bMove = false;
 		
@@ -6299,9 +6294,9 @@ public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
 					
 					SetEntProp(slender, Prop_Send, "m_nModelIndex", PrecacheModel(sBuffer));
 					
-					if (flDist <= g_flSlenderInstaKillRange[iBossIndex])
+					if (flDist <= NPCGetInstantKillRadius(iBossIndex))
 					{
-						if (g_iSlenderFlags[iBossIndex] & SFF_FAKE)
+						if (NPCGetFlags(iBossIndex) & SFF_FAKE)
 						{
 							SlenderMarkAsFake(iBossIndex);
 							return Plugin_Stop;
@@ -6347,7 +6342,7 @@ SlenderOnClientStressUpdate(client)
 	{	
 		if (NPCGetUniqueID(iBossIndex) == -1) continue;
 		
-		new iBossFlags = g_iSlenderFlags[iBossIndex];
+		new iBossFlags = NPCGetFlags(iBossIndex);
 		if (iBossFlags & SFF_MARKEDASFAKE ||
 			iBossFlags & SFF_NOTELEPORT)
 		{
@@ -6366,7 +6361,7 @@ SlenderOnClientStressUpdate(client)
 			{
 				// Queue for a new target and mark the old target in the rest period.
 				new Float:flRestPeriod = GetProfileFloat(sProfile, "teleport_target_rest_period", 15.0);
-				flRestPeriod = (flRestPeriod * GetRandomFloat(0.92, 1.08)) / (g_flSlenderAnger[iBossIndex] * g_flRoundDifficultyModifier);
+				flRestPeriod = (flRestPeriod * GetRandomFloat(0.92, 1.08)) / (NPCGetAnger(iBossIndex) * g_flRoundDifficultyModifier);
 				
 				g_iSlenderTeleportTarget[iBossIndex] = INVALID_ENT_REFERENCE;
 				g_flSlenderTeleportPlayersRestTime[iBossIndex][iTeleportTarget] = GetGameTime() + flRestPeriod;
@@ -6386,7 +6381,7 @@ SlenderOnClientStressUpdate(client)
 			new Float:flTargetStressMin = GetProfileFloat(sProfile, "teleport_target_stress_min", 0.2);
 			new Float:flTargetStressMax = GetProfileFloat(sProfile, "teleport_target_stress_max", 0.9);
 			
-			new Float:flTargetStress = flTargetStressMax - ((flTargetStressMax - flTargetStressMin) / (g_flRoundDifficultyModifier * g_flSlenderAnger[iBossIndex]));
+			new Float:flTargetStress = flTargetStressMax - ((flTargetStressMax - flTargetStressMin) / (g_flRoundDifficultyModifier * NPCGetAnger(iBossIndex)));
 			
 			new Float:flPreferredTeleportTargetStress = flTargetStress;
 			
@@ -6416,7 +6411,7 @@ SlenderOnClientStressUpdate(client)
 				// Set our preferred target to the new guy.
 				new Float:flTargetDuration = GetProfileFloat(sProfile, "teleport_target_persistency_period", 13.0);
 				new Float:flDeviation = GetRandomFloat(0.92, 1.08);
-				flTargetDuration = Pow(flDeviation * flTargetDuration, ((g_flRoundDifficultyModifier * (g_flSlenderAnger[iBossIndex] - 1.0)) / 2.0)) + ((flDeviation * flTargetDuration) - 1.0);
+				flTargetDuration = Pow(flDeviation * flTargetDuration, ((g_flRoundDifficultyModifier * (NPCGetAnger(iBossIndex) - 1.0)) / 2.0)) + ((flDeviation * flTargetDuration) - 1.0);
 				
 				g_iSlenderTeleportTarget[iBossIndex] = EntIndexToEntRef(iPreferredTeleportTarget);
 				g_flSlenderTeleportPlayersRestTime[iBossIndex][iPreferredTeleportTarget] = -1.0;
@@ -6447,9 +6442,9 @@ stock Float:CalculateTeleportMinRange(iBossIndex, Float:flInitialMinRange, Float
 	new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[iBossIndex] - g_flSlenderTeleportTargetTime[iBossIndex];
 	new Float:flTeleportMinRange = flTeleportMaxRange - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (flTeleportMaxRange - flInitialMinRange);
 	
-	if (g_flSlenderAnger[iBossIndex] <= 1.0)
+	if (NPCGetAnger(iBossIndex) <= 1.0)
 	{
-		flTeleportMinRange += (g_flSlenderTeleportMinRange[iBossIndex] - flTeleportMaxRange) * Pow(g_flSlenderAnger[iBossIndex] - 1.0, 2.0 / g_flRoundDifficultyModifier);
+		flTeleportMinRange += (g_flSlenderTeleportMinRange[iBossIndex] - flTeleportMaxRange) * Pow(NPCGetAnger(iBossIndex) - 1.0, 2.0 / g_flRoundDifficultyModifier);
 	}
 	
 	if (flTeleportMinRange < flInitialMinRange) flTeleportMinRange = flInitialMinRange;
@@ -6463,7 +6458,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 	if (iBossIndex == -1) return Plugin_Stop;
 	if (timer != g_hSlenderThink[iBossIndex]) return Plugin_Stop;
 	
-	if (g_iSlenderFlags[iBossIndex] & SFF_NOTELEPORT) return Plugin_Continue;
+	if (NPCGetFlags(iBossIndex) & SFF_NOTELEPORT) return Plugin_Continue;
 	
 	// Check to see if anyone's looking at me before doing anything.
 	if (PeopleCanSeeSlender(iBossIndex, _, false))
@@ -6471,12 +6466,12 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 		return Plugin_Continue;
 	}
 	
-	if (g_iSlenderTeleportType[iBossIndex] == 2)
+	if (NPCGetTeleportType(iBossIndex) == 2)
 	{
 		new iBoss = NPCGetEntIndex(iBossIndex);
 		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
 		{
-			if (g_iSlenderType[iBossIndex] == 2)
+			if (NPCGetType(iBossIndex) == SF2BossType_Chaser)
 			{
 				// Check to see if it's a good time to teleport away.
 				new iState = g_iSlenderState[iBossIndex];
@@ -6529,7 +6524,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 					if (iTargetAreaIndex != -1)
 					{
 						new bool:bShouldBeBehindObstruction = false;
-						if (g_iSlenderTeleportType[iBossIndex] == 2)
+						if (NPCGetTeleportType(iBossIndex) == 2)
 						{
 							bShouldBeBehindObstruction = true;
 						}
@@ -6546,6 +6541,14 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 							{
 								new iAreaIndex = -1;
 								PopStackCell(hAreas, iAreaIndex);
+								
+								// Check flags.
+								if (NavMeshArea_GetFlags(iAreaIndex) & NAV_MESH_NO_HOSTAGES)
+								{
+									// Don't spawn/teleport at areas marked with the "NO HOSTAGES" flag.
+									continue;
+								}
+								
 								new iIndex = PushArrayCell(hAreaArray, iAreaIndex);
 								SetArrayCell(hAreaArray, iIndex, float(NavMeshArea_GetCostSoFar(iAreaIndex)), 1);
 								iPoppedAreas++;
@@ -6655,7 +6658,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 								if (bTooNear) continue;	// This area is not compatible.
 								
 								// Check minimum range with boss copies (if supported).
-								if (g_iSlenderFlags[iBossIndex] & SFF_COPIES)
+								if (NPCGetFlags(iBossIndex) & SFF_COPIES)
 								{
 									new Float:flMinDistBetweenBosses = GetProfileFloat(sProfile, "copy_teleport_dist_from_others", 800.0);
 									
@@ -6782,7 +6785,7 @@ public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
 				{
 					SpawnSlender(iBossIndex, flTeleportPos);
 					
-					if (g_iSlenderFlags[iBossIndex] & SFF_HASJUMPSCARE)
+					if (NPCGetFlags(iBossIndex) & SFF_HASJUMPSCARE)
 					{
 						new bool:bDidJumpScare = false;
 						
@@ -6835,7 +6838,7 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	
 	if (timer != g_hSlenderAttackTimer[iBossIndex]) return;
 	
-	if (g_iSlenderFlags[iBossIndex] & SFF_FAKE)
+	if (NPCGetFlags(iBossIndex) & SFF_FAKE)
 	{
 		SlenderMarkAsFake(iBossIndex);
 		return;
@@ -6844,11 +6847,11 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
-	new bool:bAttackEliminated = bool:(g_iSlenderFlags[iBossIndex] & SFF_ATTACKWAITERS);
+	new bool:bAttackEliminated = bool:(NPCGetFlags(iBossIndex) & SFF_ATTACKWAITERS);
 	
-	new Float:flDamage = GetProfileFloat(sProfile, "attack_damage");
-	new Float:flDamageVsProps = GetProfileFloat(sProfile, "attack_damage_vs_props", flDamage);
-	new iDamageType = GetProfileNum(sProfile, "attack_damagetype");
+	new Float:flDamage = NPCChaserGetAttackDamage(iBossIndex, 0);
+	new Float:flDamageVsProps = NPCChaserGetAttackDamageVsProps(iBossIndex, 0);
+	new iDamageType = NPCChaserGetAttackDamageType(iBossIndex, 0);
 	
 	// Damage all players within range.
 	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
@@ -6863,9 +6866,9 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 	decl Float:flTargetDist;
 	decl Handle:hTrace;
 	
-	new Float:flAttackRange = GetProfileFloat(sProfile, "attack_range");
-	new Float:flAttackFOV = GetProfileFloat(sProfile, "attack_fov", g_flSlenderFOV[iBossIndex] * 0.5);
-	new Float:flAttackDamageForce = GetProfileFloat(sProfile, "attack_damageforce");
+	new Float:flAttackRange = NPCChaserGetAttackRange(iBossIndex, 0);
+	new Float:flAttackFOV = NPCChaserGetAttackSpread(iBossIndex, 0);
+	new Float:flAttackDamageForce = NPCChaserGetAttackDamageForce(iBossIndex, 0);
 	
 	new bool:bHit = false;
 	
@@ -7017,7 +7020,7 @@ SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAt
 	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
 	NPCGetEyePosition(iBossIndex, flMyEyePos);
 	GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	AddVectors(g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
+	AddVectors(g_flSlenderEyeAngOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
 	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
 	
 	decl Float:flTargetPos[3], Float:flTargetMins[3], Float:flTargetMaxs[3];
@@ -7037,7 +7040,7 @@ SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAt
 		SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyEyePos, flDirection);
 		GetVectorAngles(flDirection, flDirection);
 		
-		if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV)
+		if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV / 2.0)
 		{
 			new Handle:hTrace = TR_TraceRayFilterEx(flMyEyePos,
 				flTargetPos,
@@ -7168,22 +7171,18 @@ SetPageCount(iNum)
 			g_iRoundTime += g_iRoundTimeGainFromPage;
 			if (g_iRoundTime > g_iRoundTimeLimit) g_iRoundTime = g_iRoundTimeLimit;
 			
-			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-			
 			// Increase anger on selected bosses.
 			for (new i = 0; i < MAX_BOSSES; i++)
 			{
 				if (NPCGetUniqueID(i) == -1) continue;
 				
-				NPCGetProfile(i, sProfile, sizeof(sProfile));
-				
-				new Float:flPageDiff = GetProfileFloat(sProfile, "anger_page_time_diff");
+				new Float:flPageDiff = NPCGetAngerAddOnPageGrabTimeDiff(i);
 				if (flPageDiff >= 0.0)
 				{
 					new iDiff = g_iPageCount - iOldPageCount;
 					if ((GetGameTime() - g_flPageFoundLastTime) < flPageDiff)
 					{
-						g_flSlenderAnger[i] += (GetProfileFloat(sProfile, "anger_page_add") * float(iDiff));
+						NPCAddAnger(i, NPCGetAngerAddOnPageGrab(i) * float(iDiff));
 					}
 				}
 			}
@@ -8847,6 +8846,7 @@ InitializeNewGame()
 	{
 		if (g_bSpecialRoundNew)
 		{
+			// Reset round count.
 			g_iSpecialRoundCount = 1;
 			
 			if (g_bSpecialRoundContinuous)
@@ -8856,13 +8856,7 @@ InitializeNewGame()
 				// Initialize all players' values.
 				for (new i = 1; i <= MaxClients; i++)
 				{
-					if (!IsClientParticipating(i))
-					{
-						g_bPlayerPlayedSpecialRound[i] = true;
-						continue;
-					}
-					
-					if (!IsClientParticipating(i))
+					if (!IsClientInGame(i) || !IsClientParticipating(i))
 					{
 						g_bPlayerPlayedSpecialRound[i] = true;
 						continue;
@@ -8909,13 +8903,7 @@ InitializeNewGame()
 				// Initialize all players' values.
 				for (new i = 1; i <= MaxClients; i++)
 				{
-					if (!IsClientInGame(i))
-					{
-						g_bPlayerPlayedNewBossRound[i] = true;
-						continue;
-					}
-				
-					if (!IsClientParticipating(i))
+					if (!IsClientInGame(i) || !IsClientParticipating(i))
 					{
 						g_bPlayerPlayedNewBossRound[i] = true;
 						continue;

@@ -487,7 +487,7 @@ static AddBossTargetsToMenu(Handle:hMenu)
 			StrCat(sDisplay, sizeof(sDisplay), sBuffer);
 		}
 		
-		if (g_iSlenderFlags[i] & SFF_FAKE)
+		if (NPCGetFlags(i) & SFF_FAKE)
 		{
 			StrCat(sDisplay, sizeof(sDisplay), " (fake)");
 		}
