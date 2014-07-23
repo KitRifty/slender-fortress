@@ -38,7 +38,12 @@ static Float:g_flNPCAngerAddOnPageGrabTimeDiff[MAX_BOSSES] = { 0.0, ... };
 static Float:g_flNPCSearchRadius[MAX_BOSSES];
 static Float:g_flNPCInstantKillRadius[MAX_BOSSES];
 
-#include "sf2/npc/npc_chaser.sp"
+// #include "sf2/npc_methodmap.sp"
+
+public NPCInitialize()
+{
+	NPCChaserInitialize();
+}
 
 public NPCOnConfigsExecuted()
 {
@@ -2010,3 +2015,5 @@ public bool:TraceRayDontHitCharactersOrEntity(entity, mask, any:data)
 	
 	return true;
 }
+
+#include "sf2/npc/npc_chaser.sp"

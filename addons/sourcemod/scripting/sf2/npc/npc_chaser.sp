@@ -39,6 +39,17 @@ enum SF2BossAttackStructure
 
 static g_NPCAttacks[MAX_BOSSES][SF2_CHASER_BOSS_MAX_ATTACKS][SF2BossAttackStructure];
 
+#if defined _sf2_npc_methodmap_included
+ #include "sf2/npc/npc_chaser_methodmap.sp"
+#endif
+
+public NPCChaserInitialize()
+{
+	for (new iNPCIndex = 0; iNPCIndex < MAX_BOSSES; iNPCIndex++)
+	{
+		NPCChaserResetValues(iNPCIndex);
+	}
+}
 
 Float:NPCChaserGetWalkSpeed(iNPCIndex, iDifficulty)
 {
@@ -231,13 +242,48 @@ NPCChaserOnSelectProfile(iNPCIndex)
 
 NPCChaserOnRemoveProfile(iNPCIndex)
 {
+	NPCChaserResetValues(iNPCIndex);
+}
+
+/**
+ *	Resets all global variables on a specified NPC. Usually this should be done last upon removing a boss from the game.
+ */
+static NPCChaserResetValues(iNPCIndex)
+{
 	g_flNPCWakeRadius[iNPCIndex] = 0.0;
 	g_flNPCStepSize[iNPCIndex] = 0.0;
+	
+	for (new iDifficulty = 0; iDifficulty < Difficulty_Max; iDifficulty++)
+	{
+		g_flNPCWalkSpeed[iNPCIndex][iDifficulty] = 0.0;
+		g_flNPCAirSpeed[iNPCIndex][iDifficulty] = 0.0;
+		
+		g_flNPCMaxWalkSpeed[iNPCIndex][iDifficulty] = 0.0;
+		g_flNPCMaxAirSpeed[iNPCIndex][iDifficulty] = 0.0;
+	}
 	
 	// Clear attack data.
 	for (new i = 0; i < SF2_CHASER_BOSS_MAX_ATTACKS; i++)
 	{
 		g_NPCAttacks[iNPCIndex][i][SF2BossAttackType] = SF2BossAttackType_Invalid;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamage] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageVsProps] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageForce] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageType] = 0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageDelay] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackRange] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDuration] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackSpread] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackBeginRange] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackBeginFOV] = 0.0;
+		g_NPCAttacks[iNPCIndex][i][SF2BossAttackCooldown] = 0.0;
 		g_NPCAttacks[iNPCIndex][i][SF2BossAttackNextAttackTime] = -1.0;
 	}
+	
+	g_bNPCStunEnabled[iNPCIndex] = false;
+	g_flNPCStunDuration[iNPCIndex] = 0.0;
+	g_bNPCStunFlashlightEnabled[iNPCIndex] = false;
+	g_flNPCStunInitialHealth[iNPCIndex] = 0.0;
+	
+	NPCChaserSetStunHealth(iNPCIndex, 0.0);
 }

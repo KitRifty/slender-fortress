@@ -750,6 +750,8 @@ public OnPluginStart()
 	
 	InitializeBossProfiles();
 	
+	NPCInitialize();
+	
 	SetupMenus();
 	
 	SetupAdminMenu();
