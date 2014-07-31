@@ -11,6 +11,10 @@ static Handle:g_hSelectableBossProfileList = INVALID_HANDLE;
 static Handle:g_hBossProfileNames = INVALID_HANDLE;
 static Handle:g_hBossProfileData = INVALID_HANDLE;
 
+#if defined METHODMAPS
+ #include "sf2/profiles_methodmap.sp"
+#endif
+
 #include "sf2/profiles/profile_chaser.sp"
 
 enum

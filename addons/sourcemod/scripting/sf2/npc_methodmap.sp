@@ -3,9 +3,9 @@
 #endif
 #define _sf2_npc_methodmap_included
 
-enum SF2NPC_BaseNPC
-{
-};
+
+const SF2NPC_BaseNPC SF2_INVALID_NPC = SF2NPC_BaseNPC:-1;
+
 
 methodmap SF2NPC_BaseNPC
 {
@@ -96,9 +96,20 @@ methodmap SF2NPC_BaseNPC
 		public get() { return NPCGetTeleportType(this.Index); }
 	}
 	
+	property int Enemy
+	{
+		public get() { return NPCGetEnemy(this.Index); }
+		public set(int entIndex) { NPCSetEnemy(this.Index, entIndex); }
+	}
+	
 	public SF2NPC_BaseNPC(int index)
 	{
 		return SF2NPC_BaseNPC:index;
+	}
+	
+	public ~SF2NPC_BaseNPC()
+	{
+		NPCRemove(this.Index);
 	}
 	
 	public bool IsValid()
@@ -141,8 +152,13 @@ methodmap SF2NPC_BaseNPC
 		NPCAddAnger(this.Index, amount);
 	}
 	
-	public void Remove()
+	public bool HasAttribute(const char[] attributeName)
 	{
-		NPCRemove(this.Index);
+		return NPCHasAttribute(this.Index, attributeName);
+	}
+	
+	public float GetAttributeValue(const char[] attributeName, float defaultValue = 0.0)
+	{
+		return NPCGetAttributeValue(this.Index, attributeName, defaultValue);
 	}
 }

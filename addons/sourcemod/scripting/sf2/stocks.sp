@@ -41,38 +41,38 @@
 
 #define EFL_FORCE_CHECK_TRANSMIT (1 << 7)
 
-stock ForceTeamWin(team)
+//	==========================================================
+//	ENTITY FUNCTIONS
+//	==========================================================
+
+stock bool:IsEntityClassname(iEnt, const String:classname[], bool:bCaseSensitive=true)
 {
-	new ent = FindEntityByClassname(-1, "team_control_point_master");
-	if (ent == -1)
-	{
-		ent = CreateEntityByName("team_control_point_master");
-		DispatchSpawn(ent);
-		AcceptEntityInput(ent, "Enable");
-	}
+	if (!IsValidEntity(iEnt)) return false;
 	
-	SetVariantInt(team);
-	AcceptEntityInput(ent, "SetWinner");
+	decl String:sBuffer[256];
+	GetEntityClassname(iEnt, sBuffer, sizeof(sBuffer));
+	
+	return StrEqual(sBuffer, classname, bCaseSensitive);
 }
 
-stock GameTextTFMessage(const String:message[], const String:icon[]="")
+stock Float:EntityDistanceFromEntity(ent1, ent2, bool:bSquared=false)
 {
-	new ent = CreateEntityByName("game_text_tf");
-	DispatchKeyValue(ent, "message", message);
-	DispatchKeyValue(ent, "display_to_team", "0");
-	DispatchKeyValue(ent, "icon", icon);
-	DispatchSpawn(ent);
-	AcceptEntityInput(ent, "Display");
-	AcceptEntityInput(ent, "Kill");
+	if (!IsValidEntity(ent1) || !IsValidEntity(ent2)) return -1.0;
+	
+	decl Float:flMyPos[3], Float:flHisPos[3];
+	GetEntPropVector(ent1, Prop_Data, "m_vecAbsOrigin", flMyPos);
+	GetEntPropVector(ent2, Prop_Data, "m_vecAbsOrigin", flHisPos);
+	return GetVectorDistance(flMyPos, flHisPos, bSquared);
 }
 
-stock FloatToTimeHMS(Float:time, &h, &m, &s)
+stock GetEntityOBBCenterPosition(ent, Float:flBuffer)
 {
-	s = RoundFloat(time);
-	h = s / 3600;
-	s -= h * 3600;
-	m = s / 60;
-	s = s % 60;
+	decl Float:flPos[3], Float:flMins[3], Float:flMaxs[3];
+	GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
+	GetEntPropVector(ent, Prop_Send, "m_vecMins", flMins);
+	GetEntPropVector(ent, Prop_Send, "m_vecMaxs", flMaxs);
+	
+	for (new i = 0; i < 3; i++) flBuffer[i] = flPos[i] + ((flMins[i] + flMaxs[i]) / 2.0);
 }
 
 stock bool:IsSpaceOccupied(const Float:pos[3], const Float:mins[3], const Float:maxs[3], entity=-1, &ref=-1)
@@ -111,6 +111,64 @@ stock bool:IsSpaceOccupiedNPC(const Float:pos[3], const Float:mins[3], const Flo
 	return bHit;
 }
 
+stock EntitySetAnimation(iEntity, const String:sAnimation[], bool:bDefaultAnimation=true, Float:flPlaybackRate=1.0)
+{
+	// Set m_nSequence to 0 to fix an animation glitch with HL2/GMod models.
+	SetEntProp(iEntity, Prop_Send, "m_nSequence", 0);
+	
+	if (bDefaultAnimation)
+	{
+		SetVariantString(sAnimation);
+		AcceptEntityInput(iEntity, "SetDefaultAnimation");
+	}
+	
+	SetVariantString(sAnimation);
+	AcceptEntityInput(iEntity, "SetAnimation");
+	SetVariantFloat(flPlaybackRate);
+	AcceptEntityInput(iEntity, "SetPlaybackRate");
+}
+
+//	==========================================================
+//	CLIENT ENTITY FUNCTIONS
+//	==========================================================
+
+stock bool:IsClientCritBoosted(client)
+{
+	if (TF2_IsPlayerInCondition(client, TFCond_Kritzkrieged) ||
+		TF2_IsPlayerInCondition(client, TFCond_HalloweenCritCandy) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritCanteen) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnFirstBlood) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnWin) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnFlagCapture) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnKill) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritOnDamage) ||
+		TF2_IsPlayerInCondition(client, TFCond_CritMmmph))
+	{
+		return true;
+	}
+	
+	new iActiveWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+	if (IsValidEdict(iActiveWeapon))
+	{
+		decl String:sNetClass[64];
+		GetEntityNetClass(iActiveWeapon, sNetClass, sizeof(sNetClass));
+		
+		if (StrEqual(sNetClass, "CTFFlameThrower"))
+		{
+			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritFire")) return true;
+		
+			new iItemDef = GetEntProp(iActiveWeapon, Prop_Send, "m_iItemDefinitionIndex");
+			if (iItemDef == 594 && TF2_IsPlayerInCondition(client, TFCond_CritMmmph)) return true;
+		}
+		else if (StrEqual(sNetClass, "CTFMinigun"))
+		{
+			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritShot")) return true;
+		}
+	}
+	
+	return false;
+}
+
 stock ClientSwitchToWeaponSlot(client, iSlot)
 {
 	new iWeapon = GetPlayerWeaponSlot(client, iSlot);
@@ -120,7 +178,120 @@ stock ClientSwitchToWeaponSlot(client, iSlot)
 	SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", iWeapon);
 }
 
-stock Float:GetClassBaseSpeed(TFClassType:class)
+stock ChangeClientTeamNoSuicide(client, team, bool:bRespawn=true)
+{
+	if (!IsClientInGame(client)) return;
+	
+	if (GetClientTeam(client) != team)
+	{
+		SetEntProp(client, Prop_Send, "m_lifeState", 2);
+		ChangeClientTeam(client, team);
+		SetEntProp(client, Prop_Send, "m_lifeState", 0);
+		if (bRespawn) TF2_RespawnPlayer(client);
+	}
+}
+
+stock UTIL_ScreenShake(client, Float:amplitude, Float:duration, Float:frequency)
+{
+	new Handle:hBf = StartMessageOne("Shake", client);
+	if (hBf != INVALID_HANDLE)
+	{
+		BfWriteByte(hBf, 0);
+		BfWriteFloat(hBf, amplitude);
+		BfWriteFloat(hBf, frequency);
+		BfWriteFloat(hBf, duration);
+		EndMessage();
+	}
+}
+
+public UTIL_ScreenFade(client, duration, time, flags, r, g, b, a)
+{
+	new clients[1], Handle:bf;
+	clients[0] = client;
+	
+	bf = StartMessage("Fade", clients, 1);
+	BfWriteShort(bf, duration);
+	BfWriteShort(bf, time);
+	BfWriteShort(bf, flags);
+	BfWriteByte(bf, r);
+	BfWriteByte(bf, g);
+	BfWriteByte(bf, b);
+	BfWriteByte(bf, a);
+	EndMessage();
+}
+
+stock bool:IsValidClient(client)
+{
+	return bool:(client > 0 && client <= MaxClients && IsClientInGame(client));
+}
+
+//	==========================================================
+//	TF2-SPECIFIC FUNCTIONS
+//	==========================================================
+
+stock ForceTeamWin(team)
+{
+	new ent = FindEntityByClassname(-1, "team_control_point_master");
+	if (ent == -1)
+	{
+		ent = CreateEntityByName("team_control_point_master");
+		DispatchSpawn(ent);
+		AcceptEntityInput(ent, "Enable");
+	}
+	
+	SetVariantInt(team);
+	AcceptEntityInput(ent, "SetWinner");
+}
+
+stock GameTextTFMessage(const String:message[], const String:icon[]="")
+{
+	new ent = CreateEntityByName("game_text_tf");
+	DispatchKeyValue(ent, "message", message);
+	DispatchKeyValue(ent, "display_to_team", "0");
+	DispatchKeyValue(ent, "icon", icon);
+	DispatchSpawn(ent);
+	AcceptEntityInput(ent, "Display");
+	AcceptEntityInput(ent, "Kill");
+}
+
+stock BuildAnnotationBitString(const clients[], iMaxClients)
+{
+	new iBitString = 1;
+	for (new i = 0; i < maxClients; i++)
+	{
+		new client = clients[i];
+		if (!IsClientInGame(client) || !IsPlayerAlive(client)) continue;
+	
+		iBitString |= RoundFloat(Pow(2.0, float(client)));
+	}
+	
+	return iBitString;
+}
+
+stock SpawnAnnotation(client, entity, const Float:pos[3], const String:message[], Float:lifetime)
+{
+	new Handle:event = CreateEvent("show_annotation", true);
+	if (event != INVALID_HANDLE)
+	{
+		new bitstring = BuildAnnotationBitString(id, pos, type, team);
+		if (bitstring > 1)
+		{
+			pos[2] -= 35.0;
+			SetEventFloat(event, "worldPosX", pos[0]);
+			SetEventFloat(event, "worldPosY", pos[1]);
+			SetEventFloat(event, "worldPosZ", pos[2]);
+			SetEventFloat(event, "lifetime", lifetime);
+			SetEventInt(event, "id", id);
+			SetEventString(event, "text", message);
+			SetEventInt(event, "visibilityBitfield", bitstring);
+			FireEvent(event);
+			KillTimer(event);
+		}
+		
+	}
+}
+
+stock Float:TF2_GetClassBaseSpeed(TFClassType:class)
 {
 	switch (class)
 	{
@@ -165,71 +336,62 @@ stock Float:GetClassBaseSpeed(TFClassType:class)
 	return 0.0;
 }
 
-stock bool:IsClientCritBoosted(client)
+stock Handle:PrepareItemHandle(String:classname[], index, level, quality, String:att[])
 {
-	if (TF2_IsPlayerInCondition(client, TFCond_Kritzkrieged) ||
-		TF2_IsPlayerInCondition(client, TFCond_HalloweenCritCandy) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritCanteen) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnFirstBlood) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnWin) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnFlagCapture) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnKill) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritOnDamage) ||
-		TF2_IsPlayerInCondition(client, TFCond_CritMmmph))
-	{
-		return true;
-	}
+	new Handle:hItem = TF2Items_CreateItem(OVERRIDE_ALL | FORCE_GENERATION);
+	TF2Items_SetClassname(hItem, classname);
+	TF2Items_SetItemIndex(hItem, index);
+	TF2Items_SetLevel(hItem, level);
+	TF2Items_SetQuality(hItem, quality);
 	
-	new iActiveWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
-	if (IsValidEdict(iActiveWeapon))
+	// Set attributes.
+	new String:atts[32][32];
+	new count = ExplodeString(att, " ; ", atts, 32, 32);
+	if (count > 1)
 	{
-		decl String:sNetClass[64];
-		GetEntityNetClass(iActiveWeapon, sNetClass, sizeof(sNetClass));
-		
-		if (StrEqual(sNetClass, "CTFFlameThrower"))
+		TF2Items_SetNumAttributes(hItem, count / 2);
+		new i2 = 0;
+		for (new i = 0; i < count; i+= 2)
 		{
-			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritFire")) return true;
-		
-			new iItemDef = GetEntProp(iActiveWeapon, Prop_Send, "m_iItemDefinitionIndex");
-			if (iItemDef == 594 && TF2_IsPlayerInCondition(client, TFCond_CritMmmph)) return true;
-		}
-		else if (StrEqual(sNetClass, "CTFMinigun"))
-		{
-			if (GetEntProp(iActiveWeapon, Prop_Send, "m_bCritShot")) return true;
+			TF2Items_SetAttribute(hItem, i2, StringToInt(atts[i]), StringToFloat(atts[i+1]));
+			i2++;
 		}
 	}
+	else
+	{
+		TF2Items_SetNumAttributes(hItem, 0);
+	}
 	
-	return false;
+	return hItem;
 }
 
-stock Float:EntityDistanceFromEntity(ent1, ent2)
+// Removes wearables such as botkillers from weapons.
+stock TF2_RemoveWeaponSlotAndWearables(client, iSlot)
 {
-	if (!IsValidEntity(ent1) || !IsValidEntity(ent2)) return -1.0;
+	new iWeapon = GetPlayerWeaponSlot(client, iSlot);
+	if (!IsValidEntity(iWeapon)) return;
 	
-	decl Float:flMyPos[3], Float:flHisPos[3];
-	GetEntPropVector(ent1, Prop_Data, "m_vecAbsOrigin", flMyPos);
-	GetEntPropVector(ent2, Prop_Data, "m_vecAbsOrigin", flHisPos);
-	return GetVectorDistance(flMyPos, flHisPos);
-}
-
-stock GetEntityOBBCenterPosition(ent, Float:flBuffer)
-{
-	decl Float:flPos[3], Float:flMins[3], Float:flMaxs[3];
-	GetEntPropVector(ent, Prop_Data, "m_vecAbsOrigin", flPos);
-	GetEntPropVector(ent, Prop_Send, "m_vecMins", flMins);
-	GetEntPropVector(ent, Prop_Send, "m_vecMaxs", flMaxs);
+	new iWearable = INVALID_ENT_REFERENCE;
+	while ((iWearable = FindEntityByClassname(iWearable, "tf_wearable")) != -1)
+	{
+		new iWeaponAssociated = GetEntPropEnt(iWearable, Prop_Send, "m_hWeaponAssociatedWith");
+		if (iWeaponAssociated == iWeapon)
+		{
+			AcceptEntityInput(iWearable, "Kill");
+		}
+	}
 	
-	for (new i = 0; i < 3; i++) flBuffer[i] = flPos[i] + ((flMins[i] + flMaxs[i]) / 2.0);
-}
-
-stock bool:IsEntityClassname(iEnt, const String:classname[], bool:bCaseSensitive=true)
-{
-	if (!IsValidEntity(iEnt)) return false;
+	iWearable = INVALID_ENT_REFERENCE;
+	while ((iWearable = FindEntityByClassname(iWearable, "tf_wearable_vm")) != -1)
+	{
+		new iWeaponAssociated = GetEntPropEnt(iWearable, Prop_Send, "m_hWeaponAssociatedWith");
+		if (iWeaponAssociated == iWeapon)
+		{
+			AcceptEntityInput(iWearable, "Kill");
+		}
+	}
 	
-	decl String:sBuffer[256];
-	GetEntityClassname(iEnt, sBuffer, sizeof(sBuffer));
-	
-	return StrEqual(sBuffer, classname, bCaseSensitive);
+	TF2_RemoveWeaponSlot(client, iSlot);
 }
 
 stock TE_SetupTFParticleEffect(iParticleSystemIndex, const Float:flOrigin[3], const Float:flStart[3]=NULL_VECTOR, iAttachType=0, iEntIndex=-1, iAttachmentPointIndex=0, bool:bControlPoint1=false, const Float:flControlPoint1Offset[3]=NULL_VECTOR)
@@ -249,6 +411,137 @@ stock TE_SetupTFParticleEffect(iParticleSystemIndex, const Float:flOrigin[3], co
 	TE_WriteFloat("m_ControlPoint1.m_vecOffset[0]", flControlPoint1Offset[0]);
 	TE_WriteFloat("m_ControlPoint1.m_vecOffset[1]", flControlPoint1Offset[1]);
 	TE_WriteFloat("m_ControlPoint1.m_vecOffset[2]", flControlPoint1Offset[2]);
+}
+
+//	==========================================================
+//	FLOAT FUNCTIONS
+//	==========================================================
+
+/**
+ *	Converts a given timestamp into hours, minutes, and seconds.
+ */
+stock FloatToTimeHMS(Float:time, &h=0, &m=0, &s=0)
+{
+	s = RoundFloat(time);
+	h = s / 3600;
+	s -= h * 3600;
+	m = s / 60;
+	s = s % 60;
+}
+
+stock FixedUnsigned16(Float:value, scale)
+{
+	new iOutput;
+	
+	iOutput = RoundToFloor(value * float(scale));
+	
+	if (iOutput < 0)
+	{
+		iOutput = 0;
+	}
+	
+	if (iOutput > 0xFFFF)
+	{
+		iOutput = 0xFFFF;
+	}
+	
+	return iOutput;
+}
+
+//	==========================================================
+//	VECTOR FUNCTIONS
+//	==========================================================
+
+/**
+ *	Copies a vector into another vector.
+ */
+stock CopyVector(const Float:flCopy[3], Float:flDest[3])
+{
+	flDest[0] = flCopy[0];
+	flDest[1] = flCopy[1];
+	flDest[2] = flCopy[2];
+}
+
+stock LerpVectors(const Float:fA[3], const Float:fB[3], Float:fC[3], Float:t)
+{
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    
+    fC[0] = fA[0] + (fB[0] - fA[0]) * t;
+    fC[1] = fA[1] + (fB[1] - fA[1]) * t;
+    fC[2] = fA[2] + (fB[2] - fA[2]) * t;
+}
+
+/**
+ *	Translates and re-orients a given offset vector into world space, given a world position and angle.
+ */
+stock VectorTransform(const Float:offset[3], const Float:worldpos[3], const Float:ang[3], Float:buffer[3])
+{
+	decl Float:fwd[3], Float:right[3], Float:up[3];
+	GetAngleVectors(ang, fwd, right, up);
+	
+	NormalizeVector(fwd, fwd);
+	NormalizeVector(right, right);
+	NormalizeVector(up, up);
+	
+	ScaleVector(right, offset[1]);
+	ScaleVector(fwd, offset[0]);
+	ScaleVector(up, offset[2]);
+	
+	buffer[0] = worldpos[0] + right[0] + fwd[0] + up[0];
+	buffer[1] = worldpos[1] + right[1] + fwd[1] + up[1];
+	buffer[2] = worldpos[2] + right[2] + fwd[2] + up[2];
+}
+
+//	==========================================================
+//	ANGLE FUNCTIONS
+//	==========================================================
+
+stock Float:ApproachAngle(Float:target, Float:value, Float:speed)
+{
+	new Float:delta = AngleDiff(value, target);
+	
+	if (speed < 0.0) speed = -speed;
+	
+	if (delta > speed) value += speed;
+	else if (delta < -speed) value -= speed;
+	else value = target;
+	
+	return AngleNormalize(value);
+}
+
+stock Float:AngleNormalize(Float:angle)
+{
+	while (angle > 180.0) angle -= 360.0;
+	while (angle < -180.0) angle += 360.0;
+	return angle;
+}
+
+stock Float:AngleDiff(Float:firstAngle, Float:secondAngle)
+{
+	new Float:diff = secondAngle - firstAngle;
+	return AngleNormalize(diff);
+}
+
+//	==========================================================
+//	PRECACHING FUNCTIONS
+//	==========================================================
+
+stock PrecacheSound2(const String:path[])
+{
+	PrecacheSound(path, true);
+	decl String:buffer[PLATFORM_MAX_PATH];
+	Format(buffer, sizeof(buffer), "sound/%s", path);
+	AddFileToDownloadsTable(buffer);
+}
+
+stock PrecacheMaterial2(const String:path[])
+{
+	decl String:buffer[PLATFORM_MAX_PATH];
+	Format(buffer, sizeof(buffer), "materials/%s.vmt", path);
+	AddFileToDownloadsTable(buffer);
+	Format(buffer, sizeof(buffer), "materials/%s.vtf", path);
+	AddFileToDownloadsTable(buffer);
 }
 
 stock PrecacheParticleSystem(const String:particleSystem[])
@@ -291,126 +584,6 @@ stock FindStringIndex2(tableidx, const String:str[])
 	return INVALID_STRING_INDEX;
 }
 
-stock Handle:PrepareItemHandle(String:classname[], index, level, quality, String:att[])
-{
-	new Handle:hItem = TF2Items_CreateItem(OVERRIDE_ALL | FORCE_GENERATION);
-	TF2Items_SetClassname(hItem, classname);
-	TF2Items_SetItemIndex(hItem, index);
-	TF2Items_SetLevel(hItem, level);
-	TF2Items_SetQuality(hItem, quality);
-	
-	// Set attributes.
-	new String:atts[32][32];
-	new count = ExplodeString(att, " ; ", atts, 32, 32);
-	if (count > 1)
-	{
-		TF2Items_SetNumAttributes(hItem, count / 2);
-		new i2 = 0;
-		for (new i = 0; i < count; i+= 2)
-		{
-			TF2Items_SetAttribute(hItem, i2, StringToInt(atts[i]), StringToFloat(atts[i+1]));
-			i2++;
-		}
-	}
-	else
-	{
-		TF2Items_SetNumAttributes(hItem, 0);
-	}
-	
-	return hItem;
-}
-
-stock LerpVectors(const Float:fA[3], const Float:fB[3], Float:fC[3], Float:t)
-{
-    if (t < 0.0) t = 0.0;
-    if (t > 1.0) t = 1.0;
-    
-    fC[0] = fA[0] + (fB[0] - fA[0]) * t;
-    fC[1] = fA[1] + (fB[1] - fA[1]) * t;
-    fC[2] = fA[2] + (fB[2] - fA[2]) * t;
-}
-
-stock Float:ApproachAngle(Float:target, Float:value, Float:speed)
-{
-	new Float:delta = AngleDiff(value, target);
-	
-	if (speed < 0.0) speed = -speed;
-	
-	if (delta > speed) value += speed;
-	else if (delta < -speed) value -= speed;
-	else value = target;
-	
-	return AngleNormalize(value);
-}
-
-stock Float:AngleNormalize(Float:angle)
-{
-	while (angle > 180.0) angle -= 360.0;
-	while (angle < -180.0) angle += 360.0;
-	return angle;
-}
-
-stock Float:AngleDiff(Float:firstAngle, Float:secondAngle)
-{
-	new Float:diff = secondAngle - firstAngle;
-	return AngleNormalize(diff);
-}
-
-stock PrecacheSound2(const String:path[])
-{
-	PrecacheSound(path, true);
-	decl String:buffer[PLATFORM_MAX_PATH];
-	Format(buffer, sizeof(buffer), "sound/%s", path);
-	AddFileToDownloadsTable(buffer);
-}
-
-stock PrecacheMaterial2(const String:path[])
-{
-	decl String:buffer[PLATFORM_MAX_PATH];
-	Format(buffer, sizeof(buffer), "materials/%s.vmt", path);
-	AddFileToDownloadsTable(buffer);
-	Format(buffer, sizeof(buffer), "materials/%s.vtf", path);
-	AddFileToDownloadsTable(buffer);
-}
-
-// For use with annotations.
-stock BuildAnnotationBitString(const clients[], iMaxClients)
-{
-	new iBitString = 1;
-	for (new i = 0; i < maxClients; i++)
-	{
-		new client = clients[i];
-		if (!IsClientInGame(client) || !IsPlayerAlive(client)) continue;
-	
-		iBitString |= RoundFloat(Pow(2.0, float(client)));
-	}
-	
-	return iBitString;
-}
-
-stock SpawnAnnotation(client, entity, const Float:pos[3], const String:message[], Float:lifetime)
-{
-	new Handle:event = CreateEvent("show_annotation", true);
-	if (event != INVALID_HANDLE)
-	{
-		new bitstring = BuildAnnotationBitString(id, pos, type, team);
-		if (bitstring > 1)
-		{
-			pos[2] -= 35.0;
-			SetEventFloat(event, "worldPosX", pos[0]);
-			SetEventFloat(event, "worldPosY", pos[1]);
-			SetEventFloat(event, "worldPosZ", pos[2]);
-			SetEventFloat(event, "lifetime", lifetime);
-			SetEventInt(event, "id", id);
-			SetEventString(event, "text", message);
-			SetEventInt(event, "visibilityBitfield", bitstring);
-			FireEvent(event);
-			KillTimer(event);
-		}
-		
-	}
-}
-
 stock InsertNodesAroundPoint(Handle:hArray, const Float:flOrigin[3], Float:flDist, Float:flAddAng, Function:iCallback=INVALID_FUNCTION, any:data=-1)
 {
 	decl Float:flDirection[3];
@@ -451,58 +624,9 @@ stock InsertNodesAroundPoint(Handle:hArray, const Float:flOrigin[3], Float:flDis
 	}
 }
 
-stock SetAnimation(iEntity, const String:sAnimation[], bool:bDefaultAnimation=true, Float:flPlaybackRate=1.0)
-{
-	SetEntProp(iEntity, Prop_Send, "m_nSequence", 0);
-
-	if (bDefaultAnimation)
-	{
-		SetVariantString(sAnimation);
-		AcceptEntityInput(iEntity, "SetDefaultAnimation");
-	}
-	
-	SetVariantString(sAnimation);
-	AcceptEntityInput(iEntity, "SetAnimation");
-	SetVariantFloat(flPlaybackRate);
-	AcceptEntityInput(iEntity, "SetPlaybackRate");
-}
-
-stock VectorTransform(const Float:offset[3], const Float:worldpos[3], const Float:ang[3], Float:buffer[3])
-{
-	decl Float:fwd[3], Float:right[3], Float:up[3];
-	GetAngleVectors(ang, fwd, right, up);
-	
-	NormalizeVector(fwd, fwd);
-	NormalizeVector(right, right);
-	NormalizeVector(up, up);
-	
-	ScaleVector(right, offset[1]);
-	ScaleVector(fwd, offset[0]);
-	ScaleVector(up, offset[2]);
-	
-	buffer[0] = worldpos[0] + right[0] + fwd[0] + up[0];
-	buffer[1] = worldpos[1] + right[1] + fwd[1] + up[1];
-	buffer[2] = worldpos[2] + right[2] + fwd[2] + up[2];
-}
-
-stock FixedUnsigned16(Float:value, scale)
-{
-	new iOutput;
-	
-	iOutput = RoundToFloor(value * float(scale));
-	
-	if (iOutput < 0)
-	{
-		iOutput = 0;
-	}
-	
-	if (iOutput > 0xFFFF)
-	{
-		iOutput = 0xFFFF;
-	}
-	
-	return iOutput;
-}
+//	==========================================================
+//	TRACE FUNCTIONS
+//	==========================================================
 
 public bool:TraceRayDontHitEntity(entity, mask, any:data)
 {
@@ -525,6 +649,10 @@ public bool:TraceRayDontHitPlayersOrEntity(entity, mask, any:data)
 	
 	return true;
 }
+
+//	==========================================================
+//	TIMER/CALLBACK FUNCTIONS
+//	==========================================================
 
 public Action:Timer_KillEntity(Handle:timer, any:entref)
 {

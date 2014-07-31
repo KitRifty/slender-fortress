@@ -20,26 +20,29 @@ static Float:g_flNPCStunFlashlightDamage[MAX_BOSSES];
 static Float:g_flNPCStunInitialHealth[MAX_BOSSES];
 static Float:g_flNPCStunHealth[MAX_BOSSES];
 
-enum SF2BossAttackStructure
+static g_iNPCState[MAX_BOSSES] = { -1, ... };
+static g_iNPCMovementActivity[MAX_BOSSES] = { -1, ... };
+
+enum SF2NPCChaser_BaseAttackStructure
 {
-	SF2BossAttackType,
-	Float:SF2BossAttackDamage,
-	Float:SF2BossAttackDamageVsProps,
-	Float:SF2BossAttackDamageForce,
-	SF2BossAttackDamageType,
-	Float:SF2BossAttackDamageDelay,
-	Float:SF2BossAttackRange,
-	Float:SF2BossAttackDuration,
-	Float:SF2BossAttackSpread,
-	Float:SF2BossAttackBeginRange,
-	Float:SF2BossAttackBeginFOV,
-	Float:SF2BossAttackCooldown,
-	Float:SF2BossAttackNextAttackTime
+	SF2NPCChaser_BaseAttackType,
+	Float:SF2NPCChaser_BaseAttackDamage,
+	Float:SF2NPCChaser_BaseAttackDamageVsProps,
+	Float:SF2NPCChaser_BaseAttackDamageForce,
+	SF2NPCChaser_BaseAttackDamageType,
+	Float:SF2NPCChaser_BaseAttackDamageDelay,
+	Float:SF2NPCChaser_BaseAttackRange,
+	Float:SF2NPCChaser_BaseAttackDuration,
+	Float:SF2NPCChaser_BaseAttackSpread,
+	Float:SF2NPCChaser_BaseAttackBeginRange,
+	Float:SF2NPCChaser_BaseAttackBeginFOV,
+	Float:SF2NPCChaser_BaseAttackCooldown,
+	Float:SF2NPCChaser_BaseAttackNextAttackTime
 };
 
-static g_NPCAttacks[MAX_BOSSES][SF2_CHASER_BOSS_MAX_ATTACKS][SF2BossAttackStructure];
+static g_NPCBaseAttacks[MAX_BOSSES][SF2_CHASER_BOSS_MAX_ATTACKS][SF2NPCChaser_BaseAttackStructure];
 
-#if defined _sf2_npc_methodmap_included
+#if defined METHODMAPS
  #include "sf2/npc/npc_chaser_methodmap.sp"
 #endif
 
@@ -103,57 +106,57 @@ Float:NPCChaserGetStepSize(iNPCIndex)
 
 NPCChaserGetAttackType(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackType];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackType];
 }
 
 Float:NPCChaserGetAttackDamage(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackDamage];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackDamage];
 }
 
 Float:NPCChaserGetAttackDamageVsProps(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackDamageVsProps];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackDamageVsProps];
 }
 
 Float:NPCChaserGetAttackDamageForce(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackDamageForce];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackDamageForce];
 }
 
 NPCChaserGetAttackDamageType(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackDamageType];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackDamageType];
 }
 
 Float:NPCChaserGetAttackDamageDelay(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackDamageDelay];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackDamageDelay];
 }
 
 Float:NPCChaserGetAttackRange(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackRange];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackRange];
 }
 
 Float:NPCChaserGetAttackDuration(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackDuration];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackDuration];
 }
 
 Float:NPCChaserGetAttackSpread(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackSpread];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackSpread];
 }
 
 Float:NPCChaserGetAttackBeginRange(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackBeginRange];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackBeginRange];
 }
 
 Float:NPCChaserGetAttackBeginFOV(iNPCIndex, iAttackIndex)
 {
-	return g_NPCAttacks[iNPCIndex][iAttackIndex][SF2BossAttackBeginFOV];
+	return g_NPCBaseAttacks[iNPCIndex][iAttackIndex][SF2NPCChaser_BaseAttackBeginFOV];
 }
 
 bool:NPCChaserIsStunEnabled(iNPCIndex)
@@ -196,6 +199,26 @@ Float:NPCChaserGetStunInitialHealth(iNPCIndex)
 	return g_flNPCStunInitialHealth[iNPCIndex];
 }
 
+NPCChaserGetState(iNPCIndex)
+{
+	return g_iNPCState[iNPCIndex];
+}
+
+NPCChaserSetState(iNPCIndex, iState)
+{
+	g_iNPCState[iNPCIndex] = iState;
+}
+
+NPCChaserGetMovementActivity(iNPCIndex)
+{
+	return g_iNPCMovementActivity[iNPCIndex];
+}
+
+NPCChaserSetMovementActivity(iNPCIndex, iMovementActivity)
+{
+	g_iNPCMovementActivity[iNPCIndex] = iMovementActivity;
+}
+
 NPCChaserOnSelectProfile(iNPCIndex)
 {
 	new iUniqueProfileIndex = NPCGetUniqueProfileIndex(iNPCIndex);
@@ -215,19 +238,19 @@ NPCChaserOnSelectProfile(iNPCIndex)
 	// Get attack data.
 	for (new i = 0; i < GetChaserProfileAttackCount(iUniqueProfileIndex); i++)
 	{
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackType] = GetChaserProfileAttackType(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamage] = GetChaserProfileAttackDamage(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageVsProps] = GetChaserProfileAttackDamageVsProps(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageForce] = GetChaserProfileAttackDamageForce(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageType] = GetChaserProfileAttackDamageType(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageDelay] = GetChaserProfileAttackDamageDelay(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackRange] = GetChaserProfileAttackRange(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDuration] = GetChaserProfileAttackDuration(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackSpread] = GetChaserProfileAttackSpread(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackBeginRange] = GetChaserProfileAttackBeginRange(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackBeginFOV] = GetChaserProfileAttackBeginFOV(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackCooldown] = GetChaserProfileAttackCooldown(iUniqueProfileIndex, i);
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackNextAttackTime] = -1.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackType] = GetChaserProfileAttackType(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamage] = GetChaserProfileAttackDamage(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageVsProps] = GetChaserProfileAttackDamageVsProps(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageForce] = GetChaserProfileAttackDamageForce(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageType] = GetChaserProfileAttackDamageType(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageDelay] = GetChaserProfileAttackDamageDelay(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackRange] = GetChaserProfileAttackRange(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDuration] = GetChaserProfileAttackDuration(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackSpread] = GetChaserProfileAttackSpread(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackBeginRange] = GetChaserProfileAttackBeginRange(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackBeginFOV] = GetChaserProfileAttackBeginFOV(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackCooldown] = GetChaserProfileAttackCooldown(iUniqueProfileIndex, i);
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackNextAttackTime] = -1.0;
 	}
 	
 	// Get stun data.
@@ -265,19 +288,20 @@ static NPCChaserResetValues(iNPCIndex)
 	// Clear attack data.
 	for (new i = 0; i < SF2_CHASER_BOSS_MAX_ATTACKS; i++)
 	{
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackType] = SF2BossAttackType_Invalid;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamage] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageVsProps] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageForce] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageType] = 0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDamageDelay] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackRange] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackDuration] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackSpread] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackBeginRange] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackBeginFOV] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackCooldown] = 0.0;
-		g_NPCAttacks[iNPCIndex][i][SF2BossAttackNextAttackTime] = -1.0;
+		// Base attack data.
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackType] = SF2BossAttackType_Invalid;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamage] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageVsProps] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageForce] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageType] = 0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDamageDelay] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackRange] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackDuration] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackSpread] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackBeginRange] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackBeginFOV] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackCooldown] = 0.0;
+		g_NPCBaseAttacks[iNPCIndex][i][SF2NPCChaser_BaseAttackNextAttackTime] = -1.0;
 	}
 	
 	g_bNPCStunEnabled[iNPCIndex] = false;
@@ -286,4 +310,7 @@ static NPCChaserResetValues(iNPCIndex)
 	g_flNPCStunInitialHealth[iNPCIndex] = 0.0;
 	
 	NPCChaserSetStunHealth(iNPCIndex, 0.0);
+	
+	g_iNPCState[iNPCIndex] = -1;
+	g_iNPCMovementActivity[iNPCIndex] = -1;
 }

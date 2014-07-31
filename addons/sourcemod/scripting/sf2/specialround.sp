@@ -223,9 +223,25 @@ SpecialRoundCycleFinish()
 	else
 	{
 		new Handle:hEnabledRounds = CreateArray();
-		PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLETROUBLE);
+		
+		if (GetArraySize(GetSelectableBossProfileList()) > 0)
+		{
+			PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLETROUBLE);
+		}
+		
+		if (GetActivePlayerCount() <= GetConVarInt(g_cvMaxPlayers) * 2)
+		{
+			PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLEMAXPLAYERS);
+		}
+		
+		/*
+		if (GetActivePlayerCount() > 1)
+		{
+			PushArrayCell(hEnabledRounds, SPECIALROUND_SINGLEPLAYER);
+		}
+		*/
+		
 		PushArrayCell(hEnabledRounds, SPECIALROUND_INSANEDIFFICULTY);
-		PushArrayCell(hEnabledRounds, SPECIALROUND_DOUBLEMAXPLAYERS);
 		PushArrayCell(hEnabledRounds, SPECIALROUND_LIGHTSOUT);
 	
 		g_iSpecialRoundType = GetArrayCell(hEnabledRounds, GetRandomInt(0, GetArraySize(hEnabledRounds) - 1));
@@ -276,9 +292,12 @@ SpecialRoundStart()
 		{
 			decl String:sBuffer[SF2_MAX_PROFILE_NAME_LENGTH];
 			new Handle:hSelectableBosses = GetSelectableBossProfileList();
-			GetArrayString(hSelectableBosses, GetRandomInt(0, GetArraySize(hSelectableBosses) - 1), sBuffer, sizeof(sBuffer));
 			
-			AddProfile(sBuffer);
+			if (GetArraySize(hSelectableBosses) > 0)
+			{
+				GetArrayString(hSelectableBosses, GetRandomInt(0, GetArraySize(hSelectableBosses) - 1), sBuffer, sizeof(sBuffer));
+				AddProfile(sBuffer);
+			}
 		}
 		case SPECIALROUND_INSANEDIFFICULTY:
 		{

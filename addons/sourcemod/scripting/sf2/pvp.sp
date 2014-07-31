@@ -7,6 +7,7 @@
 #define SF2_PVP_SPAWN_SOUND "items/spawn_item.wav"
 
 new Handle:g_cvPvPArenaLeaveTime;
+new Handle:g_cvPvPArenaPlayerCollisions;
 
 new Handle:g_hMenuSettingsPvP;
 
@@ -47,7 +48,8 @@ enum
 public PvP_Initialize()
 {
 	g_cvPvPArenaLeaveTime = CreateConVar("sf2_player_pvparena_leavetime", "3");
-
+	g_cvPvPArenaPlayerCollisions = CreateConVar("sf2_player_pvparena_collisions", "1");
+	
 	g_hPvPFlameEntities = CreateArray(PvPFlameEntData_MaxStats);
 }
 
@@ -261,7 +263,10 @@ public PvP_OnPlayerDeath(client, bool:bFake)
 			{
 				if (g_bPlayerEliminated[client] || g_bPlayerEscaped[client])
 				{
-					g_hPlayerPvPRespawnTimer[client] = CreateTimer(0.3, Timer_RespawnPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+					if (!IsRoundEnding())
+					{
+						g_hPlayerPvPRespawnTimer[client] = CreateTimer(0.3, Timer_RespawnPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+					}
 				}
 			}
 		}
@@ -359,16 +364,13 @@ PvP_SetPlayerPvPState(client, bool:bStatus, bool:bRemoveProjectiles=true, bool:b
 		SetEntProp(client, Prop_Send, "m_iHealth", iHealth);
 	}
 	
-	if (IsClientInGame(client))
+	if (bStatus && GetConVarBool(g_cvPvPArenaPlayerCollisions))
 	{
-		if (bStatus)
-		{
-			SDKHook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
-		}
-		else
-		{
-			SDKUnhook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
-		}
+		SDKHook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
+	}
+	else
+	{
+		SDKUnhook(client, SDKHook_ShouldCollide, Hook_ClientPvPShouldCollide);
 	}
 }
 

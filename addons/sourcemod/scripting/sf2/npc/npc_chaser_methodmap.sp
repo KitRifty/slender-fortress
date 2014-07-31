@@ -3,9 +3,9 @@
 #endif
 #define _sf2_npc_chaser_methodmap_included
 
-enum SF2NPC_Chaser
-{
-};
+
+const SF2NPC_Chaser SF2_INVALID_NPC_CHASER = SF2NPC_Chaser:-1;
+
 
 methodmap SF2NPC_Chaser < SF2NPC_BaseNPC
 {
@@ -48,6 +48,18 @@ methodmap SF2NPC_Chaser < SF2NPC_BaseNPC
 	property float StunInitialHealth
 	{
 		public get() { return NPCChaserGetStunInitialHealth(this.Index); }
+	}
+	
+	property int State
+	{
+		public get() { return NPCChaserGetState(this.Index); }
+		public set(int state) { NPCChaserSetState(this.Index, state); }
+	}
+	
+	property int MovementActivity
+	{
+		public get() { return NPCChaserGetMovementActivity(this.Index); }
+		public set(int movementActivity) { NPCChaserSetMovementActivity(this.Index, movementActivity); }
 	}
 	
 	public SF2NPC_Chaser(int index)

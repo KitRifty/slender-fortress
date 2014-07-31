@@ -706,6 +706,7 @@ ClientEscape(client)
 	ClientResetSprint(client);
 	ClientResetFlashlight(client);
 	ClientDeactivateUltravision(client);
+	ClientDisableConstantGlow(client);
 	
 	// Speed recalculation. Props to the creators of FF2/VSH for this snippet.
 	TF2_AddCondition(client, TFCond_SpeedBuffAlly, 0.001);
@@ -1794,9 +1795,9 @@ ClientProcessVisibility(client)
 				{
 					ClientPerformScare(client, iMaster);
 					
-					if (SlenderHasAttribute(iMaster, "ignite player on scare"))
+					if (NPCHasAttribute(iMaster, "ignite player on scare"))
 					{
-						new Float:flValue = SlenderGetAttributeValue(iMaster, "ignite player on scare");
+						new Float:flValue = NPCGetAttributeValue(iMaster, "ignite player on scare");
 						if (flValue > 0.0) TF2_IgnitePlayer(client, client);
 					}
 				}
@@ -2891,9 +2892,14 @@ public Action:Timer_ClientProxyControl(Handle:timer, any:userid)
 	g_hPlayerProxyControlTimer[client] = CreateTimer(g_flPlayerProxyControlRate[client], Timer_ClientProxyControl, userid, TIMER_FLAG_NO_MAPCHANGE);
 }
 
+bool:DoesClientHaveConstantGlow(client)
+{
+	return g_bPlayerConstantGlowEnabled[client];
+}
+
 ClientDisableConstantGlow(client)
 {
-	if (!g_bPlayerConstantGlowEnabled[client]) return;
+	if (!DoesClientHaveConstantGlow(client)) return;
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientDisableConstantGlow(%d)", client);
@@ -2913,7 +2919,7 @@ ClientDisableConstantGlow(client)
 
 bool:ClientEnableConstantGlow(client, const String:sAttachment[]="")
 {
-	if (g_bPlayerConstantGlowEnabled[client]) return true;
+	if (DoesClientHaveConstantGlow(client)) return true;
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 2) DebugMessage("START ClientEnableConstantGlow(%d)", client);
@@ -3239,9 +3245,9 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 		SetEntProp(client, Prop_Data, "m_takedamage", 2); // We do this because the point_viewcontrol changes our lifestate.
 		
 		// TODO: Add more attributes!
-		if (SlenderHasAttribute(iBossIndex, "ignite player on death"))
+		if (NPCHasAttribute(iBossIndex, "ignite player on death"))
 		{
-			new Float:flValue = SlenderGetAttributeValue(iBossIndex, "ignite player on death");
+			new Float:flValue = NPCGetAttributeValue(iBossIndex, "ignite player on death");
 			if (flValue > 0.0) TF2_IgnitePlayer(client, client);
 		}
 		
@@ -3347,9 +3353,9 @@ public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
 	new iDeathCamBoss = NPCGetFromUniqueID(g_iPlayerDeathCamBoss[client]);
 	if (iDeathCamBoss != -1)
 	{
-		if (SlenderHasAttribute(iDeathCamBoss, "ignite player on death"))
+		if (NPCHasAttribute(iDeathCamBoss, "ignite player on death"))
 		{
-			new Float:flValue = SlenderGetAttributeValue(iDeathCamBoss, "ignite player on death");
+			new Float:flValue = NPCGetAttributeValue(iDeathCamBoss, "ignite player on death");
 			if (flValue > 0.0) TF2_IgnitePlayer(client, client);
 		}
 	}
@@ -5427,82 +5433,6 @@ stock bool:IsPointVisibleToPlayer(client, const Float:pos[3], bool:bCheckFOV=tru
 	}
 	
 	return true;
-}
-
-stock ChangeClientTeamNoSuicide(client, team, bool:bRespawn=true)
-{
-	if (!IsClientInGame(client)) return;
-	
-	if (GetClientTeam(client) != team)
-	{
-		SetEntProp(client, Prop_Send, "m_lifeState", 2);
-		ChangeClientTeam(client, team);
-		SetEntProp(client, Prop_Send, "m_lifeState", 0);
-		if (bRespawn) TF2_RespawnPlayer(client);
-	}
-}
-
-stock UTIL_ScreenShake(client, Float:amplitude, Float:duration, Float:frequency)
-{
-	new Handle:hBf = StartMessageOne("Shake", client);
-	if (hBf != INVALID_HANDLE)
-	{
-		BfWriteByte(hBf, 0);
-		BfWriteFloat(hBf, amplitude);
-		BfWriteFloat(hBf, frequency);
-		BfWriteFloat(hBf, duration);
-		EndMessage();
-	}
-}
-
-public UTIL_ScreenFade(client, duration, time, flags, r, g, b, a)
-{
-	new clients[1], Handle:bf;
-	clients[0] = client;
-	
-	bf = StartMessage("Fade", clients, 1);
-	BfWriteShort(bf, duration);
-	BfWriteShort(bf, time);
-	BfWriteShort(bf, flags);
-	BfWriteByte(bf, r);
-	BfWriteByte(bf, g);
-	BfWriteByte(bf, b);
-	BfWriteByte(bf, a);
-	EndMessage();
-}
-
-stock bool:IsValidClient(client)
-{
-	return bool:(client > 0 && client <= MaxClients && IsClientInGame(client));
-}
-
-// Removes wearables such as botkillers from weapons.
-stock TF2_RemoveWeaponSlotAndWearables(client, iSlot)
-{
-	new iWeapon = GetPlayerWeaponSlot(client, iSlot);
-	if (!IsValidEntity(iWeapon)) return;
-	
-	new iWearable = INVALID_ENT_REFERENCE;
-	while ((iWearable = FindEntityByClassname(iWearable, "tf_wearable")) != -1)
-	{
-		new iWeaponAssociated = GetEntPropEnt(iWearable, Prop_Send, "m_hWeaponAssociatedWith");
-		if (iWeaponAssociated == iWeapon)
-		{
-			AcceptEntityInput(iWearable, "Kill");
-		}
-	}
-	
-	iWearable = INVALID_ENT_REFERENCE;
-	while ((iWearable = FindEntityByClassname(iWearable, "tf_wearable_vm")) != -1)
-	{
-		new iWeaponAssociated = GetEntPropEnt(iWearable, Prop_Send, "m_hWeaponAssociatedWith");
-		if (iWeaponAssociated == iWeapon)
-		{
-			AcceptEntityInput(iWearable, "Kill");
-		}
-	}
-	
-	TF2_RemoveWeaponSlot(client, iSlot);
 }
 
 public Action:Timer_ClientPostWeapons(Handle:timer, any:userid)

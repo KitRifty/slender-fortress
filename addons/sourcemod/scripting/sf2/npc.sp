@@ -38,8 +38,12 @@ static Float:g_flNPCAngerAddOnPageGrabTimeDiff[MAX_BOSSES] = { 0.0, ... };
 static Float:g_flNPCSearchRadius[MAX_BOSSES];
 static Float:g_flNPCInstantKillRadius[MAX_BOSSES];
 
-// #include "sf2/npc_methodmap.sp"
+static g_iNPCEnemy[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 
+#if defined METHODMAPS
+ #include "sf2/npc_methodmap.sp"
+#endif
+ 
 public NPCInitialize()
 {
 	NPCChaserInitialize();
@@ -242,6 +246,16 @@ NPCGetTeleportType(iNPCIndex)
 	return g_iNPCTeleportType[iNPCIndex];
 }
 
+NPCGetEnemy(iNPCIndex)
+{
+	return g_iNPCEnemy[iNPCIndex];
+}
+
+NPCSetEnemy(iNPCIndex, ent)
+{
+	g_iNPCEnemy[iNPCIndex] = IsValidEntity(ent) ? EntIndexToEntRef(ent) : INVALID_ENT_REFERENCE;
+}
+
 /**
  *	Returns the boss's eye position (eye pos offset + absorigin).
  */
@@ -265,12 +279,12 @@ bool:NPCGetEyePosition(iNPCIndex, Float:buffer[3], const Float:flDefaultValue[3]
 	return true;
 }
 
-stock bool:SlenderHasAttribute(iBossIndex, const String:sAttribute[])
+bool:NPCHasAttribute(iNPCIndex, const String:sAttribute[])
 {
-	if (NPCGetUniqueID(iBossIndex) == -1) return false;
+	if (NPCGetUniqueID(iNPCIndex) == -1) return false;
 	
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
 	
 	KvRewind(g_hConfig);
 	KvJumpToKey(g_hConfig, sProfile);
@@ -280,9 +294,9 @@ stock bool:SlenderHasAttribute(iBossIndex, const String:sAttribute[])
 	return KvJumpToKey(g_hConfig, sAttribute);
 }
 
-stock Float:SlenderGetAttributeValue(iBossIndex, const String:sAttribute[], Float:flDefaultValue=0.0)
+Float:NPCGetAttributeValue(iNPCIndex, const String:sAttribute[], Float:flDefaultValue=0.0)
 {
-	if (!SlenderHasAttribute(iBossIndex, sAttribute)) return flDefaultValue;
+	if (!NPCHasAttribute(iNPCIndex, sAttribute)) return flDefaultValue;
 	return KvGetFloat(g_hConfig, "value", flDefaultValue);
 }
 
@@ -432,6 +446,8 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iAdditionalBossFlags=0, 
 	g_flNPCInstantKillRadius[iBossIndex] = GetBossProfileInstantKillRadius(iProfileIndex);
 	
 	g_iNPCTeleportType[iBossIndex] = GetBossProfileTeleportType(iProfileIndex);
+	
+	g_iNPCEnemy[iBossIndex] = INVALID_ENT_REFERENCE;
 	
 	g_flSlenderAcceleration[iBossIndex] = GetProfileFloat(sProfile, "acceleration", 150.0);
 	g_hSlenderFakeTimer[iBossIndex] = INVALID_HANDLE;
@@ -638,6 +654,8 @@ RemoveProfile(iBossIndex)
 	NPCSetAnger(iBossIndex, 1.0);
 	
 	g_flNPCFieldOfView[iBossIndex] = 0.0;
+	
+	g_iNPCEnemy[iBossIndex] = INVALID_ENT_REFERENCE;
 	
 	g_iSlenderCopyMaster[iBossIndex] = -1;
 	g_iNPCUniqueID[iBossIndex] = -1;
