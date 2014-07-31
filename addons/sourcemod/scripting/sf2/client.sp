@@ -3234,6 +3234,18 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
+	if (GetProfileNum(sProfile, "death_cam_play_scare_sound"))
+	{
+		GetRandomStringFromProfile(sProfile, "sound_scare_player", buffer, sizeof(buffer));
+		if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	}
+	
+	GetRandomStringFromProfile(sProfile, "sound_player_death", buffer, sizeof(buffer));
+	if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	
+	GetRandomStringFromProfile(sProfile, "sound_player_death_all", buffer, sizeof(buffer));
+	if (buffer[0]) EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
+	
 	// Call our forward.
 	Call_StartForward(fOnClientCaughtByBoss);
 	Call_PushCell(client);
@@ -3305,19 +3317,6 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 	}
 	
 	TeleportEntity(client, NULL_VECTOR, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
-	
-	if (GetProfileNum(sProfile, "death_cam_play_scare_sound"))
-	{
-		GetRandomStringFromProfile(sProfile, "sound_scare_player", buffer, sizeof(buffer));
-		if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
-	}
-	
-	GetRandomStringFromProfile(sProfile, "sound_player_death", buffer, sizeof(buffer));
-	if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
-	
-	GetRandomStringFromProfile(sProfile, "sound_player_death_all", buffer, sizeof(buffer));
-	if (buffer[0]) EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
-	
 	
 	Call_StartForward(fOnClientStartDeathCam);
 	Call_PushCell(client);
