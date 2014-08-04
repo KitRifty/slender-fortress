@@ -1081,7 +1081,8 @@ public Action:Timer_DrainFlashlight(Handle:timer, any:userid)
 	
 	if (timer != g_hPlayerFlashlightBatteryTimer[client]) return Plugin_Stop;
 	
-	if (!g_bRoundInfiniteFlashlight) 
+	new iOverride = GetConVarInt(g_cvPlayerInfiniteFlashlightOverride);
+	if ((!g_bRoundInfiniteFlashlight && iOverride != 1) || iOverride == 0)
 	{
 		ClientSetFlashlightBatteryLife(client, ClientGetFlashlightBatteryLife(client) - 0.01);
 	}
@@ -2500,7 +2501,14 @@ public Action:Timer_ClientSprinting(Handle:timer, any:userid)
 		return;
 	}
 	
-	if (IsClientReallySprinting(client)) g_iPlayerSprintPoints[client]--;
+	if (IsClientReallySprinting(client)) 
+	{
+		new iOverride = GetConVarInt(g_cvPlayerInfiniteSprintOverride);
+		if ((!g_bRoundInfiniteSprint && iOverride != 1) || iOverride == 0)
+		{
+			g_iPlayerSprintPoints[client]--;
+		}
+	}
 	
 	ClientSprintTimer(client);
 }
@@ -3145,8 +3153,12 @@ ClientOnJump(client)
 	{
 		if (!IsRoundEnding() && !IsRoundInWarmup() && !DidClientEscape(client))
 		{
-			g_iPlayerSprintPoints[client] -= 7;
-			if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
+			new iOverride = GetConVarInt(g_cvPlayerInfiniteSprintOverride);
+			if ((!g_bRoundInfiniteSprint && iOverride != 1) || iOverride == 0)
+			{
+				g_iPlayerSprintPoints[client] -= 7;
+				if (g_iPlayerSprintPoints[client] < 0) g_iPlayerSprintPoints[client] = 0;
+			}
 			
 			if (!IsClientSprinting(client))
 			{
@@ -3777,7 +3789,8 @@ public Action:Timer_BlinkTimer(Handle:timer, any:userid)
 	
 	if (IsPlayerAlive(client) && !IsClientInDeathCam(client) && !g_bPlayerEliminated[client] && !IsClientInGhostMode(client) && !IsRoundEnding())
 	{
-		if (!g_bRoundInfiniteBlink)
+		new iOverride = GetConVarInt(g_cvPlayerInfiniteBlinkOverride);
+		if ((!g_bRoundInfiniteBlink && iOverride != 1) || iOverride == 0)
 		{
 			g_flPlayerBlinkMeter[client] -= 0.05;
 		}

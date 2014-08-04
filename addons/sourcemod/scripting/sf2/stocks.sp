@@ -41,6 +41,12 @@
 
 #define EFL_FORCE_CHECK_TRANSMIT (1 << 7)
 
+#define vec3_origin { 0.0, 0.0, 0.0 }
+
+// hull defines, mostly used for space checking.
+new Float:HULL_HUMAN_MINS[3] = { -13.0, -13.0, 0.0 }
+new Float:HULL_HUMAN_MAXS[3] = { 13.0, 13.0, 72.0 }
+
 //	==========================================================
 //	ENTITY FUNCTIONS
 //	==========================================================
@@ -53,6 +59,22 @@ stock bool:IsEntityClassname(iEnt, const String:classname[], bool:bCaseSensitive
 	GetEntityClassname(iEnt, sBuffer, sizeof(sBuffer));
 	
 	return StrEqual(sBuffer, classname, bCaseSensitive);
+}
+
+stock FindEntityByTargetname(const String:targetName[], const String:className[], bool:caseSensitive=true)
+{
+	new ent = -1;
+	while ((ent = FindEntityByClassname(ent, className)) != -1)
+	{
+		decl String:sName[64];
+		GetEntPropString(ent, Prop_Data, "m_iName", sName, sizeof(sName));
+		if (StrEqual(sName, targetName, caseSensitive))
+		{
+			return ent;
+		}
+	}
+	
+	return INVALID_ENT_REFERENCE;
 }
 
 stock Float:EntityDistanceFromEntity(ent1, ent2, bool:bSquared=false)
@@ -446,6 +468,18 @@ stock FixedUnsigned16(Float:value, scale)
 	}
 	
 	return iOutput;
+}
+
+stock Float:FloatMin(Float:a, Float:b)
+{
+	if (a < b) return a;
+	return b;
+}
+
+stock Float:FloatMax(Float:a, Float:b)
+{
+	if (a > b) return a;
+	return b;
 }
 
 //	==========================================================

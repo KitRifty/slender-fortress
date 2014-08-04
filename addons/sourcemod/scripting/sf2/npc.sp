@@ -1075,6 +1075,43 @@ stock SlenderRemoveTargetMemory(iBossIndex)
 	CloseHandle(hLocs);
 }
 
+SlenderPerformVoice(iBossIndex, const String:sSectionName[], iIndex=-1)
+{
+	if (iBossIndex == -1) return;
+
+	new slender = NPCGetEntIndex(iBossIndex);
+	if (!slender || slender == INVALID_ENT_REFERENCE) return;
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
+	decl String:sPath[PLATFORM_MAX_PATH];
+	GetRandomStringFromProfile(sProfile, sSectionName, sPath, sizeof(sPath), iIndex);
+	if (sPath[0])
+	{
+		decl String:sBuffer[512];
+		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
+		StrCat(sBuffer, sizeof(sBuffer), "_cooldown_min");
+		new Float:flCooldownMin = GetProfileFloat(sProfile, sBuffer, 1.5);
+		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
+		StrCat(sBuffer, sizeof(sBuffer), "_cooldown_max");
+		new Float:flCooldownMax = GetProfileFloat(sProfile, sBuffer, 1.5);
+		new Float:flCooldown = GetRandomFloat(flCooldownMin, flCooldownMax);
+		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
+		StrCat(sBuffer, sizeof(sBuffer), "_volume");
+		new Float:flVolume = GetProfileFloat(sProfile, sBuffer, 1.0);
+		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
+		StrCat(sBuffer, sizeof(sBuffer), "_channel");
+		new iChannel = GetProfileNum(sProfile, sBuffer, SNDCHAN_AUTO);
+		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
+		StrCat(sBuffer, sizeof(sBuffer), "_level");
+		new iLevel = GetProfileNum(sProfile, sBuffer, SNDLEVEL_SCREAMING);
+		
+		g_flSlenderNextVoiceSound[iBossIndex] = GetGameTime() + flCooldown;
+		EmitSoundToAll(sPath, slender, iChannel, iLevel, _, flVolume);
+	}
+}
+
 bool:SlenderCalculateApproachToPlayer(iBossIndex, iBestPlayer, Float:buffer[3])
 {
 	if (!IsValidClient(iBestPlayer)) return false;
@@ -1271,6 +1308,416 @@ public bool:SlenderChaseBossPlaceFunctor(iBossIndex, const Float:flActiveAreaCen
 	}
 	
 	return bOriginalResult;
+}
+
+// As time passes on, we have to get more aggressive in order to successfully peak the target's
+// stress level in the allotted duration we're given. Otherwise we'll be forced to place him
+// in a rest period.
+
+// Teleport progressively closer as time passes in attempt to increase the target's stress level.
+// Maximum minimum range is capped by the boss's anger level.
+
+stock Float:CalculateTeleportMinRange(iBossIndex, Float:flInitialMinRange, Float:flTeleportMaxRange)
+{
+	new Float:flTeleportTargetTimeLeft = g_flSlenderTeleportMaxTargetTime[iBossIndex] - GetGameTime();
+	new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[iBossIndex] - g_flSlenderTeleportTargetTime[iBossIndex];
+	new Float:flTeleportMinRange = flTeleportMaxRange - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (flTeleportMaxRange - flInitialMinRange);
+	
+	if (NPCGetAnger(iBossIndex) <= 1.0)
+	{
+		flTeleportMinRange += (g_flSlenderTeleportMinRange[iBossIndex] - flTeleportMaxRange) * Pow(NPCGetAnger(iBossIndex) - 1.0, 2.0 / g_flRoundDifficultyModifier);
+	}
+	
+	if (flTeleportMinRange < flInitialMinRange) flTeleportMinRange = flInitialMinRange;
+	if (flTeleportMinRange > flTeleportMaxRange) flTeleportMinRange = flTeleportMaxRange;
+	
+	return flTeleportMinRange;
+}
+
+public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
+{
+	if (iBossIndex == -1) return Plugin_Stop;
+	if (timer != g_hSlenderThink[iBossIndex]) return Plugin_Stop;
+	
+	if (NPCGetFlags(iBossIndex) & SFF_NOTELEPORT) return Plugin_Continue;
+	
+	// Check to see if anyone's looking at me before doing anything.
+	if (PeopleCanSeeSlender(iBossIndex, _, false))
+	{
+		return Plugin_Continue;
+	}
+	
+	if (NPCGetTeleportType(iBossIndex) == 2)
+	{
+		new iBoss = NPCGetEntIndex(iBossIndex);
+		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
+		{
+			if (NPCGetType(iBossIndex) == SF2BossType_Chaser)
+			{
+				// Check to see if it's a good time to teleport away.
+				new iState = g_iSlenderState[iBossIndex];
+				if (iState == STATE_IDLE || iState == STATE_WANDER)
+				{
+					if (GetGameTime() < g_flSlenderTimeUntilKill[iBossIndex])
+					{
+						return Plugin_Continue;
+					}
+				}
+			}
+		}
+	}
+	
+	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
+	
+	if (!g_bRoundGrace)
+	{
+		if (GetGameTime() >= g_flSlenderNextTeleportTime[iBossIndex])
+		{
+			new Float:flTeleportTime = GetRandomFloat(GetProfileFloat(sProfile, "teleport_time_min", 5.0), GetProfileFloat(sProfile, "teleport_time_max", 9.0));
+			g_flSlenderNextTeleportTime[iBossIndex] = GetGameTime() + flTeleportTime;
+			
+			new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[iBossIndex]);
+			
+			if (!iTeleportTarget || iTeleportTarget == INVALID_ENT_REFERENCE)
+			{
+				// We don't have any good targets. Remove myself for now.
+				if (SlenderCanRemove(iBossIndex)) RemoveSlender(iBossIndex);
+				
+#if defined DEBUG
+				SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: no good target, removing...", iBossIndex);
+#endif
+			}
+			else
+			{
+				new Float:flTeleportMinRange = CalculateTeleportMinRange(iBossIndex, g_flSlenderTeleportMinRange[iBossIndex], g_flSlenderTeleportMaxRange[iBossIndex]);
+				
+				new iTeleportAreaIndex = -1;
+				decl Float:flTeleportPos[3];
+				
+				// Search surrounding nav areas around target.
+				if (NavMesh_Exists())
+				{
+					decl Float:flTargetPos[3];
+					GetClientAbsOrigin(iTeleportTarget, flTargetPos);
+					
+					new iTargetAreaIndex = NavMesh_GetNearestArea(flTargetPos);
+					if (iTargetAreaIndex != -1)
+					{
+						new bool:bShouldBeBehindObstruction = false;
+						if (NPCGetTeleportType(iBossIndex) == 2)
+						{
+							bShouldBeBehindObstruction = true;
+						}
+						
+						// Search outwards until travel distance is at maximum range.
+						new Handle:hAreaArray = CreateArray(2);
+						new Handle:hAreas = CreateStack();
+						NavMesh_CollectSurroundingAreas(hAreas, iTargetAreaIndex, g_flSlenderTeleportMaxRange[iBossIndex]);
+						
+						{
+							new iPoppedAreas;
+						
+							while (!IsStackEmpty(hAreas))
+							{
+								new iAreaIndex = -1;
+								PopStackCell(hAreas, iAreaIndex);
+								
+								// Check flags.
+								if (NavMeshArea_GetFlags(iAreaIndex) & NAV_MESH_NO_HOSTAGES)
+								{
+									// Don't spawn/teleport at areas marked with the "NO HOSTAGES" flag.
+									continue;
+								}
+								
+								new iIndex = PushArrayCell(hAreaArray, iAreaIndex);
+								SetArrayCell(hAreaArray, iIndex, float(NavMeshArea_GetCostSoFar(iAreaIndex)), 1);
+								iPoppedAreas++;
+							}
+							
+#if defined DEBUG
+							SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: collected %d areas", iBossIndex, iPoppedAreas);
+#endif
+							
+							CloseHandle(hAreas);
+						}
+						
+						new Handle:hAreaArrayClose = CreateArray(4);
+						new Handle:hAreaArrayAverage = CreateArray(4);
+						new Handle:hAreaArrayFar = CreateArray(4);
+						
+						for (new i = 1; i <= 3; i++)
+						{
+							new Float:flRangeSectionMin = flTeleportMinRange + (g_flSlenderTeleportMaxRange[iBossIndex] - flTeleportMinRange) * (float(i - 1) / 3.0);
+							new Float:flRangeSectionMax = flTeleportMinRange + (g_flSlenderTeleportMaxRange[iBossIndex] - flTeleportMinRange) * (float(i) / 3.0);
+							
+							for (new i2 = 0, iSize = GetArraySize(hAreaArray); i2 < iSize; i2++)
+							{
+								new iAreaIndex = GetArrayCell(hAreaArray, i2);
+								
+								decl Float:flAreaSpawnPoint[3];
+								NavMeshArea_GetCenter(iAreaIndex, flAreaSpawnPoint);
+								
+								new iBoss = NPCGetEntIndex(iBossIndex);
+								
+								// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
+								{
+									decl Float:flTraceStartPos[3];
+									flTraceStartPos[0] = flAreaSpawnPoint[0];
+									flTraceStartPos[1] = flAreaSpawnPoint[1];
+									flTraceStartPos[2] = flAreaSpawnPoint[2] + (HalfHumanHeight * 2.0);
+									
+									decl Float:flTraceMins[3];
+									flTraceMins[0] = g_flSlenderDetectMins[iBossIndex][0];
+									flTraceMins[1] = g_flSlenderDetectMins[iBossIndex][1];
+									flTraceMins[2] = 0.0;
+									
+									
+									decl Float:flTraceMaxs[3];
+									flTraceMaxs[0] = g_flSlenderDetectMaxs[iBossIndex][0];
+									flTraceMaxs[1] = g_flSlenderDetectMaxs[iBossIndex][1];
+									flTraceMaxs[2] = 0.0;
+									
+									new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
+										flAreaSpawnPoint,
+										flTraceMins,
+										flTraceMaxs,
+										MASK_NPCSOLID,
+										TraceRayDontHitEntity,
+										iBoss);
+									
+									decl Float:flTraceHitPos[3];
+									TR_GetEndPosition(flTraceHitPos, hTrace);
+									flTraceHitPos[2] += 1.0;
+									CloseHandle(hTrace);
+									
+									if (IsSpaceOccupiedNPC(flTraceHitPos,
+										g_flSlenderDetectMins[iBossIndex],
+										g_flSlenderDetectMaxs[iBossIndex],
+										iBoss))
+									{
+										continue;
+									}
+									
+									if (NPCGetType(iBossIndex) == SF2BossType_Chaser)
+									{
+										if (IsSpaceOccupiedNPC(flTraceHitPos,
+											HULL_HUMAN_MINS,
+											HULL_HUMAN_MAXS,
+											iBoss))
+										{
+											// Can't let an NPC spawn here; too little space. If we let it spawn here it will be non solid!
+											continue;
+										}
+									}
+									
+									flAreaSpawnPoint[0] = flTraceHitPos[0];
+									flAreaSpawnPoint[1] = flTraceHitPos[1];
+									flAreaSpawnPoint[2] = flTraceHitPos[2];
+								}
+								
+								// Check visibility.
+								if (IsPointVisibleToAPlayer(flAreaSpawnPoint, !bShouldBeBehindObstruction, false)) continue;
+								
+								AddVectors(flAreaSpawnPoint, g_flSlenderEyePosOffset[iBossIndex], flAreaSpawnPoint);
+								
+								if (IsPointVisibleToAPlayer(flAreaSpawnPoint, !bShouldBeBehindObstruction, false)) continue;
+								
+								SubtractVectors(flAreaSpawnPoint, g_flSlenderEyePosOffset[iBossIndex], flAreaSpawnPoint);
+								
+								new bool:bTooNear = false;
+								
+								// Check minimum range with players.
+								for (new iClient = 1; iClient <= MaxClients; iClient++)
+								{
+									if (!IsClientInGame(iClient) ||
+										!IsPlayerAlive(iClient) ||
+										g_bPlayerEliminated[iClient] ||
+										IsClientInGhostMode(iClient) || 
+										DidClientEscape(iClient))
+									{
+										continue;
+									}
+									
+									decl Float:flTempPos[3];
+									GetClientAbsOrigin(iClient, flTempPos);
+									
+									if (GetVectorDistance(flAreaSpawnPoint, flTempPos) <= g_flSlenderTeleportMinRange[iBossIndex])
+									{
+										bTooNear = true;
+										break;
+									}
+								}
+								
+								if (bTooNear) continue;	// This area is not compatible.
+								
+								// Check minimum range with boss copies (if supported).
+								if (NPCGetFlags(iBossIndex) & SFF_COPIES)
+								{
+									new Float:flMinDistBetweenBosses = GetProfileFloat(sProfile, "copy_teleport_dist_from_others", 800.0);
+									
+									for (new iBossCheck = 0; iBossCheck < MAX_BOSSES; iBossCheck++)
+									{
+										if (iBossCheck == iBossIndex ||
+											NPCGetUniqueID(iBossCheck) == -1 ||
+											(g_iSlenderCopyMaster[iBossIndex] != iBossCheck && g_iSlenderCopyMaster[iBossIndex] != g_iSlenderCopyMaster[iBossCheck]))
+										{
+											continue;
+										}
+										
+										new iBossEnt = NPCGetEntIndex(iBossCheck);
+										if (!iBossEnt || iBossEnt == INVALID_ENT_REFERENCE) continue;
+										
+										decl Float:flTempPos[3];
+										SlenderGetAbsOrigin(iBossCheck, flTempPos);
+										
+										if (GetVectorDistance(flAreaSpawnPoint, flTempPos) <= flMinDistBetweenBosses)
+										{
+											bTooNear = true;
+											break;
+										}
+									}
+								}
+								
+								if (bTooNear) continue;	// This area is not compatible.
+								
+								// Check travel distance and put in the appropriate arrays.
+								new Float:flDist = Float:GetArrayCell(hAreaArray, i2, 1);
+								if (flDist > flRangeSectionMin && flDist < flRangeSectionMax)
+								{
+									new iIndex = -1;
+									new Handle:hTargetAreaArray = INVALID_HANDLE;
+									
+									switch (i)
+									{
+										case 1: 
+										{
+											iIndex = PushArrayCell(hAreaArrayClose, iAreaIndex);
+											hTargetAreaArray = hAreaArrayClose;
+										}
+										case 2: 
+										{
+											iIndex = PushArrayCell(hAreaArrayAverage, iAreaIndex);
+											hTargetAreaArray = hAreaArrayAverage;
+										}
+										case 3: 
+										{
+											iIndex = PushArrayCell(hAreaArrayFar, iAreaIndex);
+											hTargetAreaArray = hAreaArrayFar;
+										}
+									}
+									
+									if (hTargetAreaArray != INVALID_HANDLE && iIndex != -1)
+									{
+										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[0], 1);
+										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[1], 2);
+										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[2], 3);
+									}
+								}
+							}
+						}
+						
+						CloseHandle(hAreaArray);
+						
+#if defined DEBUG
+						SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: collected %d close areas, %d average areas, %d far areas", iBossIndex, GetArraySize(hAreaArrayClose),
+							GetArraySize(hAreaArrayAverage),
+							GetArraySize(hAreaArrayFar));
+#endif
+						
+						new iArrayIndex = -1;
+						
+						if (GetArraySize(hAreaArrayClose))
+						{
+							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1);
+							iTeleportAreaIndex = GetArrayCell(hAreaArrayClose, iArrayIndex);
+							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 1);
+							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 2);
+							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 3);
+						}
+						else if (GetArraySize(hAreaArrayAverage))
+						{
+							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1);
+							iTeleportAreaIndex = GetArrayCell(hAreaArrayAverage, iArrayIndex);
+							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 1);
+							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 2);
+							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 3);
+						}
+						else if (GetArraySize(hAreaArrayFar))
+						{
+							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1);
+							iTeleportAreaIndex = GetArrayCell(hAreaArrayFar, iArrayIndex);
+							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 1);
+							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 2);
+							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 3);
+						}
+						
+						CloseHandle(hAreaArrayClose);
+						CloseHandle(hAreaArrayAverage);
+						CloseHandle(hAreaArrayFar);
+					}
+					else
+					{
+#if defined DEBUG
+						SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because target is not on nav mesh!", iBossIndex);
+#endif
+					}
+				}
+				else
+				{
+#if defined DEBUG
+					SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because of lack of nav mesh!", iBossIndex);
+#endif
+				}
+				
+				if (iTeleportAreaIndex == -1)
+				{
+					// We don't have any good areas. Remove myself for now.
+					if (SlenderCanRemove(iBossIndex)) RemoveSlender(iBossIndex);
+				}
+				else
+				{
+					SpawnSlender(iBossIndex, flTeleportPos);
+					
+					if (NPCGetFlags(iBossIndex) & SFF_HASJUMPSCARE)
+					{
+						new bool:bDidJumpScare = false;
+						
+						for (new i = 1; i <= MaxClients; i++)
+						{
+							if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i)) continue;
+							
+							if (PlayerCanSeeSlender(i, iBossIndex, false))
+							{
+								if ((NPCGetDistanceFromEntity(iBossIndex, i) <= GetProfileFloat(sProfile, "jumpscare_distance") &&
+									GetGameTime() >= g_flSlenderNextJumpScare[iBossIndex]) ||
+									PlayerCanSeeSlender(i, iBossIndex))
+								{
+									bDidJumpScare = true;
+								
+									new Float:flJumpScareDuration = GetProfileFloat(sProfile, "jumpscare_duration");
+									ClientDoJumpScare(i, iBossIndex, flJumpScareDuration);
+								}
+							}
+						}
+						
+						if (bDidJumpScare)
+						{
+							g_flSlenderNextJumpScare[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "jumpscare_cooldown");
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+#if defined DEBUG
+			SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because of teleport time (curtime: %f, teletime: %f)", iBossIndex, GetGameTime(), g_flSlenderNextTeleportTime[iBossIndex]);
+#endif
+		}
+	}
+	
+	return Plugin_Continue;
 }
 
 /*

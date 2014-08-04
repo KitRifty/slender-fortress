@@ -9,8 +9,6 @@
 new Handle:g_cvPvPArenaLeaveTime;
 new Handle:g_cvPvPArenaPlayerCollisions;
 
-new Handle:g_hMenuSettingsPvP;
-
 static const String:g_sPvPProjectileClasses[][] = 
 {
 	"tf_projectile_rocket", 
@@ -183,6 +181,7 @@ public PvP_OnEntityCreated(ent, const String:sClassname[])
 		{
 			if (StrEqual(sClassname, g_sPvPProjectileClasses[i], false))
 			{
+				SDKHook(ent, SDKHook_Spawn, Hook_PvPProjectileSpawn);
 				SDKHook(ent, SDKHook_SpawnPost, Hook_PvPProjectileSpawnPost);
 				break;
 			}
@@ -201,6 +200,31 @@ public PvP_OnEntityDestroyed(ent, const String:sClassname[])
 			RemoveFromArray(g_hPvPFlameEntities, iIndex);
 		}
 	}
+}
+
+public Action:Hook_PvPProjectileSpawn(ent)
+{
+	decl String:sClass[64];
+	GetEntityClassname(ent, sClass, sizeof(sClass));
+	
+	new iThrowerOffset = FindDataMapOffs(ent, "m_hThrower");
+	new iOwnerEntity = GetEntPropEnt(ent, Prop_Data, "m_hOwnerEntity");
+	
+	if (iOwnerEntity == -1 && iThrowerOffset != -1)
+	{
+		iOwnerEntity = GetEntDataEnt2(ent, iThrowerOffset);
+	}
+	
+	if (IsValidClient(iOwnerEntity))
+	{
+		if (IsClientInPvP(iOwnerEntity))
+		{
+			SetEntProp(ent, Prop_Data, "m_iInitialTeamNum", 0);
+			SetEntProp(ent, Prop_Send, "m_iTeamNum", 0);
+		}
+	}
+
+	return Plugin_Continue;
 }
 
 public Hook_PvPProjectileSpawnPost(ent)
@@ -544,62 +568,6 @@ bool:IsClientInPvP(client)
 	return g_bPlayerInPvP[client];
 }
 
-// MENU
-
-public Menu_SettingsPvP(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0:
-			{
-				decl String:sBuffer[512];
-				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings PvP Spawn Menu Title", param1);
-				
-				new Handle:hPanel = CreatePanel();
-				SetPanelTitle(hPanel, sBuffer);
-				
-				Format(sBuffer, sizeof(sBuffer), "%T", "Yes", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				Format(sBuffer, sizeof(sBuffer), "%T", "No", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				
-				SendPanelToClient(hPanel, param1, Panel_SettingsPvPSpawn, 30);
-				CloseHandle(hPanel);
-			}
-		}
-	}
-	else if (action == MenuAction_Cancel)
-	{
-		if (param2 == MenuCancel_ExitBack)
-		{
-			DisplayMenu(g_hMenuSettings, param1, 30);
-		}
-	}
-}
-
-public Panel_SettingsPvPSpawn(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 1:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_PvPAutoSpawn] = true;
-				CPrintToChat(param1, "%T", "SF2 PvP Spawn Accept", param1);
-			}
-			case 2:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_PvPAutoSpawn] = false;
-				CPrintToChat(param1, "%T", "SF2 PvP Spawn Decline", param1);
-			}
-		}
-		
-		DisplayMenu(g_hMenuSettings, param1, 30);
-	}
-}
 
 // API
 

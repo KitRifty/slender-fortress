@@ -356,6 +356,11 @@ SpecialRoundReset()
 	g_flSpecialRoundCycleEndTime = -1.0;
 }
 
+bool:IsSpecialRoundRunning()
+{
+	return g_bSpecialRound;
+}
+
 public SpecialRoundInitializeAPI()
 {
 	CreateNative("SF2_IsSpecialRoundRunning", Native_IsSpecialRoundRunning);

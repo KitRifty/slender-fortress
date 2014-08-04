@@ -237,9 +237,9 @@ bool:LoadChaserBossProfile(const String:sProfile[], &iUniqueProfileIndex, String
 static ParseChaserProfileAttacks(iUniqueProfileIndex)
 {
 	decl String:sBuffer[PLATFORM_MAX_PATH];
-
-	new Handle:hAttacks = CreateArray(ChaserProfileAttackData_MaxStats);
 	
+	// Create the array.
+	new Handle:hAttacks = CreateArray(ChaserProfileAttackData_MaxStats);
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, hAttacks, ChaserProfileData_Attacks);
 	
 	//new iAttackType = KvGetNum(g_hConfig, "attack_type");
@@ -263,25 +263,8 @@ static ParseChaserProfileAttacks(iUniqueProfileIndex)
 	
 	new bool:bAttackProps = bool:KvGetNum(g_hConfig, "attack_props");
 	
-	new Float:flAttackSpread = 0.0;
-	
-	KvGetString(g_hConfig, "attack_spread", sBuffer, sizeof(sBuffer));
-	if (strlen(sBuffer) == 0)
-	{
-		KvGetString(g_hConfig, "attack_fov", sBuffer, sizeof(sBuffer)); // backwards compatibility
-		if (strlen(sBuffer) == 0)
-		{
-			flAttackSpread = 45.0;
-		}
-		else
-		{
-			flAttackSpread = KvGetFloat(g_hConfig, "attack_fov");
-		}
-	}
-	else
-	{
-		flAttackSpread = KvGetFloat(g_hConfig, "attack_spread");
-	}
+	new Float:flAttackSpreadOld = KvGetFloat(g_hConfig, "attack_fov", 45.0);
+	new Float:flAttackSpread = KvGetFloat(g_hConfig, "attack_spread", flAttackSpreadOld);
 	
 	if (flAttackSpread < 0.0) flAttackSpread = 0.0;
 	else if (flAttackSpread > 360.0) flAttackSpread = 360.0;

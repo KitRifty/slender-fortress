@@ -22,7 +22,7 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.4"
+#define PLUGIN_VERSION "0.2.4a"
 
 public Plugin:myinfo = 
 {
@@ -306,6 +306,7 @@ new bool:g_bRoundGrace = false;
 new Float:g_flRoundDifficultyModifier = DIFFICULTY_NORMAL;
 new bool:g_bRoundInfiniteFlashlight = false;
 new bool:g_bRoundInfiniteBlink = false;
+new bool:g_bRoundInfiniteSprint = false;
 
 static Handle:g_hRoundGraceTimer = INVALID_HANDLE;
 static Handle:g_hRoundTimer = INVALID_HANDLE;
@@ -408,6 +409,10 @@ new Handle:g_cvPlayerProxyAsk;
 new Handle:g_cvHalfZatoichiHealthGain;
 new Handle:g_cvBlockSuicideDuringRound;
 
+new Handle:g_cvPlayerInfiniteSprintOverride;
+new Handle:g_cvPlayerInfiniteFlashlightOverride;
+new Handle:g_cvPlayerInfiniteBlinkOverride;
+
 new Handle:g_cvGravity;
 new Float:g_flGravity;
 
@@ -417,21 +422,6 @@ new bool:g_bPlayerShakeEnabled;
 new bool:g_bPlayerViewbobEnabled;
 new bool:g_bPlayerViewbobHurtEnabled;
 new bool:g_bPlayerViewbobSprintEnabled;
-
-new Handle:g_hMenuMain;
-new Handle:g_hMenuVoteDifficulty;
-new Handle:g_hMenuGhostMode;
-new Handle:g_hMenuHelp;
-new Handle:g_hMenuHelpObjective;
-new Handle:g_hMenuHelpObjective2;
-new Handle:g_hMenuHelpCommands;
-new Handle:g_hMenuHelpGhostMode;
-new Handle:g_hMenuHelpSprinting;
-new Handle:g_hMenuHelpControls;
-new Handle:g_hMenuHelpClassInfo;
-new Handle:g_hMenuSettings;
-new Handle:g_hMenuCredits;
-new Handle:g_hMenuCredits2;
 
 new Handle:g_hHudSync;
 new Handle:g_hHudSync2;
@@ -500,12 +490,13 @@ new Handle:g_hSDKShouldTransmit;
 #include "sf2/profiles.sp"
 #include "sf2/nav.sp"
 #include "sf2/effects.sp"
+#include "sf2/playergroups.sp"
+#include "sf2/menus.sp"
 #include "sf2/pvp.sp"
 #include "sf2/client.sp"
 #include "sf2/npc.sp"
 #include "sf2/specialround.sp"
 #include "sf2/adminmenu.sp"
-#include "sf2/playergroups.sp"
 
 
 #define SF2_PROJECTED_FLASHLIGHT_CONFIRM_SOUND "ui/item_acquired.wav"
@@ -624,41 +615,41 @@ public OnPluginStart()
 	g_cvAllChat = CreateConVar("sf2_alltalk", "0");
 	HookConVarChange(g_cvAllChat, OnConVarChanged);
 	
-	g_cvPlayerVoiceDistance = CreateConVar("sf2_player_voice_distance", "800.0", "The maximum distance RED can communicate in voice chat. Set to 0 if you want them to be heard at all times.");
+	g_cvPlayerVoiceDistance = CreateConVar("sf2_player_voice_distance", "800.0", "The maximum distance RED can communicate in voice chat. Set to 0 if you want them to be heard at all times.", _, true, 0.0);
 	g_cvPlayerVoiceWallScale = CreateConVar("sf2_player_voice_scale_blocked", "0.5", "The distance required to hear RED in voice chat will be multiplied by this amount if something is blocking them.");
 	
-	g_cvPlayerViewbobEnabled = CreateConVar("sf2_player_viewbob_enabled", "1", "Enable/Disable player viewbobbing.");
+	g_cvPlayerViewbobEnabled = CreateConVar("sf2_player_viewbob_enabled", "1", "Enable/Disable player viewbobbing.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cvPlayerViewbobEnabled, OnConVarChanged);
-	g_cvPlayerViewbobHurtEnabled = CreateConVar("sf2_player_viewbob_hurt_enabled", "0", "Enable/Disable player view tilting when hurt.");
+	g_cvPlayerViewbobHurtEnabled = CreateConVar("sf2_player_viewbob_hurt_enabled", "0", "Enable/Disable player view tilting when hurt.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cvPlayerViewbobHurtEnabled, OnConVarChanged);
-	g_cvPlayerViewbobSprintEnabled = CreateConVar("sf2_player_viewbob_sprint_enabled", "0", "Enable/Disable player step viewbobbing when sprinting.");
+	g_cvPlayerViewbobSprintEnabled = CreateConVar("sf2_player_viewbob_sprint_enabled", "0", "Enable/Disable player step viewbobbing when sprinting.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cvPlayerViewbobSprintEnabled, OnConVarChanged);
 	g_cvGravity = FindConVar("sv_gravity");
 	HookConVarChange(g_cvGravity, OnConVarChanged);
 	
-	g_cvPlayerFakeLagCompensation = CreateConVar("sf2_player_fakelagcompensation", "0", "(EXPERIMENTAL) Enable/Disable fake lag compensation for some hitscan weapons such as the Sniper Rifle.");
+	g_cvPlayerFakeLagCompensation = CreateConVar("sf2_player_fakelagcompensation", "0", "(EXPERIMENTAL) Enable/Disable fake lag compensation for some hitscan weapons such as the Sniper Rifle.", _, true, 0.0, true, 1.0);
 	
-	g_cvPlayerShakeEnabled = CreateConVar("sf2_player_shake_enabled", "1", "Enable/Disable player view shake during boss encounters.");
+	g_cvPlayerShakeEnabled = CreateConVar("sf2_player_shake_enabled", "1", "Enable/Disable player view shake during boss encounters.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cvPlayerShakeEnabled, OnConVarChanged);
-	g_cvPlayerShakeFrequencyMax = CreateConVar("sf2_player_shake_frequency_max", "255", "Maximum frequency value of the shake. Should be a value between 1-255.");
-	g_cvPlayerShakeAmplitudeMax = CreateConVar("sf2_player_shake_amplitude_max", "5", "Maximum amplitude value of the shake. Should be a value between 1-16.");
+	g_cvPlayerShakeFrequencyMax = CreateConVar("sf2_player_shake_frequency_max", "255", "Maximum frequency value of the shake. Should be a value between 1-255.", _, true, 1.0, true, 255.0);
+	g_cvPlayerShakeAmplitudeMax = CreateConVar("sf2_player_shake_amplitude_max", "5", "Maximum amplitude value of the shake. Should be a value between 1-16.", _, true, 1.0, true, 16.0);
 	
-	g_cvPlayerBlinkRate = CreateConVar("sf2_player_blink_rate", "0.33", "How long (in seconds) each bar on the player's Blink meter lasts.");
-	g_cvPlayerBlinkHoldTime = CreateConVar("sf2_player_blink_holdtime", "0.15", "How long (in seconds) a player will stay in Blink mode when he or she blinks.");
+	g_cvPlayerBlinkRate = CreateConVar("sf2_player_blink_rate", "0.33", "How long (in seconds) each bar on the player's Blink meter lasts.", _, true, 0.0);
+	g_cvPlayerBlinkHoldTime = CreateConVar("sf2_player_blink_holdtime", "0.15", "How long (in seconds) a player will stay in Blink mode when he or she blinks.", _, true, 0.0);
 	
-	g_cvUltravisionEnabled = CreateConVar("sf2_player_ultravision_enabled", "1", "Enable/Disable player Ultravision. This helps players see in the dark when their Flashlight is off or unavailable.");
+	g_cvUltravisionEnabled = CreateConVar("sf2_player_ultravision_enabled", "1", "Enable/Disable player Ultravision. This helps players see in the dark when their Flashlight is off or unavailable.", _, true, 0.0, true, 1.0);
 	g_cvUltravisionRadiusRed = CreateConVar("sf2_player_ultravision_radius_red", "512.0");
 	g_cvUltravisionRadiusBlue = CreateConVar("sf2_player_ultravision_radius_blue", "800.0");
 	g_cvUltravisionBrightness = CreateConVar("sf2_player_ultravision_brightness", "-4");
 	
-	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.");
+	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cv20Dollars, OnConVarChanged);
 	
 	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players than can be in one round.", _, true, 1.0);
 	HookConVarChange(g_cvMaxPlayers, OnConVarChanged);
 	
-	g_cvCampingEnabled = CreateConVar("sf2_anticamping_enabled", "1", "Enable/Disable anti-camping system for RED.");
-	g_cvCampingMaxStrikes = CreateConVar("sf2_anticamping_maxstrikes", "4", "How many 5-second intervals players are allowed to stay in one spot before he/she is forced to suicide.");
+	g_cvCampingEnabled = CreateConVar("sf2_anticamping_enabled", "1", "Enable/Disable anti-camping system for RED.", _, true, 0.0, true, 1.0);
+	g_cvCampingMaxStrikes = CreateConVar("sf2_anticamping_maxstrikes", "4", "How many 5-second intervals players are allowed to stay in one spot before he/she is forced to suicide.", _, true, 0.0);
 	g_cvCampingStrikesWarn = CreateConVar("sf2_anticamping_strikeswarn", "2", "The amount of strikes left where the player will be warned of camping.");
 	g_cvCampingMinDistance = CreateConVar("sf2_anticamping_mindistance", "128.0", "Every 5 seconds the player has to be at least this far away from his last position 5 seconds ago or else he'll get a strike.");
 	g_cvCampingNoStrikeSanity = CreateConVar("sf2_anticamping_no_strike_sanity", "0.1", "The camping system will NOT give any strikes under any circumstances if the players's Sanity is missing at least this much of his maximum Sanity (max is 1.0).");
@@ -668,26 +659,30 @@ public OnPluginStart()
 	g_cvDifficulty = CreateConVar("sf2_difficulty", "1", "Difficulty of the game. 1 = Normal, 2 = Hard, 3 = Insane.", _, true, 1.0, true, 3.0);
 	HookConVarChange(g_cvDifficulty, OnConVarChanged);
 	
-	g_cvSpecialRoundBehavior = CreateConVar("sf2_specialround_mode", "0", "0 = Special Round resets on next round, 1 = Special Round keeps going until all players have played (not counting spectators, recently joined players, and those who reset their queue points during the round)");
-	g_cvSpecialRoundForce = CreateConVar("sf2_specialround_forceenable", "-1", "Sets whether a Special Round will occur on the next round or not.");
-	g_cvSpecialRoundOverride = CreateConVar("sf2_specialround_forcetype", "-1", "Sets the type of Special Round that will be chosen on the next Special Round. Set to -1 to let the game choose.");
-	g_cvSpecialRoundInterval = CreateConVar("sf2_specialround_interval", "5", "If this many rounds are completed, the next round will be a Special Round.");
+	g_cvSpecialRoundBehavior = CreateConVar("sf2_specialround_mode", "0", "0 = Special Round resets on next round, 1 = Special Round keeps going until all players have played (not counting spectators, recently joined players, and those who reset their queue points during the round)", _, true, 0.0, true, 1.0);
+	g_cvSpecialRoundForce = CreateConVar("sf2_specialround_forceenable", "-1", "Sets whether a Special Round will occur on the next round or not.", _, true, -1.0, true, 1.0);
+	g_cvSpecialRoundOverride = CreateConVar("sf2_specialround_forcetype", "-1", "Sets the type of Special Round that will be chosen on the next Special Round. Set to -1 to let the game choose.", _, true, -1.0);
+	g_cvSpecialRoundInterval = CreateConVar("sf2_specialround_interval", "5", "If this many rounds are completed, the next round will be a Special Round.", _, true, 0.0);
 	
-	g_cvNewBossRoundBehavior = CreateConVar("sf2_newbossround_mode", "0", "0 = boss selection will return to normal after the boss round, 1 = the new boss will continue being the boss until all players in the server have played against it (not counting spectators, recently joined players, and those who reset their queue points during the round).");
-	g_cvNewBossRoundInterval = CreateConVar("sf2_newbossround_interval", "3", "If this many around are completed, the next round's boss will be randomly chosen.");
-	g_cvNewBossRoundForce = CreateConVar("sf2_newbossround_forceenable", "-1", "Sets whether a new boss will be chosen on the next round or not. Set to -1 to let the game choose.");
+	g_cvNewBossRoundBehavior = CreateConVar("sf2_newbossround_mode", "0", "0 = boss selection will return to normal after the boss round, 1 = the new boss will continue being the boss until all players in the server have played against it (not counting spectators, recently joined players, and those who reset their queue points during the round).", _, true, 0.0, true, 1.0);
+	g_cvNewBossRoundInterval = CreateConVar("sf2_newbossround_interval", "3", "If this many rounds are completed, the next round's boss will be randomly chosen, but will not be the main boss.", _, true, 0.0);
+	g_cvNewBossRoundForce = CreateConVar("sf2_newbossround_forceenable", "-1", "Sets whether a new boss will be chosen on the next round or not. Set to -1 to let the game choose.", _, true, -1.0, true, 1.0);
 	
-	g_cvTimeLimit = CreateConVar("sf2_timelimit_default", "300", "The time limit of the round. Maps can change the time limit.");
-	g_cvTimeLimitEscape = CreateConVar("sf2_timelimit_escape_default", "90", "The time limit to escape. Maps can change the time limit.");
+	g_cvTimeLimit = CreateConVar("sf2_timelimit_default", "300", "The time limit of the round. Maps can change the time limit.", _, true, 0.0);
+	g_cvTimeLimitEscape = CreateConVar("sf2_timelimit_escape_default", "90", "The time limit to escape. Maps can change the time limit.", _, true, 0.0);
 	g_cvTimeGainFromPageGrab = CreateConVar("sf2_time_gain_page_grab", "12", "The time gained from grabbing a page. Maps can change the time gain amount.");
 	
-	g_cvWarmupRound = CreateConVar("sf2_warmupround", "1");
-	g_cvWarmupRoundNum = CreateConVar("sf2_warmupround_num", "1");
+	g_cvWarmupRound = CreateConVar("sf2_warmupround", "1", "Enables/disables Warmup Rounds after the \"Waiting for Players\" phase.", _, true, 0.0, true, 1.0);
+	g_cvWarmupRoundNum = CreateConVar("sf2_warmupround_num", "1", "Sets the amount of Warmup Rounds that occur after the \"Waiting for Players\" phase.", _, true, 0.0);
 	
 	g_cvPlayerProxyWaitTime = CreateConVar("sf2_player_proxy_waittime", "35", "How long (in seconds) after a player was chosen to be a Proxy must the system wait before choosing him again.");
 	g_cvPlayerProxyAsk = CreateConVar("sf2_player_proxy_ask", "0", "Set to 1 if the player can choose before becoming a Proxy, set to 0 to force.");
 	
 	g_cvHalfZatoichiHealthGain = CreateConVar("sf2_halfzatoichi_healthgain", "20", "How much health should be gained from killing a player with the Half-Zatoichi? Set to -1 for default behavior.");
+	
+	g_cvPlayerInfiniteSprintOverride = CreateConVar("sf2_player_infinite_sprint_override", "-1", "1 = infinite sprint, 0 = never have infinite sprint, -1 = let the game choose.", _, true, -1.0, true, 1.0);
+	g_cvPlayerInfiniteFlashlightOverride = CreateConVar("sf2_player_infinite_flashlight_override", "-1", "1 = infinite flashlight, 0 = never have infinite flashlight, -1 = let the game choose.", _, true, -1.0, true, 1.0);
+	g_cvPlayerInfiniteBlinkOverride = CreateConVar("sf2_player_infinite_blink_override", "-1", "1 = infinite blink, 0 = never have infinite blink, -1 = let the game choose.", _, true, -1.0, true, 1.0);
 	
 	g_hHudSync = CreateHudSynchronizer();
 	g_hHudSync2 = CreateHudSynchronizer();
@@ -785,160 +780,6 @@ public OnAllPluginsLoaded()
 public OnPluginEnd()
 {
 	StopPlugin();
-}
-
-static SetupMenus()
-{
-	decl String:buffer[512];
-	
-	// Create menus.
-	g_hMenuMain = CreateMenu(Menu_Main);
-	SetMenuTitle(g_hMenuMain, "%t%t\n \n", "SF2 Prefix", "SF2 Main Menu Title");
-	Format(buffer, sizeof(buffer), "%t (!slhelp)", "SF2 Help Menu Title");
-	AddMenuItem(g_hMenuMain, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t (!slnext)", "SF2 Queue Menu Title");
-	AddMenuItem(g_hMenuMain, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t (!slgroup)", "SF2 Group Main Menu Title");
-	AddMenuItem(g_hMenuMain, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t (!slghost)", "SF2 Ghost Mode Menu Title");
-	AddMenuItem(g_hMenuMain, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t (!slsettings)", "SF2 Settings Menu Title");
-	AddMenuItem(g_hMenuMain, "0", buffer);
-	strcopy(buffer, sizeof(buffer), "Credits (!slcredits)");
-	AddMenuItem(g_hMenuMain, "0", buffer);
-	
-	g_hMenuVoteDifficulty = CreateMenu(Menu_VoteDifficulty);
-	SetMenuTitle(g_hMenuVoteDifficulty, "%t%t\n \n", "SF2 Prefix", "SF2 Difficulty Vote Menu Title");
-	Format(buffer, sizeof(buffer), "%t", "SF2 Normal Difficulty");
-	AddMenuItem(g_hMenuVoteDifficulty, "1", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Hard Difficulty");
-	AddMenuItem(g_hMenuVoteDifficulty, "2", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Insane Difficulty");
-	AddMenuItem(g_hMenuVoteDifficulty, "3", buffer);
-	
-	g_hMenuGhostMode = CreateMenu(Menu_GhostMode);
-	SetMenuTitle(g_hMenuGhostMode, "%t%t\n \n", "SF2 Prefix", "SF2 Ghost Mode Menu Title");
-	Format(buffer, sizeof(buffer), "Enable");
-	AddMenuItem(g_hMenuGhostMode, "0", buffer);
-	Format(buffer, sizeof(buffer), "Disable");
-	AddMenuItem(g_hMenuGhostMode, "1", buffer);
-	
-	g_hMenuHelp = CreateMenu(Menu_Help);
-	SetMenuTitle(g_hMenuHelp, "%t%t\n \n", "SF2 Prefix", "SF2 Help Menu Title");
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Objective Menu Title");
-	AddMenuItem(g_hMenuHelp, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Commands Menu Title");
-	AddMenuItem(g_hMenuHelp, "1", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Class Info Menu Title");
-	AddMenuItem(g_hMenuHelp, "2", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Ghost Mode Menu Title");
-	AddMenuItem(g_hMenuHelp, "3", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Sprinting And Stamina Menu Title");
-	AddMenuItem(g_hMenuHelp, "4", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Controls Menu Title");
-	AddMenuItem(g_hMenuHelp, "5", buffer);
-	SetMenuExitBackButton(g_hMenuHelp, true);
-	
-	g_hMenuHelpObjective = CreateMenu(Menu_HelpObjective);
-	SetMenuTitle(g_hMenuHelpObjective, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Objective Menu Title", "SF2 Help Objective Description");
-	AddMenuItem(g_hMenuHelpObjective, "0", "Next");
-	AddMenuItem(g_hMenuHelpObjective, "1", "Back");
-	
-	g_hMenuHelpObjective2 = CreateMenu(Menu_HelpObjective2);
-	SetMenuTitle(g_hMenuHelpObjective2, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Objective Menu Title", "SF2 Help Objective Description 2");
-	AddMenuItem(g_hMenuHelpObjective2, "0", "Back");
-	
-	g_hMenuHelpCommands = CreateMenu(Menu_BackButtonOnly);
-	SetMenuTitle(g_hMenuHelpCommands, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Commands Menu Title", "SF2 Help Commands Description");
-	AddMenuItem(g_hMenuHelpCommands, "0", "Back");
-	
-	g_hMenuHelpGhostMode = CreateMenu(Menu_BackButtonOnly);
-	SetMenuTitle(g_hMenuHelpGhostMode, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Ghost Mode Menu Title", "SF2 Help Ghost Mode Description");
-	AddMenuItem(g_hMenuHelpGhostMode, "0", "Back");
-	
-	g_hMenuHelpSprinting = CreateMenu(Menu_BackButtonOnly);
-	SetMenuTitle(g_hMenuHelpSprinting, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Sprinting And Stamina Menu Title", "SF2 Help Sprinting And Stamina Description");
-	AddMenuItem(g_hMenuHelpSprinting, "0", "Back");
-	
-	g_hMenuHelpControls = CreateMenu(Menu_BackButtonOnly);
-	SetMenuTitle(g_hMenuHelpControls, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Controls Menu Title", "SF2 Help Controls Description");
-	AddMenuItem(g_hMenuHelpControls, "0", "Back");
-	
-	g_hMenuHelpClassInfo = CreateMenu(Menu_ClassInfo);
-	SetMenuTitle(g_hMenuHelpClassInfo, "%t%t\n \n%t\n \n", "SF2 Prefix", "SF2 Help Class Info Menu Title", "SF2 Help Class Info Description");
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Scout Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Scout", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Sniper Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Sniper", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Soldier Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Soldier", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Demoman Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Demoman", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Heavy Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Heavy", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Medic Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Medic", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Pyro Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Pyro", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Spy Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Spy", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Help Engineer Class Info Menu Title");
-	AddMenuItem(g_hMenuHelpClassInfo, "Engineer", buffer);
-	SetMenuExitBackButton(g_hMenuHelpClassInfo, true);
-	
-	g_hMenuSettings = CreateMenu(Menu_Settings);
-	SetMenuTitle(g_hMenuSettings, "%t%t\n \n", "SF2 Prefix", "SF2 Settings Menu Title");
-	Format(buffer, sizeof(buffer), "%t", "SF2 Settings PvP Menu Title");
-	AddMenuItem(g_hMenuSettings, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Hints Menu Title");
-	AddMenuItem(g_hMenuSettings, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Mute Mode Menu Title");
-	AddMenuItem(g_hMenuSettings, "0", buffer);
-	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Proxy Menu Title");
-	AddMenuItem(g_hMenuSettings, "0", buffer);
-	SetMenuExitBackButton(g_hMenuSettings, true);
-	
-	g_hMenuCredits = CreateMenu(Menu_Credits);
-	
-	Format(buffer, sizeof(buffer), "%tCredits\n \n", "SF2 Prefix");
-	StrCat(buffer, sizeof(buffer), "Coder: Kit o' Rifty\n");
-	StrCat(buffer, sizeof(buffer), "Version: ");
-	StrCat(buffer, sizeof(buffer), PLUGIN_VERSION);
-	StrCat(buffer, sizeof(buffer), "\n \n");
-	StrCat(buffer, sizeof(buffer), "Mark J. Hadley (AgentParsec) - Creating Slender and the default music ambience\n");
-	StrCat(buffer, sizeof(buffer), "Mark Steen - Composing the intro music");
-	StrCat(buffer, sizeof(buffer), "Mammoth Mogul - for being a GREAT test subject\n");
-	StrCat(buffer, sizeof(buffer), "Egosins - getting the first server to run this mod\n");
-	StrCat(buffer, sizeof(buffer), "Somberguy - suggestions and support\n");
-	StrCat(buffer, sizeof(buffer), "Voonyl/Tristtess - materials, maps, importing current Slender Man model, and more!\n");
-	StrCat(buffer, sizeof(buffer), "Narry Gewman - imported first Slender Man model\n");
-	StrCat(buffer, sizeof(buffer), "Simply Delicious - for the awesome camera overlay!\n");
-	StrCat(buffer, sizeof(buffer), "Jason278 - Page models");
-	StrCat(buffer, sizeof(buffer), "\n \n");
-	
-	SetMenuTitle(g_hMenuCredits, buffer);
-	AddMenuItem(g_hMenuCredits, "0", "Next");
-	AddMenuItem(g_hMenuCredits, "1", "Back");
-	
-	g_hMenuCredits2 = CreateMenu(Menu_Credits2);
-	
-	Format(buffer, sizeof(buffer), "%tCredits\n \n", "SF2 Prefix");
-	StrCat(buffer, sizeof(buffer), "And to all the peeps who alpha-tested this thing!\n \n");
-	StrCat(buffer, sizeof(buffer), "Tofu\n");
-	StrCat(buffer, sizeof(buffer), "Ace-Dashie\n");
-	StrCat(buffer, sizeof(buffer), "Hobbes\n");
-	StrCat(buffer, sizeof(buffer), "Diskein\n");
-	StrCat(buffer, sizeof(buffer), "111112oo\n");
-	StrCat(buffer, sizeof(buffer), "Incoheriant Chipmunk\n");
-	StrCat(buffer, sizeof(buffer), "Shrow\n");
-	StrCat(buffer, sizeof(buffer), "Liquid Vita\n");
-	StrCat(buffer, sizeof(buffer), "Pinkle D Lies\n");
-	StrCat(buffer, sizeof(buffer), "Ultimatefry\n \n");
-	
-	SetMenuTitle(g_hMenuCredits2, buffer);
-	AddMenuItem(g_hMenuCredits2, "0", "Back");
-	
-	PvP_SetupMenus();
 }
 
 static SetupHooks()
@@ -1345,589 +1186,6 @@ public OnGameFrame()
 	}
 	
 	PvP_OnGameFrame();
-}
-
-//	==========================================================
-//	MAIN MENU FUNCTIONS
-//	==========================================================
-
-public Menu_Main(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuHelp, param1, 30);
-			case 1: DisplayQueuePointsMenu(param1);
-			case 2:	DisplayGroupMainMenuToClient(param1);
-			case 3: DisplayMenu(g_hMenuGhostMode, param1, 30);
-			case 4: DisplayMenu(g_hMenuSettings, param1, 30);
-			case 5: DisplayMenu(g_hMenuCredits, param1, MENU_TIME_FOREVER);
-		}
-	}
-}
-
-public Menu_VoteDifficulty(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_VoteEnd)
-	{
-		decl String:sInfo[64], String:sDisplay[256], String:sColor[32];
-		GetMenuItem(menu, param1, sInfo, sizeof(sInfo), _, sDisplay, sizeof(sDisplay));
-		
-		if (g_bSpecialRound && 
-			(g_iSpecialRoundType == SPECIALROUND_INSANEDIFFICULTY || g_iSpecialRoundType == SPECIALROUND_DOUBLEMAXPLAYERS))
-		{
-			SetConVarInt(g_cvDifficulty, Difficulty_Insane);
-		}
-		else
-		{
-			SetConVarString(g_cvDifficulty, sInfo);
-		}
-		
-		new iDifficulty = GetConVarInt(g_cvDifficulty);
-		switch (iDifficulty)
-		{
-			case Difficulty_Easy:
-			{
-				Format(sDisplay, sizeof(sDisplay), "%t", "SF2 Easy Difficulty");
-				strcopy(sColor, sizeof(sColor), "{green}");
-			}
-			case Difficulty_Hard:
-			{
-				Format(sDisplay, sizeof(sDisplay), "%t", "SF2 Hard Difficulty");
-				strcopy(sColor, sizeof(sColor), "{orange}");
-			}
-			case Difficulty_Insane:
-			{
-				Format(sDisplay, sizeof(sDisplay), "%t", "SF2 Insane Difficulty");
-				strcopy(sColor, sizeof(sColor), "{red}");
-			}
-			default:
-			{
-				Format(sDisplay, sizeof(sDisplay), "%t", "SF2 Normal Difficulty");
-				strcopy(sColor, sizeof(sColor), "{yellow}");
-			}
-		}
-		
-		CPrintToChatAll("%t %s%s", "SF2 Difficulty Vote Finished", sColor, sDisplay);
-	}
-}
-
-public Menu_GhostMode(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		if (IsRoundEnding() ||
-			IsRoundInWarmup() ||
-			!g_bPlayerEliminated[param1] ||
-			!IsClientParticipating(param1) ||
-			g_bPlayerProxy[param1])
-		{
-			CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Not Allowed", param1);
-		}
-		else
-		{
-			switch (param2)
-			{
-				case 0:
-				{
-					if (IsClientInGhostMode(param1)) CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Enabled Already", param1);
-					else
-					{
-						TF2_RespawnPlayer(param1);
-						ClientSetGhostModeState(param1, true);
-						HandlePlayerHUD(param1);
-						
-						CPrintToChat(param1, "{olive}%T", "SF2 Ghost Mode Enabled", param1);
-					}
-				}
-				case 1:
-				{
-					if (!IsClientInGhostMode(param1)) CPrintToChat(param1, "{red}%T", "SF2 Ghost Mode Disabled Already", param1);
-					else
-					{
-						ClientSetGhostModeState(param1, false);
-						TF2_RespawnPlayer(param1);
-						
-						CPrintToChat(param1, "{olive}%T", "SF2 Ghost Mode Disabled", param1);
-					}
-				}
-			}
-		}
-	}
-}
-
-public Menu_Help(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuHelpObjective, param1, 30);
-			case 1: DisplayMenu(g_hMenuHelpCommands, param1, 30);
-			case 2: DisplayMenu(g_hMenuHelpClassInfo, param1, 30);
-			case 3: DisplayMenu(g_hMenuHelpGhostMode, param1, 30);
-			case 4: DisplayMenu(g_hMenuHelpSprinting, param1, 30);
-			case 5: DisplayMenu(g_hMenuHelpControls, param1, 30);
-		}
-	}
-	else if (action == MenuAction_Cancel)
-	{
-		if (param2 == MenuCancel_ExitBack)
-		{
-			DisplayMenu(g_hMenuMain, param1, 30);
-		}
-	}
-}
-
-public Menu_HelpObjective(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuHelpObjective2, param1, 30);
-			case 1: DisplayMenu(g_hMenuHelp, param1, 30);
-		}
-	}
-}
-
-public Menu_HelpObjective2(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuHelpObjective, param1, 30);
-		}
-	}
-}
-
-public Menu_BackButtonOnly(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuHelp, param1, 30);
-		}
-	}
-}
-
-public Menu_Credits(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuCredits2, param1, MENU_TIME_FOREVER);
-			case 1: DisplayMenu(g_hMenuMain, param1, 30);
-		}
-	}
-}
-
-public Menu_ClassInfo(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Cancel)
-	{
-		if (param2 == MenuCancel_ExitBack)
-		{
-			DisplayMenu(g_hMenuMain, param1, 30);
-		}
-	}
-	else if (action == MenuAction_Select)
-	{
-		decl String:sInfo[64];
-		GetMenuItem(menu, param2, sInfo, sizeof(sInfo));
-		
-		new Handle:hMenu = CreateMenu(Menu_ClassInfoBackOnly);
-		
-		decl String:sTitle[64], String:sDescription[64];
-		Format(sTitle, sizeof(sTitle), "SF2 Help %s Class Info Menu Title", sInfo);
-		Format(sDescription, sizeof(sDescription), "SF2 Help %s Class Info Description", sInfo);
-		
-		SetMenuTitle(hMenu, "%t%t\n \n%t\n \n", "SF2 Prefix", sTitle, sDescription);
-		AddMenuItem(hMenu, "0", "Back");
-		DisplayMenu(hMenu, param1, 30);
-	}
-}
-
-public Menu_ClassInfoBackOnly(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_End)
-	{
-		CloseHandle(menu);
-	}
-	else if (action == MenuAction_Select)
-	{
-		DisplayMenu(g_hMenuHelpClassInfo, param1, 30);
-	}
-}
-
-public Menu_Settings(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuSettingsPvP, param1, 30);
-			case 1:
-			{
-				decl String:sBuffer[512];
-				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings Hints Menu Title", param1);
-				
-				new Handle:hPanel = CreatePanel();
-				SetPanelTitle(hPanel, sBuffer);
-				
-				Format(sBuffer, sizeof(sBuffer), "%T", "Yes", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				Format(sBuffer, sizeof(sBuffer), "%T", "No", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				
-				SendPanelToClient(hPanel, param1, Panel_SettingsHints, 30);
-				CloseHandle(hPanel);
-			}
-			case 2:
-			{
-				decl String:sBuffer[512];
-				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings Mute Mode Menu Title", param1);
-				
-				new Handle:hPanel = CreatePanel();
-				SetPanelTitle(hPanel, sBuffer);
-				
-				DrawPanelItem(hPanel, "Normal");
-				DrawPanelItem(hPanel, "Mute opposing team");
-				DrawPanelItem(hPanel, "Mute opposing team except when I'm a proxy");
-				
-				SendPanelToClient(hPanel, param1, Panel_SettingsMuteMode, 30);
-				CloseHandle(hPanel);
-			}
-			case 3:
-			{
-				decl String:sBuffer[512];
-				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings Proxy Menu Title", param1);
-				
-				new Handle:hPanel = CreatePanel();
-				SetPanelTitle(hPanel, sBuffer);
-				
-				Format(sBuffer, sizeof(sBuffer), "%T", "Yes", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				Format(sBuffer, sizeof(sBuffer), "%T", "No", param1);
-				DrawPanelItem(hPanel, sBuffer);
-				
-				SendPanelToClient(hPanel, param1, Panel_SettingsProxy, 30);
-				CloseHandle(hPanel);
-			}
-		}
-	}
-	else if (action == MenuAction_Cancel)
-	{
-		if (param2 == MenuCancel_ExitBack)
-		{
-			DisplayMenu(g_hMenuMain, param1, 30);
-		}
-	}
-}
-
-public Panel_SettingsHints(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 1:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_ShowHints] = true;
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "%T", "SF2 Enabled Hints", param1);
-			}
-			case 2:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_ShowHints] = false;
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "%T", "SF2 Disabled Hints", param1);
-			}
-		}
-		
-		DisplayMenu(g_hMenuSettings, param1, 30);
-	}
-}
-
-public Panel_SettingsProxy(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 1:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_EnableProxySelection] = true;
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "%T", "SF2 Enabled Proxy", param1);
-			}
-			case 2:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_EnableProxySelection] = false;
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "%T", "SF2 Disabled Proxy", param1);
-			}
-		}
-		
-		DisplayMenu(g_hMenuSettings, param1, 30);
-	}
-}
-
-public Panel_SettingsMuteMode(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 1:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_MuteMode] = MuteMode_Normal;
-				ClientUpdateListeningFlags(param1);
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "{lightgreen}Mute mode set to normal.");
-			}
-			case 2:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_MuteMode] = MuteMode_DontHearOtherTeam;
-				ClientUpdateListeningFlags(param1);
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "{lightgreen}Muted opposing team.");
-			}
-			case 3:
-			{
-				g_iPlayerPreferences[param1][PlayerPreference_MuteMode] = MuteMode_DontHearOtherTeamIfNotProxy;
-				ClientUpdateListeningFlags(param1);
-				ClientSaveCookies(param1);
-				CPrintToChat(param1, "{lightgreen}Muted opposing team, but settings will be automatically set to normal if you're a proxy.");
-			}
-		}
-		
-		DisplayMenu(g_hMenuSettings, param1, 30);
-	}
-}
-
-public Menu_Credits2(Handle:menu, MenuAction:action, param1, param2)
-{
-	if (action == MenuAction_Select)
-	{
-		switch (param2)
-		{
-			case 0: DisplayMenu(g_hMenuCredits, param1, MENU_TIME_FOREVER);
-		}
-	}
-}
-
-DisplayQueuePointsMenu(client)
-{
-	new Handle:menu = CreateMenu(Menu_QueuePoints);
-	new Handle:hQueueList = GetQueueList();
-	
-	decl String:sBuffer[256];
-	
-	if (GetArraySize(hQueueList))
-	{
-		Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Reset Queue Points Option", client, g_iPlayerQueuePoints[client]);
-		AddMenuItem(menu, "ponyponypony", sBuffer);
-		
-		decl iIndex, String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
-		decl String:sInfo[256];
-		
-		for (new i = 0, iSize = GetArraySize(hQueueList); i < iSize; i++)
-		{
-			if (!GetArrayCell(hQueueList, i, 2))
-			{
-				iIndex = GetArrayCell(hQueueList, i);
-				
-				Format(sBuffer, sizeof(sBuffer), "%N - %d", iIndex, g_iPlayerQueuePoints[iIndex]);
-				Format(sInfo, sizeof(sInfo), "player_%d", GetClientUserId(iIndex));
-				AddMenuItem(menu, sInfo, sBuffer, g_bPlayerPlaying[iIndex] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
-			}
-			else
-			{
-				iIndex = GetArrayCell(hQueueList, i);
-				if (GetPlayerGroupMemberCount(iIndex) > 1)
-				{
-					GetPlayerGroupName(iIndex, sGroupName, sizeof(sGroupName));
-					
-					Format(sBuffer, sizeof(sBuffer), "[GROUP] %s - %d", sGroupName, GetPlayerGroupQueuePoints(iIndex));
-					Format(sInfo, sizeof(sInfo), "group_%d", iIndex);
-					AddMenuItem(menu, sInfo, sBuffer, IsPlayerGroupPlaying(iIndex) ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
-				}
-				else
-				{
-					for (new iClient = 1; iClient <= MaxClients; iClient++)
-					{
-						if (!IsValidClient(iClient)) continue;
-						if (ClientGetPlayerGroup(iClient) == iIndex)
-						{
-							Format(sBuffer, sizeof(sBuffer), "%N - %d", iClient, g_iPlayerQueuePoints[iClient]);
-							Format(sInfo, sizeof(sInfo), "player_%d", GetClientUserId(iClient));
-							AddMenuItem(menu, "player", sBuffer, g_bPlayerPlaying[iClient] ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
-							break;
-						}
-					}
-				}
-			}
-		}
-	}
-	
-	CloseHandle(hQueueList);
-	
-	SetMenuTitle(menu, "%t%T\n \n", "SF2 Prefix", "SF2 Queue Menu Title", client);
-	SetMenuExitBackButton(menu, true);
-	DisplayMenu(menu, client, MENU_TIME_FOREVER);
-}
-
-DisplayViewGroupMembersQueueMenu(client, iGroupIndex)
-{
-	if (!IsPlayerGroupActive(iGroupIndex))
-	{
-		// The group isn't valid anymore. Take him back to the main menu.
-		DisplayQueuePointsMenu(client);
-		CPrintToChat(client, "%T", "SF2 Group Does Not Exist", client);
-		return;
-	}
-	
-	new Handle:hPlayers = CreateArray();
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsValidClient(i)) continue;
-		
-		new iTempGroup = ClientGetPlayerGroup(i);
-		if (!IsPlayerGroupActive(iTempGroup) || iTempGroup != iGroupIndex) continue;
-		
-		PushArrayCell(hPlayers, i);
-	}
-	
-	new iPlayerCount = GetArraySize(hPlayers);
-	if (iPlayerCount)
-	{
-		decl String:sGroupName[SF2_MAX_PLAYER_GROUP_NAME_LENGTH];
-		GetPlayerGroupName(iGroupIndex, sGroupName, sizeof(sGroupName));
-		
-		new Handle:hMenu = CreateMenu(Menu_ViewGroupMembersQueue);
-		SetMenuTitle(hMenu, "%t%T (%s)\n \n", "SF2 Prefix", "SF2 View Group Members Menu Title", client, sGroupName);
-		
-		decl String:sUserId[32];
-		decl String:sName[MAX_NAME_LENGTH * 2];
-		
-		for (new i = 0; i < iPlayerCount; i++)
-		{
-			new iClient = GetArrayCell(hPlayers, i);
-			IntToString(GetClientUserId(iClient), sUserId, sizeof(sUserId));
-			GetClientName(iClient, sName, sizeof(sName));
-			if (GetPlayerGroupLeader(iGroupIndex) == iClient) StrCat(sName, sizeof(sName), " (LEADER)");
-			
-			AddMenuItem(hMenu, sUserId, sName);
-		}
-		
-		SetMenuExitBackButton(hMenu, true);
-		DisplayMenu(hMenu, client, MENU_TIME_FOREVER);
-	}
-	else
-	{
-		// No players!
-		DisplayQueuePointsMenu(client);
-	}
-	
-	CloseHandle(hPlayers);
-}
-
-public Menu_ViewGroupMembersQueue(Handle:menu, MenuAction:action, param1, param2)
-{
-	switch (action)
-	{
-		case MenuAction_End: CloseHandle(menu);
-		case MenuAction_Select: DisplayQueuePointsMenu(param1);
-		case MenuAction_Cancel:
-		{
-			if (param2 == MenuCancel_ExitBack) DisplayQueuePointsMenu(param1);
-		}
-	}
-}
-
-DisplayResetQueuePointsMenu(client)
-{
-	decl String:buffer[256];
-
-	new Handle:menu = CreateMenu(Menu_ResetQueuePoints);
-	Format(buffer, sizeof(buffer), "%T", "Yes", client);
-	AddMenuItem(menu, "0", buffer);
-	Format(buffer, sizeof(buffer), "%T", "No", client);
-	AddMenuItem(menu, "1", buffer);
-	SetMenuTitle(menu, "%T\n \n", "SF2 Should Reset Queue Points", client);
-	DisplayMenu(menu, client, MENU_TIME_FOREVER);
-}
-
-public Menu_QueuePoints(Handle:menu, MenuAction:action, param1, param2)
-{
-	switch (action)
-	{
-		case MenuAction_Select:
-		{
-			new String:sInfo[64];
-			GetMenuItem(menu, param2, sInfo, sizeof(sInfo));
-			
-			if (StrEqual(sInfo, "ponyponypony")) DisplayResetQueuePointsMenu(param1);
-			else if (!StrContains(sInfo, "player_"))
-			{
-			}
-			else if (!StrContains(sInfo, "group_"))
-			{
-				decl String:sIndex[64];
-				strcopy(sIndex, sizeof(sIndex), sInfo);
-				ReplaceString(sIndex, sizeof(sIndex), "group_", "");
-				DisplayViewGroupMembersQueueMenu(param1, StringToInt(sIndex));
-			}
-		}
-		case MenuAction_Cancel:
-		{
-			if (param2 == MenuCancel_ExitBack)
-			{
-				DisplayMenu(g_hMenuMain, param1, 30);
-			}
-		}
-		case MenuAction_End: CloseHandle(menu);
-	}
-}
-
-public Menu_ResetQueuePoints(Handle:menu, MenuAction:action, param1, param2)
-{
-	switch (action)
-	{
-		case MenuAction_Select:
-		{
-			switch (param2)
-			{
-				case 0:
-				{
-					ClientSetQueuePoints(param1, 0);
-					CPrintToChat(param1, "{olive}%T", "SF2 Queue Points Reset", param1);
-					
-					// Special round.
-					if (g_bSpecialRound) 
-					{
-						g_bPlayerPlayedSpecialRound[param1] = true;
-					}
-					
-					// new boss round
-					if (g_bNewBossRound) 
-					{
-						// If the player resets the queue points ignore them when checking for players that haven't played the new boss yet, if applicable.
-						g_bPlayerPlayedNewBossRound[param1] = true;
-					}
-				}
-			}
-			
-			DisplayQueuePointsMenu(param1);
-		}
-		
-		case MenuAction_End: CloseHandle(menu);
-	}
 }
 
 //	==========================================================
@@ -4063,6 +3321,22 @@ bool:IsRoundEnding()
 	return bool:(GetRoundState() == SF2RoundState_Outro);
 }
 
+bool:IsInfiniteBlinkEnabled()
+{
+	return bool:(g_bRoundInfiniteBlink || (GetConVarInt(g_cvPlayerInfiniteBlinkOverride) == 1));
+}
+
+bool:IsInfiniteFlashlightEnabled()
+{
+	return bool:(g_bRoundInfiniteFlashlight || (GetConVarInt(g_cvPlayerInfiniteFlashlightOverride) == 1));
+}
+
+bool:IsInfiniteSprintEnabled()
+{
+	return bool:(g_bRoundInfiniteSprint || (GetConVarInt(g_cvPlayerInfiniteSprintOverride) == 1));
+}
+
+
 #define SF2_PLAYER_HUD_BLINK_SYMBOL "B"
 #define SF2_PLAYER_HUD_FLASHLIGHT_SYMBOL "ϟ"
 #define SF2_PLAYER_HUD_BAR_SYMBOL "|"
@@ -4100,7 +3374,7 @@ public Action:Timer_ClientAverageUpdate(Handle:timer)
 				
 				Format(buffer, sizeof(buffer), "%s  ", SF2_PLAYER_HUD_BLINK_SYMBOL);
 				
-				if (g_bRoundInfiniteBlink)
+				if (IsInfiniteBlinkEnabled())
 				{
 					StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_INFINITY_SYMBOL);
 				}
@@ -4128,7 +3402,7 @@ public Action:Timer_ClientAverageUpdate(Handle:timer)
 					Format(sBuffer2, sizeof(sBuffer2), "\n%s  ", SF2_PLAYER_HUD_FLASHLIGHT_SYMBOL);
 					StrCat(buffer, sizeof(buffer), sBuffer2);
 					
-					if (g_bRoundInfiniteFlashlight)
+					if (IsInfiniteFlashlightEnabled())
 					{
 						StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_INFINITY_SYMBOL);
 					}
@@ -4155,15 +3429,22 @@ public Action:Timer_ClientAverageUpdate(Handle:timer)
 				Format(sBuffer2, sizeof(sBuffer2), "\n%s  ", SF2_PLAYER_HUD_SPRINT_SYMBOL);
 				StrCat(buffer, sizeof(buffer), sBuffer2);
 				
-				for (new i2 = 0; i2 < iMaxBars; i2++) 
+				if (IsInfiniteSprintEnabled())
 				{
-					if (i2 < iBars)
+					StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_INFINITY_SYMBOL);
+				}
+				else
+				{
+					for (new i2 = 0; i2 < iMaxBars; i2++) 
 					{
-						StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_BAR_SYMBOL);
-					}
-					else
-					{
-						StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_BAR_MISSING_SYMBOL);
+						if (i2 < iBars)
+						{
+							StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_BAR_SYMBOL);
+						}
+						else
+						{
+							StrCat(buffer, sizeof(buffer), SF2_PLAYER_HUD_BAR_MISSING_SYMBOL);
+						}
 					}
 				}
 				
@@ -4297,12 +3578,12 @@ SetClientPlayState(client, bool:bState, bool:bEnablePlay=true)
 		
 		if (g_bSpecialRound) 
 		{
-			g_bPlayerPlayedSpecialRound[client] = true;
+			SetClientPlaySpecialRoundState(client, true);
 		}
 		
 		if (g_bNewBossRound) 
 		{
-			g_bPlayerPlayedNewBossRound[client] = true;
+			SetClientPlayNewBossRoundState(client, true);
 		}
 		
 		if (TF2_GetPlayerClass(client) == TFClassType:0)
@@ -4322,6 +3603,26 @@ SetClientPlayState(client, bool:bState, bool:bEnablePlay=true)
 		
 		ChangeClientTeamNoSuicide(client, _:TFTeam_Blue);
 	}
+}
+
+bool:DidClientPlayNewBossRound(client)
+{
+	return g_bPlayerPlayedNewBossRound[client];
+}
+
+SetClientPlayNewBossRoundState(client, bool:bState)
+{
+	g_bPlayerPlayedNewBossRound[client] = bState;
+}
+
+bool:DidClientPlaySpecialRound(client)
+{
+	return g_bPlayerPlayedNewBossRound[client];
+}
+
+SetClientPlaySpecialRoundState(client, bool:bState)
+{
+	g_bPlayerPlayedSpecialRound[client] = bState;
 }
 
 TeleportClientToEscapePoint(client)
@@ -4421,1843 +3722,6 @@ public Action:Hook_SlenderObjectSetTransmit(ent, other)
 	}
 	
 	return Plugin_Continue;
-}
-
-//	So this is how the thought process of the bosses should go.
-//	1. Search for enemy; either by sight or by sound.
-//		- Any noticeable sounds should be investigated.
-//		- Too many sounds will put me in alert mode.
-//	2. Alert of an enemy; I saw something or I heard something unusual
-//		- Go to the position where I last heard the sound.
-//		- Keep on searching until I give up. Then drop back to idle mode.
-//	3. Found an enemy! Give chase!
-//		- Keep on chasing until enemy is killed or I give up.
-//			- Keep a path in memory as long as I still have him in my sights.
-//			- If I lose sight or I'm unable to traverse safely, find paths around obstacles and follow memorized path.
-//			- If I reach the end of my path and I still don't see him and I still want to pursue him, keep on going in the direction I'm going.
-
-stock bool:IsTargetValidForSlender(iTarget, bool:bIncludeEliminated=false)
-{
-	if (!iTarget || !IsValidEntity(iTarget)) return false;
-	
-	if (IsValidClient(iTarget))
-	{
-		if (!IsClientInGame(iTarget) || 
-			!IsPlayerAlive(iTarget) || 
-			IsClientInDeathCam(iTarget) || 
-			(!bIncludeEliminated && g_bPlayerEliminated[iTarget]) ||
-			IsClientInGhostMode(iTarget) || 
-			DidClientEscape(iTarget)) return false;
-	}
-	
-	return true;
-}
-
-public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
-{
-	if (!g_bEnabled) return Plugin_Stop;
-
-	new slender = EntRefToEntIndex(entref);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return Plugin_Stop;
-	
-	new iBossIndex = NPCGetFromEntIndex(slender);
-	if (iBossIndex == -1) return Plugin_Stop;
-	
-	if (timer != g_hSlenderEntityThink[iBossIndex]) return Plugin_Stop;
-	
-	if (NPCGetFlags(iBossIndex) & SFF_MARKEDASFAKE) return Plugin_Stop;
-	
-	decl Float:flSlenderVelocity[3], Float:flMyPos[3], Float:flMyEyeAng[3];
-	new Float:flBuffer[3];
-	
-	decl String:sSlenderProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sSlenderProfile, sizeof(sSlenderProfile));
-	
-	GetEntPropVector(slender, Prop_Data, "m_vecAbsVelocity", flSlenderVelocity);
-	GetEntPropVector(slender, Prop_Data, "m_vecAbsOrigin", flMyPos);
-	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	AddVectors(flMyEyeAng, g_flSlenderEyeAngOffset[iBossIndex], flMyEyeAng);
-	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
-	
-	new iDifficulty = GetConVarInt(g_cvDifficulty);
-	
-	new Float:flVelocityRatio;
-	new Float:flVelocityRatioWalk;
-	
-	new Float:flOriginalSpeed = NPCGetSpeed(iBossIndex, iDifficulty);
-	new Float:flOriginalWalkSpeed = NPCChaserGetWalkSpeed(iBossIndex, iDifficulty);
-	new Float:flMaxSpeed = NPCGetMaxSpeed(iBossIndex, iDifficulty);
-	new Float:flMaxWalkSpeed = NPCChaserGetMaxWalkSpeed(iBossIndex, iDifficulty);
-	
-	new Float:flSpeed = flOriginalSpeed * NPCGetAnger(iBossIndex) * g_flRoundDifficultyModifier;
-	if (flSpeed < flOriginalSpeed) flSpeed = flOriginalSpeed;
-	if (flSpeed > flMaxSpeed) flSpeed = flMaxSpeed;
-	
-	new Float:flWalkSpeed = flOriginalWalkSpeed * NPCGetAnger(iBossIndex) * g_flRoundDifficultyModifier;
-	if (flWalkSpeed < flOriginalWalkSpeed) flWalkSpeed = flOriginalWalkSpeed;
-	if (flWalkSpeed > flMaxWalkSpeed) flWalkSpeed = flMaxWalkSpeed;
-	
-	if (PeopleCanSeeSlender(iBossIndex, _, false))
-	{
-		if (NPCHasAttribute(iBossIndex, "reduced speed on look"))
-		{
-			flSpeed *= NPCGetAttributeValue(iBossIndex, "reduced speed on look");
-		}
-		
-		if (NPCHasAttribute(iBossIndex, "reduced walk speed on look"))
-		{
-			flWalkSpeed *= NPCGetAttributeValue(iBossIndex, "reduced walk speed on look");
-		}
-	}
-	
-	g_flSlenderCalculatedWalkSpeed[iBossIndex] = flWalkSpeed;
-	g_flSlenderCalculatedSpeed[iBossIndex] = flSpeed;
-	
-	if (flOriginalSpeed <= 0.0) flVelocityRatio = 0.0;
-	else flVelocityRatio = GetVectorLength(flSlenderVelocity) / flOriginalSpeed;
-	
-	if (flOriginalWalkSpeed <= 0.0) flVelocityRatioWalk = 0.0;
-	else flVelocityRatioWalk = GetVectorLength(flSlenderVelocity) / flOriginalWalkSpeed;
-	
-	new Float:flAttackRange = NPCChaserGetAttackRange(iBossIndex, 0);
-	new Float:flAttackFOV = NPCChaserGetAttackSpread(iBossIndex, 0);
-	new Float:flAttackBeginRange = NPCChaserGetAttackBeginRange(iBossIndex, 0);
-	new Float:flAttackBeginFOV = NPCChaserGetAttackBeginFOV(iBossIndex, 0);
-	
-	
-	new iOldState = g_iSlenderState[iBossIndex];
-	new iOldTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
-	
-	new iBestNewTarget = INVALID_ENT_REFERENCE;
-	new Float:flSearchRange = NPCGetSearchRadius(iBossIndex);
-	new Float:flBestNewTargetDist = flSearchRange;
-	new iState = iOldState;
-	
-	new bool:bPlayerInFOV[MAXPLAYERS + 1];
-	new bool:bPlayerNear[MAXPLAYERS + 1];
-	new Float:flPlayerDists[MAXPLAYERS + 1];
-	new bool:bPlayerVisible[MAXPLAYERS + 1];
-	
-	new bool:bAttackEliminated = bool:(NPCGetFlags(iBossIndex) & SFF_ATTACKWAITERS);
-	new bool:bStunEnabled = NPCChaserIsStunEnabled(iBossIndex);
-	
-	decl Float:flSlenderMins[3], Float:flSlenderMaxs[3];
-	GetEntPropVector(slender, Prop_Send, "m_vecMins", flSlenderMins);
-	GetEntPropVector(slender, Prop_Send, "m_vecMaxs", flSlenderMaxs);
-	
-	decl Float:flTraceMins[3], Float:flTraceMaxs[3];
-	flTraceMins[0] = flSlenderMins[0];
-	flTraceMins[1] = flSlenderMins[1];
-	flTraceMins[2] = 0.0;
-	flTraceMaxs[0] = flSlenderMaxs[0];
-	flTraceMaxs[1] = flSlenderMaxs[1];
-	flTraceMaxs[2] = 0.0;
-	
-	// Gather data about the players around me and get the best new target, in case my old target is invalidated.
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsTargetValidForSlender(i, bAttackEliminated)) continue;
-		
-		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-		NPCGetEyePosition(iBossIndex, flTraceStartPos);
-		GetClientEyePosition(i, flTraceEndPos);
-		
-		new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
-			flTraceEndPos,
-			flTraceMins,
-			flTraceMaxs,
-			MASK_NPCSOLID,
-			TraceRayBossVisibility,
-			slender);
-		
-		new bool:bIsVisible = !TR_DidHit(hTrace);
-		new iTraceHitEntity = TR_GetEntityIndex(hTrace);
-		CloseHandle(hTrace);
-		
-		if (!bIsVisible && iTraceHitEntity == i) bIsVisible = true;
-		
-		bPlayerVisible[i] = bIsVisible;
-		
-		// Near radius check.
-		if (bIsVisible &&
-			GetVectorDistance(flTraceStartPos, flTraceEndPos) <= NPCChaserGetWakeRadius(iBossIndex))
-		{
-			bPlayerNear[i] = true;
-		}
-		
-		// FOV check.
-		SubtractVectors(flTraceEndPos, flTraceStartPos, flBuffer);
-		GetVectorAngles(flBuffer, flBuffer);
-		
-		if (FloatAbs(AngleDiff(flMyEyeAng[1], flBuffer[1])) <= (NPCGetFOV(iBossIndex) * 0.5))
-		{
-			bPlayerInFOV[i] = true;
-		}
-		
-		new Float:flDist;
-		new Float:flPriorityValue = g_iPageMax > 0 ? (float(g_iPlayerPageCount[i]) / float(g_iPageMax)) : 0.0;
-		
-		if (TF2_GetPlayerClass(i) == TFClass_Medic) flPriorityValue += 0.72;
-		
-		flDist = GetVectorDistance(flTraceStartPos, flTraceEndPos);
-		flPlayerDists[i] = flDist;
-		
-		if ((bPlayerNear[i] && iState != STATE_CHASE && iState != STATE_ALERT) || (bIsVisible && bPlayerInFOV[i]))
-		{
-			decl Float:flTargetPos[3];
-			GetClientAbsOrigin(i, flTargetPos);
-			
-			if (flDist <= flSearchRange)
-			{
-				// Subtract distance to increase priority.
-				flDist -= (flDist * flPriorityValue);
-				
-				if (flDist < flBestNewTargetDist)
-				{
-					iBestNewTarget = i;
-					flBestNewTargetDist = flDist;
-					g_iSlenderInterruptConditions[iBossIndex] |= COND_SAWENEMY;
-				}
-				
-				g_flSlenderLastFoundPlayer[iBossIndex][i] = GetGameTime();
-				g_flSlenderLastFoundPlayerPos[iBossIndex][i][0] = flTargetPos[0];
-				g_flSlenderLastFoundPlayerPos[iBossIndex][i][1] = flTargetPos[1];
-				g_flSlenderLastFoundPlayerPos[iBossIndex][i][2] = flTargetPos[2];
-			}
-		}
-	}
-	
-	new bool:bInFlashlight = false;
-	
-	// Check to see if someone is facing at us with flashlight on. Only if I'm facing them too. BLINDNESS!
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsTargetValidForSlender(i, bAttackEliminated)) continue;
-	
-		if (!IsClientUsingFlashlight(i) || !bPlayerInFOV[i]) continue;
-		
-		decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-		GetClientEyePosition(i, flTraceStartPos);
-		NPCGetEyePosition(iBossIndex, flTraceEndPos);
-		
-		if (GetVectorDistance(flTraceStartPos, flTraceEndPos) <= SF2_FLASHLIGHT_LENGTH)
-		{
-			decl Float:flEyeAng[3], Float:flRequiredAng[3];
-			GetClientEyeAngles(i, flEyeAng);
-			SubtractVectors(flTraceEndPos, flTraceStartPos, flRequiredAng);
-			GetVectorAngles(flRequiredAng, flRequiredAng);
-			
-			if ((FloatAbs(AngleDiff(flEyeAng[0], flRequiredAng[0])) + FloatAbs(AngleDiff(flEyeAng[1], flRequiredAng[1]))) <= 45.0)
-			{
-				new Handle:hTrace = TR_TraceRayFilterEx(flTraceStartPos,
-					flTraceEndPos,
-					MASK_PLAYERSOLID,
-					RayType_EndPoint,
-					TraceRayBossVisibility,
-					slender);
-					
-				new bool:bDidHit = TR_DidHit(hTrace);
-				CloseHandle(hTrace);
-				
-				if (!bDidHit)
-				{
-					bInFlashlight = true;
-					break;
-				}
-			}
-		}
-	}
-	
-	// Damage us if we're in a flashlight.
-	if (bInFlashlight)
-	{
-		if (bStunEnabled)
-		{
-			if (NPCChaserIsStunByFlashlightEnabled(iBossIndex))
-			{
-				if (NPCChaserGetStunHealth(iBossIndex) > 0)
-				{
-					NPCChaserAddStunHealth(iBossIndex, -NPCChaserGetStunFlashlightDamage(iBossIndex));
-				}
-			}
-		}
-	}
-	
-	// Process the target that we should have.
-	new iTarget = iOldTarget;
-	
-	/*
-	if (IsValidEdict(iBestNewTarget))
-	{
-		iTarget = iBestNewTarget;
-		g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestNewTarget);
-	}
-	*/
-	
-	if (iTarget && iTarget != INVALID_ENT_REFERENCE)
-	{
-		if (!IsTargetValidForSlender(iTarget, bAttackEliminated))
-		{
-			// Clear our target; he's not valid anymore.
-			iOldTarget = iTarget;
-			iTarget = INVALID_ENT_REFERENCE;
-			g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
-		}
-	}
-	else
-	{
-		// Clear our target; he's not valid anymore.
-		iOldTarget = iTarget;
-		iTarget = INVALID_ENT_REFERENCE;
-		g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
-	}
-	
-	new iInterruptConditions = g_iSlenderInterruptConditions[iBossIndex];
-	new bool:bQueueForNewPath = false;
-	
-	// Process which state we should be in.
-	switch (iState)
-	{
-		case STATE_IDLE, STATE_WANDER:
-		{
-			if (iState == STATE_WANDER)
-			{
-				if (GetArraySize(g_hSlenderPath[iBossIndex]) <= 0)
-				{
-					iState = STATE_IDLE;
-				}
-			}
-			else
-			{
-				if (GetGameTime() >= g_flSlenderNextWanderPos[iBossIndex] && GetRandomFloat(0.0, 1.0) <= 0.25)
-				{
-					iState = STATE_WANDER;
-				}
-			}
-			
-			if (iInterruptConditions & COND_SAWENEMY)
-			{
-				// I saw someone over here. Automatically put me into alert mode.
-				iState = STATE_ALERT;
-			}
-			else if (iInterruptConditions & COND_HEARDSUSPICIOUSSOUND)
-			{
-				// Sound counts:
-				// +1 will be added if it hears a footstep.
-				// +2 will be added if the footstep is someone sprinting.
-				// +5 will be added if the sound is from a player's weapon hitting an object.
-				// +10 will be added if a voice command is heard.
-				//
-				// Sound counts will be reset after the boss hears a sound after a certain amount of time.
-				// The purpose of sound counts is to induce boss focusing on sounds suspicious entities are making.
-				
-				new iCount = 0;
-				if (iInterruptConditions & COND_HEARDFOOTSTEP) iCount += 1;
-				if (iInterruptConditions & COND_HEARDFOOTSTEPLOUD) iCount += 2;
-				if (iInterruptConditions & COND_HEARDWEAPON) iCount += 5;
-				if (iInterruptConditions & COND_HEARDVOICE) iCount += 10;
-				
-				new bool:bDiscardMasterPos = bool:(GetGameTime() >= g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex]);
-				
-				if (GetVectorDistance(g_flSlenderTargetSoundTempPos[iBossIndex], g_flSlenderTargetSoundMasterPos[iBossIndex]) <= GetProfileFloat(sSlenderProfile, "search_sound_pos_dist_tolerance", 512.0) ||
-					bDiscardMasterPos)
-				{
-					if (bDiscardMasterPos) g_iSlenderTargetSoundCount[iBossIndex] = 0;
-					
-					g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_sound_pos_discard_time", 2.0);
-					g_flSlenderTargetSoundMasterPos[iBossIndex][0] = g_flSlenderTargetSoundTempPos[iBossIndex][0];
-					g_flSlenderTargetSoundMasterPos[iBossIndex][1] = g_flSlenderTargetSoundTempPos[iBossIndex][1];
-					g_flSlenderTargetSoundMasterPos[iBossIndex][2] = g_flSlenderTargetSoundTempPos[iBossIndex][2];
-					g_iSlenderTargetSoundCount[iBossIndex] += iCount;
-				}
-				
-				if (g_iSlenderTargetSoundCount[iBossIndex] >= GetProfileNum(sSlenderProfile, "search_sound_count_until_alert", 4))
-				{
-					// Someone's making some noise over there! Time to investigate.
-					g_bSlenderInvestigatingSound[iBossIndex] = true; // This is just so that our sound position would be the goal position.
-					iState = STATE_ALERT;
-				}
-			}
-		}
-		case STATE_ALERT:
-		{
-			if (GetArraySize(g_hSlenderPath[iBossIndex]) <= 0)
-			{
-				// Fully navigated through our path.
-				iState = STATE_IDLE;
-			}
-			else if (GetGameTime() >= g_flSlenderTimeUntilIdle[iBossIndex])
-			{
-				iState = STATE_IDLE;
-			}
-			else if (IsValidClient(iBestNewTarget))
-			{
-				if (GetGameTime() >= g_flSlenderTimeUntilChase[iBossIndex] || bPlayerNear[iBestNewTarget])
-				{
-					decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-					NPCGetEyePosition(iBossIndex, flTraceStartPos);
-					
-					if (IsValidClient(iBestNewTarget)) GetClientEyePosition(iBestNewTarget, flTraceEndPos);
-					else
-					{
-						decl Float:flTargetMins[3], Float:flTargetMaxs[3];
-						GetEntPropVector(iBestNewTarget, Prop_Send, "m_vecMins", flTargetMins);
-						GetEntPropVector(iBestNewTarget, Prop_Send, "m_vecMaxs", flTargetMaxs);
-						GetEntPropVector(iBestNewTarget, Prop_Data, "m_vecAbsOrigin", flTraceEndPos);
-						for (new i = 0; i < 3; i++) flTraceEndPos[i] += ((flTargetMins[i] + flTargetMaxs[i]) / 2.0);
-					}
-					
-					new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
-						flTraceEndPos,
-						flTraceMins,
-						flTraceMaxs,
-						MASK_NPCSOLID,
-						TraceRayBossVisibility,
-						slender);
-						
-					new bool:bIsVisible = !TR_DidHit(hTrace);
-					new iTraceHitEntity = TR_GetEntityIndex(hTrace);
-					CloseHandle(hTrace);
-					
-					if (!bIsVisible && iTraceHitEntity == iBestNewTarget) bIsVisible = true;
-					
-					if ((bPlayerNear[iBestNewTarget] || bPlayerInFOV[iBestNewTarget]) && bPlayerVisible[iBestNewTarget])
-					{
-						// AHAHAHAH! I GOT YOU NOW!
-						iTarget = iBestNewTarget;
-						g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestNewTarget);
-						iState = STATE_CHASE;
-					}
-				}
-			}
-			else
-			{
-				if (iInterruptConditions & COND_SAWENEMY)
-				{
-					if (IsValidClient(iBestNewTarget))
-					{
-						g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][0];
-						g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][1];
-						g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderLastFoundPlayerPos[iBossIndex][iBestNewTarget][2];
-						
-						bQueueForNewPath = true;
-					}
-				}
-				else if (iInterruptConditions & COND_HEARDSUSPICIOUSSOUND)
-				{
-					new bool:bDiscardMasterPos = bool:(GetGameTime() >= g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex]);
-					
-					if (GetVectorDistance(g_flSlenderTargetSoundTempPos[iBossIndex], g_flSlenderTargetSoundMasterPos[iBossIndex]) <= GetProfileFloat(sSlenderProfile, "search_sound_pos_dist_tolerance", 512.0) ||
-						bDiscardMasterPos)
-					{
-						g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_sound_pos_discard_time", 2.0);
-						g_flSlenderTargetSoundMasterPos[iBossIndex][0] = g_flSlenderTargetSoundTempPos[iBossIndex][0];
-						g_flSlenderTargetSoundMasterPos[iBossIndex][1] = g_flSlenderTargetSoundTempPos[iBossIndex][1];
-						g_flSlenderTargetSoundMasterPos[iBossIndex][2] = g_flSlenderTargetSoundTempPos[iBossIndex][2];
-						
-						// We have to manually set the goal position here because the goal position will not be changed due to no change in state.
-						g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderTargetSoundMasterPos[iBossIndex][0];
-						g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderTargetSoundMasterPos[iBossIndex][1];
-						g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderTargetSoundMasterPos[iBossIndex][2];
-						
-						g_bSlenderInvestigatingSound[iBossIndex] = true;
-						
-						bQueueForNewPath = true;
-					}
-				}
-				
-				new bool:bBlockingProp = false;
-				
-				if (NPCGetFlags(iBossIndex) & SFF_ATTACKPROPS)
-				{
-					new prop = -1;
-					while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
-					{
-						if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
-						{
-							bBlockingProp = true;
-							break;
-						}
-					}
-					
-					if (!bBlockingProp)
-					{
-						prop = -1;
-						while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
-						{
-							if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
-							{
-								if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
-								{
-									bBlockingProp = true;
-									break;
-								}
-							}
-						}
-					}
-				}
-				
-				if (bBlockingProp)
-				{
-					iState = STATE_ATTACK;
-				}
-			}
-		}
-		case STATE_CHASE, STATE_ATTACK, STATE_STUN:
-		{
-			if (iState == STATE_CHASE)
-			{
-				if (IsValidEdict(iTarget))
-				{
-					decl Float:flTraceStartPos[3], Float:flTraceEndPos[3];
-					NPCGetEyePosition(iBossIndex, flTraceStartPos);
-					
-					if (IsValidClient(iTarget))
-					{
-						GetClientEyePosition(iTarget, flTraceEndPos);
-					}
-					else
-					{
-						decl Float:flTargetMins[3], Float:flTargetMaxs[3];
-						GetEntPropVector(iTarget, Prop_Send, "m_vecMins", flTargetMins);
-						GetEntPropVector(iTarget, Prop_Send, "m_vecMaxs", flTargetMaxs);
-						GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flTraceEndPos);
-						for (new i = 0; i < 3; i++) flTraceEndPos[i] += ((flTargetMins[i] + flTargetMaxs[i]) / 2.0);
-					}
-					
-					new bool:bIsDeathPosVisible = false;
-					
-					if (g_bSlenderChaseDeathPosition[iBossIndex])
-					{
-						new Handle:hTrace = TR_TraceRayFilterEx(flTraceStartPos,
-							g_flSlenderChaseDeathPosition[iBossIndex],
-							MASK_NPCSOLID,
-							RayType_EndPoint,
-							TraceRayBossVisibility,
-							slender);
-						bIsDeathPosVisible = !TR_DidHit(hTrace);
-						CloseHandle(hTrace);
-					}
-					
-					if (!bPlayerVisible[iTarget])
-					{
-						if (GetArraySize(g_hSlenderPath[iBossIndex]) == 0)
-						{
-							iState = STATE_IDLE;
-						}
-						else if (GetGameTime() >= g_flSlenderTimeUntilAlert[iBossIndex])
-						{
-							iState = STATE_ALERT;
-						}
-						else if (bIsDeathPosVisible)
-						{
-							iState = STATE_IDLE;
-						}
-						else if (iInterruptConditions & COND_CHASETARGETINVALIDATED)
-						{
-							if (!g_bSlenderChaseDeathPosition[iBossIndex])
-							{
-								g_bSlenderChaseDeathPosition[iBossIndex] = true;
-							}
-						}
-					}
-					else
-					{
-						g_bSlenderChaseDeathPosition[iBossIndex] = false;	// We're not chasing a dead player after all! Reset.
-					
-						decl Float:flAttackDirection[3];
-						GetClientAbsOrigin(iTarget, g_flSlenderGoalPos[iBossIndex]);
-						SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyPos, flAttackDirection);
-						GetVectorAngles(flAttackDirection, flAttackDirection);
-						
-						if (GetVectorDistance(g_flSlenderGoalPos[iBossIndex], flMyPos) <= flAttackBeginRange &&
-							(FloatAbs(AngleDiff(flAttackDirection[0], flMyEyeAng[0])) + FloatAbs(AngleDiff(flAttackDirection[1], flMyEyeAng[1]))) <= flAttackBeginFOV / 2.0)
-						{
-							// ENOUGH TALK! HAVE AT YOU!
-							iState = STATE_ATTACK;
-						}
-						else
-						{
-							new bool:bBlockingProp = false;
-							
-							if (NPCGetFlags(iBossIndex) & SFF_ATTACKPROPS)
-							{
-								new prop = -1;
-								while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
-								{
-									if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
-									{
-										bBlockingProp = true;
-										break;
-									}
-								}
-								
-								if (!bBlockingProp)
-								{
-									prop = -1;
-									while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
-									{
-										if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
-										{
-											if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
-											{
-												bBlockingProp = true;
-												break;
-											}
-										}
-									}
-								}
-							}
-							
-							if (bBlockingProp)
-							{
-								iState = STATE_ATTACK;
-							}
-							else if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
-							{
-								g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
-								bQueueForNewPath = true;
-							}
-						}
-					}
-				}
-				else
-				{
-					// Even if the target isn't valid anymore, see if I still have some ways to go on my current path,
-					// because I shouldn't actually know that the target has died until I see it.
-					if (GetArraySize(g_hSlenderPath[iBossIndex]) == 0)
-					{
-						iState = STATE_IDLE;
-					}
-				}
-			}
-			else if (iState == STATE_ATTACK)
-			{
-				if (!g_bSlenderAttacking[iBossIndex])
-				{
-					if (IsValidClient(iTarget))
-					{
-						g_bSlenderChaseDeathPosition[iBossIndex] = false;
-						
-						// Chase him again!
-						iState = STATE_CHASE;
-					}
-					else
-					{
-						// Target isn't valid anymore. We killed him, Mac!
-						iState = STATE_ALERT;
-					}
-				}
-			}
-			else if (iState == STATE_STUN)
-			{
-				if (GetGameTime() >= g_flSlenderTimeUntilRecover[iBossIndex])
-				{
-					NPCChaserSetStunHealth(iBossIndex, NPCChaserGetStunInitialHealth(iBossIndex));
-					
-					if (IsValidClient(iTarget))
-					{
-						// Chase him again!
-						iState = STATE_CHASE;
-					}
-					else
-					{
-						// WHAT DA FUUUUUUUUUUUQ. TARGET ISN'T VALID. AUSDHASUIHD
-						iState = STATE_ALERT;
-					}
-				}
-			}
-		}
-	}
-	
-	new bool:bDoChasePersistencyInit = false;
-	
-	if (iState != STATE_STUN)
-	{
-		if (bStunEnabled)
-		{
-			if (NPCChaserGetStunHealth(iBossIndex) <= 0)
-			{
-				if (iState != STATE_CHASE && iState != STATE_ATTACK)
-				{
-					// Sometimes players can stun the boss while it's not in chase mode. If that happens, we
-					// need to set the persistency value to the chase initial value.
-					bDoChasePersistencyInit = true;
-				}
-				
-				iState = STATE_STUN;
-			}
-		}
-	}
-	
-	// Finally, set our new state.
-	g_iSlenderState[iBossIndex] = iState;
-	
-	decl String:sAnimation[64];
-	new iModel = EntRefToEntIndex(g_iSlenderModel[iBossIndex]);
-	
-	new Float:flPlaybackRateWalk = g_flSlenderWalkAnimationPlaybackRate[iBossIndex];
-	new Float:flPlaybackRateRun = g_flSlenderRunAnimationPlaybackRate[iBossIndex];
-	new Float:flPlaybackRateIdle = g_flSlenderIdleAnimationPlaybackRate[iBossIndex];
-	
-	if (iOldState != iState)
-	{
-		switch (iState)
-		{
-			case STATE_IDLE, STATE_WANDER:
-			{
-				g_iSlenderTarget[iBossIndex] = INVALID_ENT_REFERENCE;
-				g_flSlenderTimeUntilIdle[iBossIndex] = -1.0;
-				g_flSlenderTimeUntilAlert[iBossIndex] = -1.0;
-				g_flSlenderTimeUntilChase[iBossIndex] = -1.0;
-				g_bSlenderChaseDeathPosition[iBossIndex] = false;
-				
-				if (iOldState != STATE_IDLE && iOldState != STATE_WANDER)
-				{
-					g_iSlenderTargetSoundCount[iBossIndex] = 0;
-					g_bSlenderInvestigatingSound[iBossIndex] = false;
-					g_flSlenderTargetSoundDiscardMasterPosTime[iBossIndex] = -1.0;
-					
-					g_flSlenderTimeUntilKill[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "idle_lifetime", 10.0);
-				}
-				
-				if (iState == STATE_WANDER)
-				{
-					// Force new wander position.
-					g_flSlenderNextWanderPos[iBossIndex] = -1.0;
-				}
-				
-				// Animation handling.
-				if (iModel && iModel != INVALID_ENT_REFERENCE)
-				{
-					if (iState == STATE_WANDER && (NPCGetFlags(iBossIndex) & SFF_WANDERMOVE))
-					{
-						if (GetProfileString(sSlenderProfile, "animation_walk", sAnimation, sizeof(sAnimation)))
-						{
-							EntitySetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateWalk);
-						}
-					}
-					else
-					{
-						if (GetProfileString(sSlenderProfile, "animation_idle", sAnimation, sizeof(sAnimation)))
-						{
-							EntitySetAnimation(iModel, sAnimation, _, flPlaybackRateIdle);
-						}
-					}
-				}
-			}
-			
-			case STATE_ALERT:
-			{
-				g_bSlenderChaseDeathPosition[iBossIndex] = false;
-				
-				// Set our goal position.
-				if (g_bSlenderInvestigatingSound[iBossIndex])
-				{
-					g_flSlenderGoalPos[iBossIndex][0] = g_flSlenderTargetSoundMasterPos[iBossIndex][0];
-					g_flSlenderGoalPos[iBossIndex][1] = g_flSlenderTargetSoundMasterPos[iBossIndex][1];
-					g_flSlenderGoalPos[iBossIndex][2] = g_flSlenderTargetSoundMasterPos[iBossIndex][2];
-				}
-				
-				g_flSlenderTimeUntilIdle[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_alert_duration", 5.0);
-				g_flSlenderTimeUntilAlert[iBossIndex] = -1.0;
-				g_flSlenderTimeUntilChase[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_alert_gracetime", 0.5);
-				
-				bQueueForNewPath = true;
-				
-				// Animation handling.
-				if (iModel && iModel != INVALID_ENT_REFERENCE)
-				{
-					if (GetProfileString(sSlenderProfile, "animation_walk", sAnimation, sizeof(sAnimation)))
-					{
-						EntitySetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateWalk);
-					}
-				}
-			}
-			case STATE_CHASE, STATE_ATTACK, STATE_STUN:
-			{
-				g_bSlenderInvestigatingSound[iBossIndex] = false;
-				g_iSlenderTargetSoundCount[iBossIndex] = 0;
-				
-				if (iOldState != STATE_ATTACK && iOldState != STATE_CHASE && iOldState != STATE_STUN)
-				{
-					g_flSlenderTimeUntilIdle[iBossIndex] = -1.0;
-					g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration", 10.0);
-					g_flSlenderTimeUntilChase[iBossIndex] = -1.0;
-					
-					new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init", 5.0);
-					if (flPersistencyTime >= 0.0)
-					{
-						g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
-					}
-				}
-				
-				if (iState == STATE_ATTACK)
-				{
-					g_bSlenderAttacking[iBossIndex] = true;
-					g_hSlenderAttackTimer[iBossIndex] = CreateTimer(NPCChaserGetAttackDamageDelay(iBossIndex, 0), Timer_SlenderChaseBossAttack, EntIndexToEntRef(slender), TIMER_FLAG_NO_MAPCHANGE);
-					
-					new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_attack", -1.0);
-					if (flPersistencyTime >= 0.0)
-					{
-						g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
-					}
-					
-					flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_attack", 2.0);
-					if (flPersistencyTime >= 0.0)
-					{
-						if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
-						g_flSlenderTimeUntilNoPersistence[iBossIndex] += flPersistencyTime;
-					}
-					
-					SlenderPerformVoice(iBossIndex, "sound_attackenemy");
-				}
-				else if (iState == STATE_STUN)
-				{
-					if (g_bSlenderAttacking[iBossIndex])
-					{
-						// Cancel attacking.
-						g_bSlenderAttacking[iBossIndex] = false;
-						g_hSlenderAttackTimer[iBossIndex] = INVALID_HANDLE;
-					}
-					
-					if (!bDoChasePersistencyInit)
-					{
-						new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_stun", -1.0);
-						if (flPersistencyTime >= 0.0)
-						{
-							g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
-						}
-						
-						flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_stun", 2.0);
-						if (flPersistencyTime >= 0.0)
-						{
-							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
-							g_flSlenderTimeUntilNoPersistence[iBossIndex] += flPersistencyTime;
-						}
-					}
-					else
-					{
-						new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init", 5.0);
-						if (flPersistencyTime >= 0.0)
-						{
-							g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
-						}
-					}
-					
-					g_flSlenderTimeUntilRecover[iBossIndex] = GetGameTime() + NPCChaserGetStunDuration(iBossIndex);
-					
-					// Sound handling. Ignore time check.
-					SlenderPerformVoice(iBossIndex, "sound_stun");
-				}
-				else
-				{
-					if (iOldState != STATE_ATTACK)
-					{
-						// Sound handling.
-						SlenderPerformVoice(iBossIndex, "sound_chaseenemyinitial");
-					}
-				}
-				
-				// Animation handling.
-				if (iModel && iModel != INVALID_ENT_REFERENCE)
-				{
-					if (iState == STATE_CHASE)
-					{
-						if (GetProfileString(sSlenderProfile, "animation_run", sAnimation, sizeof(sAnimation)))
-						{
-							EntitySetAnimation(iModel, sAnimation, _, flVelocityRatio * flPlaybackRateRun);
-						}
-					}
-					else if (iState == STATE_ATTACK)
-					{
-						if (GetProfileString(sSlenderProfile, "animation_attack", sAnimation, sizeof(sAnimation)))
-						{
-							EntitySetAnimation(iModel, sAnimation, _, GetProfileFloat(sSlenderProfile, "animation_attack_playbackrate", 1.0));
-						}
-					}
-					else if (iState == STATE_STUN)
-					{
-						if (GetProfileString(sSlenderProfile, "animation_stun", sAnimation, sizeof(sAnimation)))
-						{
-							EntitySetAnimation(iModel, sAnimation, _, GetProfileFloat(sSlenderProfile, "animation_stun_playbackrate", 1.0));
-						}
-					}
-				}
-			}
-		}
-		
-		// Call our forward.
-		Call_StartForward(fOnBossChangeState);
-		Call_PushCell(iBossIndex);
-		Call_PushCell(iOldState);
-		Call_PushCell(iState);
-		Call_Finish();
-	}
-	
-	switch (iState)
-	{
-		case STATE_IDLE:
-		{
-			// Animation playback speed handling.
-			if (iModel && iModel != INVALID_ENT_REFERENCE)
-			{
-				SetVariantFloat(flPlaybackRateIdle);
-				AcceptEntityInput(iModel, "SetPlaybackRate");
-			}
-		}
-		case STATE_WANDER, STATE_ALERT, STATE_CHASE, STATE_ATTACK:
-		{
-			// These deal with movement, therefore we need to set our 
-			// destination first. That is, if we don't have one. (nav mesh only)
-			
-			if (iState == STATE_WANDER)
-			{
-				if (GetGameTime() >= g_flSlenderNextWanderPos[iBossIndex])
-				{
-					new Float:flMin = GetProfileFloat(sSlenderProfile, "search_wander_time_min", 4.0);
-					new Float:flMax = GetProfileFloat(sSlenderProfile, "search_wander_time_max", 6.5);
-					g_flSlenderNextWanderPos[iBossIndex] = GetGameTime() + GetRandomFloat(flMin, flMax);
-					
-					if (NPCGetFlags(iBossIndex) & SFF_WANDERMOVE)
-					{
-						// We're allowed to move in wander mode. Get a new wandering position and create a path to follow.
-						// If the position can't be reached, then just get to the closest area that we can get.
-						new Float:flWanderRangeMin = GetProfileFloat(sSlenderProfile, "search_wander_range_min", 400.0);
-						new Float:flWanderRangeMax = GetProfileFloat(sSlenderProfile, "search_wander_range_max", 1024.0);
-						new Float:flWanderRange = GetRandomFloat(flWanderRangeMin, flWanderRangeMax);
-						
-						decl Float:flWanderPos[3];
-						flWanderPos[0] = 0.0;
-						flWanderPos[1] = GetRandomFloat(0.0, 360.0);
-						flWanderPos[2] = 0.0;
-						
-						GetAngleVectors(flWanderPos, flWanderPos, NULL_VECTOR, NULL_VECTOR);
-						NormalizeVector(flWanderPos, flWanderPos);
-						ScaleVector(flWanderPos, flWanderRange);
-						AddVectors(flWanderPos, flMyPos, flWanderPos);
-						
-						g_flSlenderGoalPos[iBossIndex][0] = flWanderPos[0];
-						g_flSlenderGoalPos[iBossIndex][1] = flWanderPos[1];
-						g_flSlenderGoalPos[iBossIndex][2] = flWanderPos[2];
-						
-						bQueueForNewPath = true;
-						g_flSlenderNextPathTime[iBossIndex] = -1.0; // We're not going to wander around too much, so no need for a time constraint.
-					}
-				}
-			}
-			else if (iState == STATE_ALERT)
-			{
-				if (iInterruptConditions & COND_SAWENEMY)
-				{
-					if (IsValidEntity(iBestNewTarget))
-					{
-						if ((bPlayerInFOV[iBestNewTarget] || bPlayerNear[iBestNewTarget]) && bPlayerVisible[iBestNewTarget])
-						{
-							// Constantly update my path if I see him.
-							if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
-							{
-								GetEntPropVector(iBestNewTarget, Prop_Data, "m_vecAbsOrigin", g_flSlenderGoalPos[iBossIndex]);
-								bQueueForNewPath = true;
-								g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
-							}
-						}
-					}
-				}
-			}
-			else if (iState == STATE_CHASE || iState == STATE_ATTACK)
-			{
-				if (IsValidEntity(iBestNewTarget))
-				{
-					iOldTarget = iTarget;
-					iTarget = iBestNewTarget;
-					g_iSlenderTarget[iBossIndex] = EntIndexToEntRef(iBestNewTarget);
-				}
-				
-				if (iTarget != INVALID_ENT_REFERENCE)
-				{
-					if (iOldTarget != iTarget)
-					{
-						// Brand new target! We need a path, and we need to reset our persistency, if needed.
-						new Float:flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_init_newtarget", -1.0);
-						if (flPersistencyTime >= 0.0)
-						{
-							g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + flPersistencyTime;
-						}
-						
-						flPersistencyTime = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_newtarget", 2.0);
-						if (flPersistencyTime >= 0.0)
-						{
-							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
-							g_flSlenderTimeUntilNoPersistence[iBossIndex] += flPersistencyTime;
-						}
-					
-						GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", g_flSlenderGoalPos[iBossIndex]);
-						bQueueForNewPath = true; // Brand new target! We need a new path!
-					}
-					else if ((bPlayerInFOV[iTarget] && bPlayerVisible[iTarget]) || GetGameTime() < g_flSlenderTimeUntilNoPersistence[iBossIndex])
-					{
-						// Constantly update my path if I see him or if I'm still being persistent.
-						if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
-						{
-							GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", g_flSlenderGoalPos[iBossIndex]);
-							bQueueForNewPath = true;
-							g_flSlenderNextPathTime[iBossIndex] = GetGameTime() + 0.33;
-						}
-					}
-				}
-			}
-			
-			if (NavMesh_Exists())
-			{
-				// So by now we should have calculated our master goal position.
-				// Now we use that to create a path.
-				
-				if (bQueueForNewPath)
-				{
-					ClearArray(g_hSlenderPath[iBossIndex]);
-					
-					new iCurrentAreaIndex = NavMesh_GetNearestArea(flMyPos);
-					if (iCurrentAreaIndex != -1)
-					{
-						new iGoalAreaIndex = NavMesh_GetNearestArea(g_flSlenderGoalPos[iBossIndex]);
-						if (iGoalAreaIndex != -1)
-						{
-							decl Float:flCenter[3], Float:flCenterPortal[3], Float:flClosestPoint[3];
-							new iClosestAreaIndex = 0;
-							
-							new bool:bPathSuccess = NavMesh_BuildPath(iCurrentAreaIndex,
-								iGoalAreaIndex,
-								g_flSlenderGoalPos[iBossIndex],
-								SlenderChaseBossShortestPathCost,
-								RoundToFloor(NPCChaserGetStepSize(iBossIndex)),
-								iClosestAreaIndex);
-								
-							new iTempAreaIndex = iClosestAreaIndex;
-							new iTempParentAreaIndex = NavMeshArea_GetParent(iTempAreaIndex);
-							new iNavDirection;
-							new Float:flHalfWidth;
-							
-							if (bPathSuccess)
-							{
-								// Path successful? Insert the goal position into our list.
-								new iIndex = PushArrayCell(g_hSlenderPath[iBossIndex], g_flSlenderGoalPos[iBossIndex][0]);
-								SetArrayCell(g_hSlenderPath[iBossIndex], iIndex, g_flSlenderGoalPos[iBossIndex][1], 1);
-								SetArrayCell(g_hSlenderPath[iBossIndex], iIndex, g_flSlenderGoalPos[iBossIndex][2], 2);
-							}
-							
-							while (iTempParentAreaIndex != -1)
-							{
-								// Build a path of waypoints along the nav mesh for our AI to follow.
-								// Path order is first come, first served, so when we got our waypoint list,
-								// we have to reverse it so that the starting waypoint would be in front.
-								
-								NavMeshArea_GetCenter(iTempParentAreaIndex, flCenter);
-								iNavDirection = NavMeshArea_ComputeDirection(iTempAreaIndex, flCenter);
-								NavMeshArea_ComputePortal(iTempAreaIndex, iTempParentAreaIndex, iNavDirection, flCenterPortal, flHalfWidth);
-								NavMeshArea_ComputeClosestPointInPortal(iTempAreaIndex, iTempParentAreaIndex, iNavDirection, flCenterPortal, flClosestPoint);
-								
-								flClosestPoint[2] = NavMeshArea_GetZ(iTempAreaIndex, flClosestPoint);
-								
-								new iIndex = PushArrayCell(g_hSlenderPath[iBossIndex], flClosestPoint[0]);
-								SetArrayCell(g_hSlenderPath[iBossIndex], iIndex, flClosestPoint[1], 1);
-								SetArrayCell(g_hSlenderPath[iBossIndex], iIndex, flClosestPoint[2], 2);
-								
-								iTempAreaIndex = iTempParentAreaIndex;
-								iTempParentAreaIndex = NavMeshArea_GetParent(iTempAreaIndex);
-							}
-							
-							// Set our goal position to the start node (hopefully there's something in the array).
-							if (GetArraySize(g_hSlenderPath[iBossIndex]) > 0)
-							{
-								new iPosIndex = GetArraySize(g_hSlenderPath[iBossIndex]) - 1;
-								
-								g_flSlenderGoalPos[iBossIndex][0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 0);
-								g_flSlenderGoalPos[iBossIndex][1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 1);
-								g_flSlenderGoalPos[iBossIndex][2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 2);
-							}
-						}
-						else
-						{
-							PrintToServer("SF2: Failed to create new path for boss %d: destination is not on nav mesh!", iBossIndex);
-						}
-					}
-					else
-					{
-						PrintToServer("SF2: Failed to create new path for boss %d: boss is not on nav mesh!", iBossIndex);
-					}
-				}
-			}
-			else
-			{
-				// The nav mesh doesn't exist? Well, that sucks.
-				ClearArray(g_hSlenderPath[iBossIndex]);
-			}
-			
-			if (iState == STATE_CHASE || iState == STATE_ATTACK)
-			{
-				if (IsValidClient(iTarget))
-				{
-#if defined DEBUG
-					SendDebugMessageToPlayer(iTarget, DEBUG_BOSS_CHASE, 1, "g_flSlenderTimeUntilAlert[%d]: %f\ng_flSlenderTimeUntilNoPersistence[%d]: %f", iBossIndex, g_flSlenderTimeUntilAlert[iBossIndex] - GetGameTime(), iBossIndex, g_flSlenderTimeUntilNoPersistence[iBossIndex] - GetGameTime());
-#endif
-				
-					if (bPlayerInFOV[iTarget] && bPlayerVisible[iTarget])
-					{
-						new Float:flDistRatio = flPlayerDists[iTarget] / NPCGetSearchRadius(iBossIndex);
-						
-						new Float:flChaseDurationTimeAddMin = GetProfileFloat(sSlenderProfile, "search_chase_duration_add_visible_min", 0.025);
-						new Float:flChaseDurationTimeAddMax = GetProfileFloat(sSlenderProfile, "search_chase_duration_add_visible_max", 0.2);
-						
-						new Float:flChaseDurationAdd = flChaseDurationTimeAddMax - ((flChaseDurationTimeAddMax - flChaseDurationTimeAddMin) * flDistRatio);
-						
-						if (flChaseDurationAdd > 0.0)
-						{
-							g_flSlenderTimeUntilAlert[iBossIndex] += flChaseDurationAdd;
-							if (g_flSlenderTimeUntilAlert[iBossIndex] > (GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration")))
-							{
-								g_flSlenderTimeUntilAlert[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration");
-							}
-						}
-						
-						new Float:flPersistencyTimeAddMin = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_visible_min", 0.05);
-						new Float:flPersistencyTimeAddMax = GetProfileFloat(sSlenderProfile, "search_chase_persistency_time_add_visible_max", 0.15);
-						
-						new Float:flPersistencyTimeAdd = flPersistencyTimeAddMax - ((flPersistencyTimeAddMax - flPersistencyTimeAddMin) * flDistRatio);
-						
-						if (flPersistencyTimeAdd > 0.0)
-						{
-							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] < GetGameTime()) g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime();
-						
-							g_flSlenderTimeUntilNoPersistence[iBossIndex] += flPersistencyTimeAdd;
-							if (g_flSlenderTimeUntilNoPersistence[iBossIndex] > (GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration")))
-							{
-								g_flSlenderTimeUntilNoPersistence[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "search_chase_duration");
-							}
-						}
-					}
-				}
-			}
-			
-			// Process through our path waypoints.
-			if (GetArraySize(g_hSlenderPath[iBossIndex]) > 0)
-			{
-				decl Float:flHitNormal[3];
-				decl Float:flNodePos[3];
-				
-				new Float:flNodeToleranceDist = g_flSlenderPathNodeTolerance[iBossIndex];
-				new bool:bGotNewPoint = false;
-				
-				for (new iNodeIndex = 0, iNodeCount = GetArraySize(g_hSlenderPath[iBossIndex]); iNodeIndex < iNodeCount; iNodeIndex++)
-				{
-					flNodePos[0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iNodeIndex, 0);
-					flNodePos[1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iNodeIndex, 1);
-					flNodePos[2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iNodeIndex, 2);
-					
-					new Handle:hTrace = TR_TraceHullFilterEx(flMyPos,
-						flNodePos, 
-						flSlenderMins, 
-						flSlenderMaxs, 
-						MASK_NPCSOLID, 
-						TraceRayDontHitCharactersOrEntity, 
-						slender);
-						
-					new bool:bDidHit = TR_DidHit(hTrace);
-					TR_GetPlaneNormal(hTrace, flHitNormal);
-					CloseHandle(hTrace);
-					GetVectorAngles(flHitNormal, flHitNormal);
-					for (new i = 0; i < 3; i++) flHitNormal[i] = AngleNormalize(flHitNormal[i]);
-					
-					// First check if we can see the point.
-					if (!bDidHit || ((flHitNormal[0] >= 0.0 && flHitNormal[0] > 45.0) || (flHitNormal[0] < 0.0 && flHitNormal[0] < -45.0)))
-					{
-						new bool:bNearNode = false;
-						
-						// See if we're already near enough.
-						new Float:flDist = GetVectorDistance(flNodePos, flMyPos);
-						if (flDist < flNodeToleranceDist) bNearNode = true;
-						
-						if (!bNearNode)
-						{
-							new bool:bOutside = false;
-						
-							// Then, predict if we're going to pass over the point on the next think.
-							decl Float:flTestPos[3];
-							NormalizeVector(flSlenderVelocity, flTestPos);
-							ScaleVector(flTestPos, GetVectorLength(flSlenderVelocity) * BOSS_THINKRATE);
-							AddVectors(flMyPos, flTestPos, flTestPos);
-							
-							decl Float:flP[3], Float:flS[3];
-							SubtractVectors(flNodePos, flMyPos, flP);
-							SubtractVectors(flTestPos, flMyPos, flS);
-							
-							new Float:flSP = GetVectorDotProduct(flP, flS);
-							if (flSP <= 0.0) bOutside = true;
-							
-							new Float:flPP = GetVectorDotProduct(flS, flS);
-							
-							if (!bOutside)
-							{
-								if (flPP <= flSP) bOutside = true;
-							}
-							
-							if (!bOutside)
-							{
-								decl Float:flD[3];
-								ScaleVector(flS, (flSP / flPP));
-								SubtractVectors(flP, flS, flD);
-							
-								flDist = GetVectorLength(flD);
-								if (flDist < flNodeToleranceDist)
-								{
-									bNearNode = true;
-								}
-							}
-						}
-						
-						if (bNearNode)
-						{
-							// Shave off this node and set our goal position to the next one.
-						
-							ResizeArray(g_hSlenderPath[iBossIndex], iNodeIndex);
-							
-							if (GetArraySize(g_hSlenderPath[iBossIndex]) > 0)
-							{
-								new iPosIndex = GetArraySize(g_hSlenderPath[iBossIndex]) - 1;
-								
-								g_flSlenderGoalPos[iBossIndex][0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 0);
-								g_flSlenderGoalPos[iBossIndex][1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 1);
-								g_flSlenderGoalPos[iBossIndex][2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 2);
-							}
-							
-							bGotNewPoint = true;
-							break;
-						}
-					}
-				}
-				
-				if (!bGotNewPoint)
-				{
-					// Try to see if we can look ahead.
-					
-					decl Float:flMyEyePos[3];
-					NPCGetEyePosition(iBossIndex, flMyEyePos);
-					
-					new Float:flNodeLookAheadDist = g_flSlenderPathNodeLookAhead[iBossIndex];
-					if (flNodeLookAheadDist > 0.0)
-					{
-						new iNodeCount = GetArraySize(g_hSlenderPath[iBossIndex]);
-						if (iNodeCount)
-						{
-							decl Float:flInitDir[3];
-							flInitDir[0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iNodeCount - 1, 0);
-							flInitDir[1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iNodeCount - 1, 1);
-							flInitDir[2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iNodeCount - 1, 2);
-							
-							SubtractVectors(flInitDir, flMyPos, flInitDir);
-							NormalizeVector(flInitDir, flInitDir);
-							
-							decl Float:flPrevDir[3];
-							flPrevDir[0] = flInitDir[0];
-							flPrevDir[1] = flInitDir[1];
-							flPrevDir[2] = flInitDir[2];
-							
-							NormalizeVector(flPrevDir, flPrevDir);
-							
-							decl Float:flPrevNodePos[3];
-							
-							new iStartPointIndex = iNodeCount - 1;
-							new Float:flRangeSoFar = 0.0;
-							
-							new iLookAheadPointIndex;
-							for (iLookAheadPointIndex = iStartPointIndex; iLookAheadPointIndex >= 0; iLookAheadPointIndex--)
-							{
-								flNodePos[0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iLookAheadPointIndex, 0);
-								flNodePos[1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iLookAheadPointIndex, 1);
-								flNodePos[2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iLookAheadPointIndex, 2);
-							
-								decl Float:flDir[3];
-								if (iLookAheadPointIndex == iStartPointIndex)
-								{
-									SubtractVectors(flNodePos, flMyPos, flDir);
-									NormalizeVector(flDir, flDir);
-								}
-								else
-								{
-									flPrevNodePos[0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iLookAheadPointIndex + 1, 0);
-									flPrevNodePos[1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iLookAheadPointIndex + 1, 1);
-									flPrevNodePos[2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iLookAheadPointIndex + 1, 2);
-								
-									SubtractVectors(flNodePos, flPrevNodePos, flDir);
-									NormalizeVector(flDir, flDir);
-								}
-								
-								if (GetVectorDotProduct(flDir, flInitDir) < 0.0)
-								{
-									break;
-								}
-								
-								if (GetVectorDotProduct(flDir, flPrevDir) < 0.5)
-								{
-									break;
-								}
-								
-								flPrevDir[0] = flDir[0];
-								flPrevDir[1] = flDir[1];
-								flPrevDir[2] = flDir[2];
-								
-								decl Float:flProbe[3];
-								flProbe[0] = flNodePos[0];
-								flProbe[1] = flNodePos[1];
-								flProbe[2] = flNodePos[2] + HalfHumanHeight;
-								
-								if (!IsWalkableTraceLineClear(flMyEyePos, flProbe, WALK_THRU_BREAKABLES))
-								{
-									break;
-								}
-								
-								if (iLookAheadPointIndex == iStartPointIndex)
-								{
-									flRangeSoFar += GetVectorDistance(flMyPos, flNodePos);
-								}
-								else
-								{
-									flRangeSoFar += GetVectorDistance(flNodePos, flPrevNodePos);
-								}
-								
-								if (flRangeSoFar >= flNodeLookAheadDist)
-								{
-									break;
-								}
-							}
-							
-							// Shave off all unnecessary nodes and keep the one that is within
-							// our viewsight.
-							
-							ResizeArray(g_hSlenderPath[iBossIndex], iLookAheadPointIndex + 1);
-							
-							if (GetArraySize(g_hSlenderPath[iBossIndex]) > 0)
-							{
-								new iPosIndex = GetArraySize(g_hSlenderPath[iBossIndex]) - 1;
-								
-								g_flSlenderGoalPos[iBossIndex][0] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 0);
-								g_flSlenderGoalPos[iBossIndex][1] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 1);
-								g_flSlenderGoalPos[iBossIndex][2] = Float:GetArrayCell(g_hSlenderPath[iBossIndex], iPosIndex, 2);
-							}
-							
-							bGotNewPoint = true;
-						}
-					}
-				}
-			}
-			
-			if (iState != STATE_ATTACK && iState != STATE_STUN)
-			{
-				// Animation playback speed handling.
-				if (iModel && iModel != INVALID_ENT_REFERENCE)
-				{
-					if (iState == STATE_WANDER && !(NPCGetFlags(iBossIndex) & SFF_WANDERMOVE))
-					{
-						SetVariantFloat(flPlaybackRateIdle);
-						AcceptEntityInput(iModel, "SetPlaybackRate");
-					}
-					else
-					{
-						SetVariantFloat(iState == STATE_CHASE ? (flVelocityRatio * flPlaybackRateRun) : (flVelocityRatioWalk * flPlaybackRateWalk));
-						AcceptEntityInput(iModel, "SetPlaybackRate");
-					}
-				}
-			}
-		}
-	}
-	
-	// Sound handling.
-	if (GetGameTime() >= g_flSlenderNextVoiceSound[iBossIndex])
-	{
-		if (iState == STATE_IDLE || iState == STATE_WANDER)
-		{
-			SlenderPerformVoice(iBossIndex, "sound_idle");
-		}
-		else if (iState == STATE_ALERT)
-		{
-			SlenderPerformVoice(iBossIndex, "sound_alertofenemy");
-		}
-		else if (iState == STATE_CHASE || iState == STATE_ATTACK)
-		{
-			SlenderPerformVoice(iBossIndex, "sound_chasingenemy");
-		}
-	}
-	
-	// Reset our interrupt conditions.
-	g_iSlenderInterruptConditions[iBossIndex] = 0;
-	
-	return Plugin_Continue;
-}
-
-SlenderChaseBossProcessMovement(iBossIndex)
-{
-	new iBoss = NPCGetEntIndex(iBossIndex);
-	new iState = g_iSlenderState[iBossIndex];
-	
-	// Constantly set the monster_generic's NPC state to idle to prevent
-	// velocity confliction.
-	
-	SetEntProp(iBoss, Prop_Data, "m_NPCState", 0);
-	
-	new Float:flWalkSpeed = g_flSlenderCalculatedWalkSpeed[iBossIndex];
-	new Float:flSpeed = g_flSlenderCalculatedSpeed[iBossIndex];
-	
-	new Float:flMyPos[3], Float:flMyEyeAng[3], Float:flMyVelocity[3];
-	
-	decl String:sSlenderProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sSlenderProfile, sizeof(sSlenderProfile));
-	
-	GetEntPropVector(iBoss, Prop_Data, "m_vecAbsOrigin", flMyPos);
-	GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	GetEntPropVector(iBoss, Prop_Data, "m_vecAbsVelocity", flMyVelocity);
-	
-	decl Float:flBossMins[3], Float:flBossMaxs[3];
-	GetEntPropVector(iBoss, Prop_Send, "m_vecMins", flBossMins);
-	GetEntPropVector(iBoss, Prop_Send, "m_vecMaxs", flBossMaxs);
-	
-	decl Float:flTraceMins[3], Float:flTraceMaxs[3];
-	flTraceMins[0] = flBossMins[0];
-	flTraceMins[1] = flBossMins[1];
-	flTraceMins[2] = 0.0;
-	flTraceMaxs[0] = flBossMaxs[0];
-	flTraceMaxs[1] = flBossMaxs[1];
-	flTraceMaxs[2] = 0.0;
-	
-	// By now we should have our preferable goal position. Initiate
-	// reflex adjustments.
-	
-	g_bSlenderFeelerReflexAdjustment[iBossIndex] = false;
-	
-	{
-		decl Float:flMoveDir[3];
-		NormalizeVector(flMyVelocity, flMoveDir);
-		flMoveDir[2] = 0.0;
-		
-		decl Float:flLat[3];
-		flLat[0] = -flMoveDir[1];
-		flLat[1] = flMoveDir[0];
-		flLat[2] = 0.0;
-	
-		new Float:flFeelerOffset = 25.0;
-		new Float:flFeelerLengthRun = 50.0;
-		new Float:flFeelerLengthWalk = 30.0;
-		new Float:flFeelerHeight = StepHeight + 0.1;
-		
-		new Float:flFeelerLength = iState == STATE_CHASE ? flFeelerLengthRun : flFeelerLengthWalk;
-		
-		// Get the ground height and normal.
-		new Handle:hTrace = TR_TraceRayFilterEx(flMyPos, Float:{ 0.0, 0.0, 90.0 }, MASK_NPCSOLID, RayType_Infinite, TraceFilterWalkableEntities);
-		decl Float:flTraceEndPos[3];
-		decl Float:flTraceNormal[3];
-		TR_GetEndPosition(flTraceEndPos, hTrace);
-		TR_GetPlaneNormal(hTrace, flTraceNormal);
-		new bool:bTraceHit = TR_DidHit(hTrace);
-		CloseHandle(hTrace);
-		
-		if (bTraceHit)
-		{
-			//new Float:flGroundHeight = GetVectorDistance(flMyPos, flTraceEndPos);
-			NormalizeVector(flTraceNormal, flTraceNormal);
-			GetVectorCrossProduct(flLat, flTraceNormal, flMoveDir);
-			GetVectorCrossProduct(flMoveDir, flTraceNormal, flLat);
-			
-			decl Float:flFeet[3];
-			flFeet[0] = flMyPos[0];
-			flFeet[1] = flMyPos[1];
-			flFeet[2] = flMyPos[2] + flFeelerHeight;
-			
-			decl Float:flTo[3];
-			decl Float:flFrom[3];
-			for (new i = 0; i < 3; i++)
-			{
-				flFrom[i] = flFeet[i] + (flFeelerOffset * flLat[i]);
-				flTo[i] = flFrom[i] + (flFeelerLength * flMoveDir[i]);
-			}
-			
-			new bool:bLeftClear = IsWalkableTraceLineClear(flFrom, flTo, WALK_THRU_DOORS | WALK_THRU_BREAKABLES);
-			
-			for (new i = 0; i < 3; i++)
-			{
-				flFrom[i] = flFeet[i] - (flFeelerOffset * flLat[i]);
-				flTo[i] = flFrom[i] + (flFeelerLength * flMoveDir[i]);
-			}
-			
-			new bool:bRightClear = IsWalkableTraceLineClear(flFrom, flTo, WALK_THRU_DOORS | WALK_THRU_BREAKABLES);
-			
-			new Float:flAvoidRange = 300.0;
-			
-			if (!bRightClear)
-			{
-				if (bLeftClear)
-				{
-					g_bSlenderFeelerReflexAdjustment[iBossIndex] = true;
-					
-					for (new i = 0; i < 3; i++)
-					{
-						g_flSlenderFeelerReflexAdjustmentPos[iBossIndex][i] = g_flSlenderGoalPos[iBossIndex][i] + (flAvoidRange * flLat[i]);
-					}
-				}
-			}
-			else if (!bLeftClear)
-			{
-				g_bSlenderFeelerReflexAdjustment[iBossIndex] = true;
-				
-				for (new i = 0; i < 3; i++)
-				{
-					g_flSlenderFeelerReflexAdjustmentPos[iBossIndex][i] = g_flSlenderGoalPos[iBossIndex][i] - (flAvoidRange * flLat[i]);
-				}
-			}
-		}
-	}
-	
-	new Float:flGoalPosition[3];
-	if (g_bSlenderFeelerReflexAdjustment[iBossIndex])
-	{
-		for (new i = 0; i < 3; i++)
-		{
-			flGoalPosition[i] = g_flSlenderFeelerReflexAdjustmentPos[iBossIndex][i];
-		}
-	}
-	else
-	{
-		for (new i = 0; i < 3; i++)
-		{
-			flGoalPosition[i] = g_flSlenderGoalPos[iBossIndex][i];
-		}
-	}
-	
-	// Process our desired velocity.
-	new Float:flDesiredVelocity[3];
-	switch (iState)
-	{
-		case STATE_WANDER:
-		{
-			if (NPCGetFlags(iBossIndex) & SFF_WANDERMOVE)
-			{
-				SubtractVectors(flGoalPosition, flMyPos, flDesiredVelocity);
-				flDesiredVelocity[2] = 0.0;
-				NormalizeVector(flDesiredVelocity, flDesiredVelocity);
-				ScaleVector(flDesiredVelocity, flWalkSpeed);
-			}
-		}
-		case STATE_ALERT:
-		{
-			SubtractVectors(flGoalPosition, flMyPos, flDesiredVelocity);
-			flDesiredVelocity[2] = 0.0;
-			NormalizeVector(flDesiredVelocity, flDesiredVelocity);
-			ScaleVector(flDesiredVelocity, flWalkSpeed);
-		}
-		case STATE_CHASE:
-		{
-			SubtractVectors(flGoalPosition, flMyPos, flDesiredVelocity);
-			flDesiredVelocity[2] = 0.0;
-			NormalizeVector(flDesiredVelocity, flDesiredVelocity);
-			ScaleVector(flDesiredVelocity, flSpeed);
-		}
-	}
-	
-	// Check if we're on the ground.
-	new bool:bSlenderOnGround = bool:(GetEntityFlags(iBoss) & FL_ONGROUND);
-	
-	decl Float:flTraceEndPos[3];
-	new Handle:hTrace;
-	
-	// Determine speed behavior.
-	if (bSlenderOnGround)
-	{
-		// Don't change the speed behavior.
-	}
-	else
-	{
-		flDesiredVelocity[2] = 0.0;
-		NormalizeVector(flDesiredVelocity, flDesiredVelocity);
-		ScaleVector(flDesiredVelocity, NPCChaserGetAirSpeed(iBossIndex, GetConVarInt(g_cvDifficulty)));
-	}
-	
-	new bool:bSlenderTeleportedOnStep = false;
-	new Float:flSlenderStepSize = NPCChaserGetStepSize(iBossIndex);
-	
-	// Check our stepsize in case we need to elevate ourselves a step.
-	if (bSlenderOnGround && GetVectorLength(flDesiredVelocity) > 0.0)
-	{
-		if (flSlenderStepSize > 0.0)
-		{
-			decl Float:flTraceDirection[3], Float:flObstaclePos[3], Float:flObstacleNormal[3];
-			NormalizeVector(flDesiredVelocity, flTraceDirection);
-			AddVectors(flMyPos, flTraceDirection, flTraceEndPos);
-			
-			// Tracehull in front of us to check if there's a very small obstacle blocking our way.
-			hTrace = TR_TraceHullFilterEx(flMyPos, 
-				flTraceEndPos,
-				flBossMins,
-				flBossMaxs,
-				MASK_NPCSOLID,
-				TraceRayDontHitEntity,
-				iBoss);
-				
-			new bool:bSlenderHitObstacle = TR_DidHit(hTrace);
-			TR_GetEndPosition(flObstaclePos, hTrace);
-			TR_GetPlaneNormal(hTrace, flObstacleNormal);
-			CloseHandle(hTrace);
-			
-			if (bSlenderHitObstacle &&
-				FloatAbs(flObstacleNormal[2]) == 0.0)
-			{
-				decl Float:flTraceStartPos[3];
-				flTraceStartPos[0] = flObstaclePos[0];
-				flTraceStartPos[1] = flObstaclePos[1];
-				
-				decl Float:flTraceFreePos[3];
-				
-				new Float:flTraceCheckZ = 0.0;
-				
-				// This does a crapload of traces along the wall. Very nasty and expensive to do...
-				while (flTraceCheckZ <= flSlenderStepSize)
-				{
-					flTraceCheckZ += 1.0;
-					flTraceStartPos[2] = flObstaclePos[2] + flTraceCheckZ;
-					
-					AddVectors(flTraceStartPos, flTraceDirection, flTraceEndPos);
-					
-					hTrace = TR_TraceHullFilterEx(flTraceStartPos, 
-						flTraceEndPos,
-						flTraceMins,
-						flTraceMaxs,
-						MASK_NPCSOLID,
-						TraceRayDontHitEntity,
-						iBoss);
-						
-					bSlenderHitObstacle = TR_DidHit(hTrace);
-					TR_GetEndPosition(flTraceFreePos, hTrace);
-					CloseHandle(hTrace);
-					
-					if (!bSlenderHitObstacle)
-					{
-						// Potential space to step on? See if we can fit!
-						if (!IsSpaceOccupiedNPC(flTraceFreePos,
-							flBossMins,
-							flBossMaxs,
-							iBoss))
-						{
-							// Yes we can! Break the loop and teleport to this pos.
-							bSlenderTeleportedOnStep = true;
-							TeleportEntity(iBoss, flTraceFreePos, NULL_VECTOR, NULL_VECTOR);
-							break;
-						}
-					}
-				}
-			}
-			/*
-			else if (!bSlenderHitObstacle)
-			{
-				decl Float:flTraceStartPos[3];
-				flTraceStartPos[0] = flObstaclePos[0];
-				flTraceStartPos[1] = flObstaclePos[1];
-				
-				decl Float:flTraceFreePos[3];
-				
-				new Float:flTraceCheckZ = 0.0;
-				
-				// This does a crapload of traces along the wall. Very nasty and expensive to do...
-				while (flTraceCheckZ <= flSlenderStepSize)
-				{
-					flTraceCheckZ += 1.0;
-					flTraceStartPos[2] = flObstaclePos[2] - flTraceCheckZ;
-					
-					AddVectors(flTraceStartPos, flTraceDirection, flTraceEndPos);
-					
-					hTrace = TR_TraceHullFilterEx(flTraceStartPos, 
-						flTraceEndPos,
-						flTraceMins,
-						flTraceMaxs,
-						MASK_NPCSOLID,
-						TraceRayDontHitEntity,
-						iBoss);
-						
-					bSlenderHitObstacle = TR_DidHit(hTrace);
-					TR_GetEndPosition(flTraceFreePos, hTrace);
-					CloseHandle(hTrace);
-					
-					if (bSlenderHitObstacle)
-					{
-						// Potential space to step on? See if we can fit!
-						if (!IsSpaceOccupiedNPC(flTraceFreePos,
-							flBossMins,
-							flBossMaxs,
-							iBoss))
-						{
-							// Yes we can! Break the loop and teleport to this pos.
-							bSlenderTeleportedOnStep = true;
-							TeleportEntity(iBoss, flTraceFreePos, NULL_VECTOR, NULL_VECTOR);
-							break;
-						}
-					}
-				}
-			}
-			*/
-		}
-	}
-	
-	// Apply acceleration vectors.
-	new Float:flMoveVelocity[3];
-	new Float:flFrameTime = GetTickInterval();
-	decl Float:flAcceleration[3];
-	SubtractVectors(flDesiredVelocity, flMyVelocity, flAcceleration);
-	NormalizeVector(flAcceleration, flAcceleration);
-	ScaleVector(flAcceleration, g_flSlenderAcceleration[iBossIndex] * flFrameTime);
-	
-	AddVectors(flMyVelocity, flAcceleration, flMoveVelocity);
-	
-	new Float:flSlenderJumpSpeed = g_flSlenderJumpSpeed[iBossIndex];
-	new bool:bSlenderShouldJump = false;
-	
-	decl Float:angJumpReach[3]; 
-	
-	// Check if we need to jump over a wall or something.
-	if (!bSlenderShouldJump && bSlenderOnGround && !bSlenderTeleportedOnStep && flSlenderJumpSpeed > 0.0 && GetVectorLength(flDesiredVelocity) > 0.0 &&
-		GetGameTime() >= g_flSlenderNextJump[iBossIndex])
-	{
-		new Float:flZDiff = (flGoalPosition[2] - flMyPos[2]);
-		
-		if (flZDiff > flSlenderStepSize)
-		{
-			// Our path has a jump thingy to it. Calculate the jump height needed to reach it and how far away we should start
-			// checking on when to jump.
-			
-			decl Float:vecDir[3], Float:vecDesiredDir[3];
-			GetVectorAngles(flMyVelocity, vecDir);
-			SubtractVectors(flGoalPosition, flMyPos, vecDesiredDir);
-			GetVectorAngles(vecDesiredDir, vecDesiredDir);
-			
-			if ((FloatAbs(AngleDiff(vecDir[0], vecDesiredDir[0])) + FloatAbs(AngleDiff(vecDir[1], vecDesiredDir[1]))) >= 45.0)
-			{
-				// Assuming we are actually capable of making the jump, find out WHEN we have to jump,
-				// based on 2D distance between our position and the target point, and our current horizontal 
-				// velocity.
-				
-				decl Float:vecMyPos2D[3], Float:vecGoalPos2D[3];
-				vecMyPos2D[0] = flMyPos[0];
-				vecMyPos2D[1] = flMyPos[1];
-				vecMyPos2D[2] = 0.0;
-				vecGoalPos2D[0] = flGoalPosition[0];
-				vecGoalPos2D[1] = flGoalPosition[1];
-				vecGoalPos2D[2] = 0.0;
-				
-				new Float:fl2DDist = GetVectorDistance(vecMyPos2D, vecGoalPos2D);
-				
-				new Float:flNotImaginary = Pow(flSlenderJumpSpeed, 4.0) - (g_flGravity * (g_flGravity * Pow(fl2DDist, 2.0)) + (2.0 * flZDiff * Pow(flSlenderJumpSpeed, 2.0)));
-				if (flNotImaginary >= 0.0)
-				{
-					// We can reach it.
-					new Float:flNotInfinite = g_flGravity * fl2DDist;
-					if (flNotInfinite > 0.0)
-					{
-						SubtractVectors(vecGoalPos2D, vecMyPos2D, angJumpReach);
-						GetVectorAngles(angJumpReach, angJumpReach);
-						angJumpReach[0] = -RadToDeg(ArcTangent((Pow(flSlenderJumpSpeed, 2.0) + SquareRoot(flNotImaginary)) / flNotInfinite));
-						bSlenderShouldJump = true;
-					}
-				}
-			}
-		}
-	}
-	
-	if (bSlenderOnGround && bSlenderShouldJump)
-	{
-		g_flSlenderNextJump[iBossIndex] = GetGameTime() + GetProfileFloat(sSlenderProfile, "jump_cooldown", 2.0);
-		
-		decl Float:vecJump[3];
-		GetAngleVectors(angJumpReach, vecJump, NULL_VECTOR, NULL_VECTOR);
-		NormalizeVector(vecJump, vecJump);
-		ScaleVector(vecJump, flSlenderJumpSpeed);
-		AddVectors(flMoveVelocity, vecJump, flMoveVelocity);
-	}
-	else 
-	{
-		// We are in no position to defy gravity.
-		flMoveVelocity[2] = flMyVelocity[2];
-	}
-	
-	decl Float:flMoveAng[3];
-	new bool:bChangeAngles = false;
-	
-	// Process angles.
-	if (iState != STATE_ATTACK && iState != STATE_STUN)
-	{
-		if (NPCHasAttribute(iBossIndex, "always look at target"))
-		{
-			new iTarget = EntRefToEntIndex(g_iSlenderTarget[iBossIndex]);
-			
-			if (iTarget && iTarget != INVALID_ENT_REFERENCE)
-			{
-				decl Float:flTargetPos[3];
-				GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flTargetPos);
-				SubtractVectors(flTargetPos, flMyPos, flMoveAng);
-				GetVectorAngles(flMoveAng, flMoveAng);
-			}
-			else
-			{
-				SubtractVectors(flGoalPosition, flMyPos, flMoveAng);
-				GetVectorAngles(flMoveAng, flMoveAng);
-			}
-		}
-		else
-		{
-			SubtractVectors(flGoalPosition, flMyPos, flMoveAng);
-			GetVectorAngles(flMoveAng, flMoveAng);
-		}
-		
-		new Float:flTurnRate = NPCGetTurnRate(iBossIndex);
-		if (iState == STATE_CHASE) flTurnRate *= 2.0;
-		
-		flMoveAng[0] = 0.0;
-		flMoveAng[2] = 0.0;
-		flMoveAng[1] = ApproachAngle(flMoveAng[1], flMyEyeAng[1], flTurnRate * flFrameTime);
-		
-		bChangeAngles = true;
-	}
-	
-	TeleportEntity(iBoss, NULL_VECTOR, bChangeAngles ? flMoveAng : NULL_VECTOR, flMoveVelocity);
-}
-
-// Shortest-path cost function for NavMesh_BuildPath.
-public SlenderChaseBossShortestPathCost(iAreaIndex, iFromAreaIndex, iLadderIndex, any:iStepSize)
-{
-	if (iFromAreaIndex == -1)
-	{
-		return 0;
-	}
-	else
-	{
-		new iDist;
-		decl Float:flAreaCenter[3], Float:flFromAreaCenter[3];
-		NavMeshArea_GetCenter(iAreaIndex, flAreaCenter);
-		NavMeshArea_GetCenter(iFromAreaIndex, flFromAreaCenter);
-		
-		if (iLadderIndex != -1)
-		{
-			iDist = RoundFloat(NavMeshLadder_GetLength(iLadderIndex));
-		}
-		else
-		{
-			iDist = RoundFloat(GetVectorDistance(flAreaCenter, flFromAreaCenter));
-		}
-		
-		new iCost = iDist + NavMeshArea_GetCostSoFar(iFromAreaIndex);
-		
-		new iAreaFlags = NavMeshArea_GetFlags(iAreaIndex);
-		if (iAreaFlags & NAV_MESH_CROUCH) iCost += 20;
-		if (iAreaFlags & NAV_MESH_JUMP) iCost += (5 * iDist);
-		
-		if ((flAreaCenter[2] - flFromAreaCenter[2]) > iStepSize) iCost += iStepSize;
-		
-		return iCost;
-	}
 }
 
 public Action:Timer_SlenderBlinkBossThink(Handle:timer, any:entref)
@@ -6493,693 +3957,6 @@ SlenderOnClientStressUpdate(client)
 #endif
 			}
 		}
-	}
-}
-
-// As time passes on, we have to get more aggressive in order to successfully peak the target's
-// stress level in the allotted duration we're given. Otherwise we'll be forced to place him
-// in a rest period.
-
-// Teleport progressively closer as time passes in attempt to increase the target's stress level.
-// Maximum minimum range is capped by the boss's anger level.
-
-stock Float:CalculateTeleportMinRange(iBossIndex, Float:flInitialMinRange, Float:flTeleportMaxRange)
-{
-	new Float:flTeleportTargetTimeLeft = g_flSlenderTeleportMaxTargetTime[iBossIndex] - GetGameTime();
-	new Float:flTeleportTargetTimeInitial = g_flSlenderTeleportMaxTargetTime[iBossIndex] - g_flSlenderTeleportTargetTime[iBossIndex];
-	new Float:flTeleportMinRange = flTeleportMaxRange - (1.0 - (flTeleportTargetTimeLeft / flTeleportTargetTimeInitial)) * (flTeleportMaxRange - flInitialMinRange);
-	
-	if (NPCGetAnger(iBossIndex) <= 1.0)
-	{
-		flTeleportMinRange += (g_flSlenderTeleportMinRange[iBossIndex] - flTeleportMaxRange) * Pow(NPCGetAnger(iBossIndex) - 1.0, 2.0 / g_flRoundDifficultyModifier);
-	}
-	
-	if (flTeleportMinRange < flInitialMinRange) flTeleportMinRange = flInitialMinRange;
-	if (flTeleportMinRange > flTeleportMaxRange) flTeleportMinRange = flTeleportMaxRange;
-	
-	return flTeleportMinRange;
-}
-
-public Action:Timer_SlenderTeleportThink(Handle:timer, any:iBossIndex)
-{
-	if (iBossIndex == -1) return Plugin_Stop;
-	if (timer != g_hSlenderThink[iBossIndex]) return Plugin_Stop;
-	
-	if (NPCGetFlags(iBossIndex) & SFF_NOTELEPORT) return Plugin_Continue;
-	
-	// Check to see if anyone's looking at me before doing anything.
-	if (PeopleCanSeeSlender(iBossIndex, _, false))
-	{
-		return Plugin_Continue;
-	}
-	
-	if (NPCGetTeleportType(iBossIndex) == 2)
-	{
-		new iBoss = NPCGetEntIndex(iBossIndex);
-		if (iBoss && iBoss != INVALID_ENT_REFERENCE)
-		{
-			if (NPCGetType(iBossIndex) == SF2BossType_Chaser)
-			{
-				// Check to see if it's a good time to teleport away.
-				new iState = g_iSlenderState[iBossIndex];
-				if (iState == STATE_IDLE || iState == STATE_WANDER)
-				{
-					if (GetGameTime() < g_flSlenderTimeUntilKill[iBossIndex])
-					{
-						return Plugin_Continue;
-					}
-				}
-			}
-		}
-	}
-	
-	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
-	
-	if (!g_bRoundGrace)
-	{
-		if (GetGameTime() >= g_flSlenderNextTeleportTime[iBossIndex])
-		{
-			new Float:flTeleportTime = GetRandomFloat(GetProfileFloat(sProfile, "teleport_time_min", 5.0), GetProfileFloat(sProfile, "teleport_time_max", 9.0));
-			g_flSlenderNextTeleportTime[iBossIndex] = GetGameTime() + flTeleportTime;
-			
-			new iTeleportTarget = EntRefToEntIndex(g_iSlenderTeleportTarget[iBossIndex]);
-			
-			if (!iTeleportTarget || iTeleportTarget == INVALID_ENT_REFERENCE)
-			{
-				// We don't have any good targets. Remove myself for now.
-				if (SlenderCanRemove(iBossIndex)) RemoveSlender(iBossIndex);
-				
-#if defined DEBUG
-				SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: no good target, removing...", iBossIndex);
-#endif
-			}
-			else
-			{
-				new Float:flTeleportMinRange = CalculateTeleportMinRange(iBossIndex, g_flSlenderTeleportMinRange[iBossIndex], g_flSlenderTeleportMaxRange[iBossIndex]);
-				
-				new iTeleportAreaIndex = -1;
-				decl Float:flTeleportPos[3];
-				
-				// Search surrounding nav areas around target.
-				if (NavMesh_Exists())
-				{
-					decl Float:flTargetPos[3];
-					GetClientAbsOrigin(iTeleportTarget, flTargetPos);
-					
-					new iTargetAreaIndex = NavMesh_GetNearestArea(flTargetPos);
-					if (iTargetAreaIndex != -1)
-					{
-						new bool:bShouldBeBehindObstruction = false;
-						if (NPCGetTeleportType(iBossIndex) == 2)
-						{
-							bShouldBeBehindObstruction = true;
-						}
-						
-						// Search outwards until travel distance is at maximum range.
-						new Handle:hAreaArray = CreateArray(2);
-						new Handle:hAreas = CreateStack();
-						NavMesh_CollectSurroundingAreas(hAreas, iTargetAreaIndex, g_flSlenderTeleportMaxRange[iBossIndex]);
-						
-						{
-							new iPoppedAreas;
-						
-							while (!IsStackEmpty(hAreas))
-							{
-								new iAreaIndex = -1;
-								PopStackCell(hAreas, iAreaIndex);
-								
-								// Check flags.
-								if (NavMeshArea_GetFlags(iAreaIndex) & NAV_MESH_NO_HOSTAGES)
-								{
-									// Don't spawn/teleport at areas marked with the "NO HOSTAGES" flag.
-									continue;
-								}
-								
-								new iIndex = PushArrayCell(hAreaArray, iAreaIndex);
-								SetArrayCell(hAreaArray, iIndex, float(NavMeshArea_GetCostSoFar(iAreaIndex)), 1);
-								iPoppedAreas++;
-							}
-							
-#if defined DEBUG
-							SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: collected %d areas", iBossIndex, iPoppedAreas);
-#endif
-							
-							CloseHandle(hAreas);
-						}
-						
-						new Handle:hAreaArrayClose = CreateArray(4);
-						new Handle:hAreaArrayAverage = CreateArray(4);
-						new Handle:hAreaArrayFar = CreateArray(4);
-						
-						for (new i = 1; i <= 3; i++)
-						{
-							new Float:flRangeSectionMin = flTeleportMinRange + (g_flSlenderTeleportMaxRange[iBossIndex] - flTeleportMinRange) * (float(i - 1) / 3.0);
-							new Float:flRangeSectionMax = flTeleportMinRange + (g_flSlenderTeleportMaxRange[iBossIndex] - flTeleportMinRange) * (float(i) / 3.0);
-							
-							for (new i2 = 0, iSize = GetArraySize(hAreaArray); i2 < iSize; i2++)
-							{
-								new iAreaIndex = GetArrayCell(hAreaArray, i2);
-								
-								decl Float:flAreaSpawnPoint[3];
-								NavMeshArea_GetCenter(iAreaIndex, flAreaSpawnPoint);
-								
-								new iBoss = NPCGetEntIndex(iBossIndex);
-								
-								// Check space. First raise to HalfHumanHeight * 2, then trace downwards to get ground level.
-								{
-									decl Float:flTraceStartPos[3];
-									flTraceStartPos[0] = flAreaSpawnPoint[0];
-									flTraceStartPos[1] = flAreaSpawnPoint[1];
-									flTraceStartPos[2] = flAreaSpawnPoint[2] + (HalfHumanHeight * 2.0);
-									
-									decl Float:flTraceMins[3];
-									flTraceMins[0] = g_flSlenderDetectMins[iBossIndex][0];
-									flTraceMins[1] = g_flSlenderDetectMins[iBossIndex][1];
-									flTraceMins[2] = 0.0;
-									
-									decl Float:flTraceMaxs[3];
-									flTraceMaxs[0] = g_flSlenderDetectMaxs[iBossIndex][0];
-									flTraceMaxs[1] = g_flSlenderDetectMaxs[iBossIndex][1];
-									flTraceMaxs[2] = 0.0;
-									
-									new Handle:hTrace = TR_TraceHullFilterEx(flTraceStartPos,
-										flAreaSpawnPoint,
-										flTraceMins,
-										flTraceMaxs,
-										MASK_NPCSOLID,
-										TraceRayDontHitEntity,
-										iBoss);
-									
-									decl Float:flTraceHitPos[3];
-									TR_GetEndPosition(flTraceHitPos, hTrace);
-									flTraceHitPos[2] += 1.0;
-									CloseHandle(hTrace);
-									
-									if (IsSpaceOccupiedNPC(flTraceHitPos,
-										g_flSlenderDetectMins[iBossIndex],
-										g_flSlenderDetectMaxs[iBossIndex],
-										iBoss))
-									{
-										continue;
-									}
-									
-									flAreaSpawnPoint[0] = flTraceHitPos[0];
-									flAreaSpawnPoint[1] = flTraceHitPos[1];
-									flAreaSpawnPoint[2] = flTraceHitPos[2];
-								}
-								
-								// Check visibility.
-								if (IsPointVisibleToAPlayer(flAreaSpawnPoint, !bShouldBeBehindObstruction, false)) continue;
-								
-								AddVectors(flAreaSpawnPoint, g_flSlenderEyePosOffset[iBossIndex], flAreaSpawnPoint);
-								
-								if (IsPointVisibleToAPlayer(flAreaSpawnPoint, !bShouldBeBehindObstruction, false)) continue;
-								
-								SubtractVectors(flAreaSpawnPoint, g_flSlenderEyePosOffset[iBossIndex], flAreaSpawnPoint);
-								
-								new bool:bTooNear = false;
-								
-								// Check minimum range with players.
-								for (new iClient = 1; iClient <= MaxClients; iClient++)
-								{
-									if (!IsClientInGame(iClient) ||
-										!IsPlayerAlive(iClient) ||
-										g_bPlayerEliminated[iClient] ||
-										IsClientInGhostMode(iClient) || 
-										DidClientEscape(iClient))
-									{
-										continue;
-									}
-									
-									decl Float:flTempPos[3];
-									GetClientAbsOrigin(iClient, flTempPos);
-									
-									if (GetVectorDistance(flAreaSpawnPoint, flTempPos) <= g_flSlenderTeleportMinRange[iBossIndex])
-									{
-										bTooNear = true;
-										break;
-									}
-								}
-								
-								if (bTooNear) continue;	// This area is not compatible.
-								
-								// Check minimum range with boss copies (if supported).
-								if (NPCGetFlags(iBossIndex) & SFF_COPIES)
-								{
-									new Float:flMinDistBetweenBosses = GetProfileFloat(sProfile, "copy_teleport_dist_from_others", 800.0);
-									
-									for (new iBossCheck = 0; iBossCheck < MAX_BOSSES; iBossCheck++)
-									{
-										if (iBossCheck == iBossIndex ||
-											NPCGetUniqueID(iBossCheck) == -1 ||
-											(g_iSlenderCopyMaster[iBossIndex] != iBossCheck && g_iSlenderCopyMaster[iBossIndex] != g_iSlenderCopyMaster[iBossCheck]))
-										{
-											continue;
-										}
-										
-										new iBossEnt = NPCGetEntIndex(iBossCheck);
-										if (!iBossEnt || iBossEnt == INVALID_ENT_REFERENCE) continue;
-										
-										decl Float:flTempPos[3];
-										SlenderGetAbsOrigin(iBossCheck, flTempPos);
-										
-										if (GetVectorDistance(flAreaSpawnPoint, flTempPos) <= flMinDistBetweenBosses)
-										{
-											bTooNear = true;
-											break;
-										}
-									}
-								}
-								
-								if (bTooNear) continue;	// This area is not compatible.
-								
-								// Check travel distance and put in the appropriate arrays.
-								new Float:flDist = Float:GetArrayCell(hAreaArray, i2, 1);
-								if (flDist > flRangeSectionMin && flDist < flRangeSectionMax)
-								{
-									new iIndex = -1;
-									new Handle:hTargetAreaArray = INVALID_HANDLE;
-									
-									switch (i)
-									{
-										case 1: 
-										{
-											iIndex = PushArrayCell(hAreaArrayClose, iAreaIndex);
-											hTargetAreaArray = hAreaArrayClose;
-										}
-										case 2: 
-										{
-											iIndex = PushArrayCell(hAreaArrayAverage, iAreaIndex);
-											hTargetAreaArray = hAreaArrayAverage;
-										}
-										case 3: 
-										{
-											iIndex = PushArrayCell(hAreaArrayFar, iAreaIndex);
-											hTargetAreaArray = hAreaArrayFar;
-										}
-									}
-									
-									if (hTargetAreaArray != INVALID_HANDLE && iIndex != -1)
-									{
-										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[0], 1);
-										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[1], 2);
-										SetArrayCell(hTargetAreaArray, iIndex, flAreaSpawnPoint[2], 3);
-									}
-								}
-							}
-						}
-						
-						CloseHandle(hAreaArray);
-						
-#if defined DEBUG
-						SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: collected %d close areas, %d average areas, %d far areas", iBossIndex, GetArraySize(hAreaArrayClose),
-							GetArraySize(hAreaArrayAverage),
-							GetArraySize(hAreaArrayFar));
-#endif
-						
-						new iArrayIndex = -1;
-						
-						if (GetArraySize(hAreaArrayClose))
-						{
-							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayClose) - 1);
-							iTeleportAreaIndex = GetArrayCell(hAreaArrayClose, iArrayIndex);
-							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 1);
-							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 2);
-							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayClose, iArrayIndex, 3);
-						}
-						else if (GetArraySize(hAreaArrayAverage))
-						{
-							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayAverage) - 1);
-							iTeleportAreaIndex = GetArrayCell(hAreaArrayAverage, iArrayIndex);
-							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 1);
-							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 2);
-							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayAverage, iArrayIndex, 3);
-						}
-						else if (GetArraySize(hAreaArrayFar))
-						{
-							iArrayIndex = GetRandomInt(0, GetArraySize(hAreaArrayFar) - 1);
-							iTeleportAreaIndex = GetArrayCell(hAreaArrayFar, iArrayIndex);
-							flTeleportPos[0] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 1);
-							flTeleportPos[1] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 2);
-							flTeleportPos[2] = Float:GetArrayCell(hAreaArrayFar, iArrayIndex, 3);
-						}
-						
-						CloseHandle(hAreaArrayClose);
-						CloseHandle(hAreaArrayAverage);
-						CloseHandle(hAreaArrayFar);
-					}
-					else
-					{
-#if defined DEBUG
-						SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because target is not on nav mesh!", iBossIndex);
-#endif
-					}
-				}
-				else
-				{
-#if defined DEBUG
-					SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because of lack of nav mesh!", iBossIndex);
-#endif
-				}
-				
-				if (iTeleportAreaIndex == -1)
-				{
-					// We don't have any good areas. Remove myself for now.
-					if (SlenderCanRemove(iBossIndex)) RemoveSlender(iBossIndex);
-				}
-				else
-				{
-					SpawnSlender(iBossIndex, flTeleportPos);
-					
-					if (NPCGetFlags(iBossIndex) & SFF_HASJUMPSCARE)
-					{
-						new bool:bDidJumpScare = false;
-						
-						for (new i = 1; i <= MaxClients; i++)
-						{
-							if (!IsClientInGame(i) || !IsPlayerAlive(i) || g_bPlayerEliminated[i] || IsClientInGhostMode(i)) continue;
-							
-							if (PlayerCanSeeSlender(i, iBossIndex, false))
-							{
-								if ((NPCGetDistanceFromEntity(iBossIndex, i) <= GetProfileFloat(sProfile, "jumpscare_distance") &&
-									GetGameTime() >= g_flSlenderNextJumpScare[iBossIndex]) ||
-									PlayerCanSeeSlender(i, iBossIndex))
-								{
-									bDidJumpScare = true;
-								
-									new Float:flJumpScareDuration = GetProfileFloat(sProfile, "jumpscare_duration");
-									ClientDoJumpScare(i, iBossIndex, flJumpScareDuration);
-								}
-							}
-						}
-						
-						if (bDidJumpScare)
-						{
-							g_flSlenderNextJumpScare[iBossIndex] = GetGameTime() + GetProfileFloat(sProfile, "jumpscare_cooldown");
-						}
-					}
-				}
-			}
-		}
-		else
-		{
-#if defined DEBUG
-			SendDebugMessageToPlayers(DEBUG_BOSS_TELEPORTATION, 0, "Teleport for boss %d: failed because of teleport time (curtime: %f, teletime: %f)", iBossIndex, GetGameTime(), g_flSlenderNextTeleportTime[iBossIndex]);
-#endif
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
-public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
-{
-	if (!g_bEnabled) return;
-
-	new slender = EntRefToEntIndex(entref);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return;
-	
-	new iBossIndex = NPCGetFromEntIndex(slender);
-	if (iBossIndex == -1) return;
-	
-	if (timer != g_hSlenderAttackTimer[iBossIndex]) return;
-	
-	if (NPCGetFlags(iBossIndex) & SFF_FAKE)
-	{
-		SlenderMarkAsFake(iBossIndex);
-		return;
-	}
-	
-	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
-	
-	new bool:bAttackEliminated = bool:(NPCGetFlags(iBossIndex) & SFF_ATTACKWAITERS);
-	
-	new Float:flDamage = NPCChaserGetAttackDamage(iBossIndex, 0);
-	new Float:flDamageVsProps = NPCChaserGetAttackDamageVsProps(iBossIndex, 0);
-	new iDamageType = NPCChaserGetAttackDamageType(iBossIndex, 0);
-	
-	// Damage all players within range.
-	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
-	NPCGetEyePosition(iBossIndex, flMyEyePos);
-	GetEntPropVector(slender, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	AddVectors(g_flSlenderEyePosOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
-	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
-	
-	decl Float:flViewPunch[3];
-	GetProfileVector(sProfile, "attack_punchvel", flViewPunch);
-	
-	decl Float:flTargetDist;
-	decl Handle:hTrace;
-	
-	new Float:flAttackRange = NPCChaserGetAttackRange(iBossIndex, 0);
-	new Float:flAttackFOV = NPCChaserGetAttackSpread(iBossIndex, 0);
-	new Float:flAttackDamageForce = NPCChaserGetAttackDamageForce(iBossIndex, 0);
-	
-	new bool:bHit = false;
-	
-	{
-		new prop = -1;
-		while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
-		{
-			if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
-			{
-				bHit = true;
-				SDKHooks_TakeDamage(prop, slender, slender, flDamageVsProps, iDamageType, _, _, flMyEyePos);
-			}
-		}
-		
-		prop = -1;
-		while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
-		{
-			if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
-			{
-				if (SlenderAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
-				{
-					bHit = true;
-					SDKHooks_TakeDamage(prop, slender, slender, flDamageVsProps, iDamageType, _, _, flMyEyePos);
-				}
-			}
-		}
-	}
-	
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i) || !IsPlayerAlive(i) || IsClientInGhostMode(i)) continue;
-		
-		if (!bAttackEliminated && g_bPlayerEliminated[i]) continue;
-		
-		decl Float:flTargetPos[3];
-		GetClientEyePosition(i, flTargetPos);
-		
-		hTrace = TR_TraceRayFilterEx(flMyEyePos,
-			flTargetPos,
-			MASK_NPCSOLID,
-			RayType_EndPoint,
-			TraceRayDontHitEntity,
-			slender);
-		
-		new bool:bTraceDidHit = TR_DidHit(hTrace);
-		new iTraceHitEntity = TR_GetEntityIndex(hTrace);
-		CloseHandle(hTrace);
-		
-		if (bTraceDidHit && iTraceHitEntity != i)
-		{
-			decl Float:flTargetMins[3], Float:flTargetMaxs[3];
-			GetEntPropVector(i, Prop_Send, "m_vecMins", flTargetMins);
-			GetEntPropVector(i, Prop_Send, "m_vecMaxs", flTargetMaxs);
-			GetClientAbsOrigin(i, flTargetPos);
-			for (new i2 = 0; i2 < 3; i2++) flTargetPos[i2] += ((flTargetMins[i2] + flTargetMaxs[i2]) / 2.0);
-			
-			hTrace = TR_TraceRayFilterEx(flMyEyePos,
-				flTargetPos,
-				MASK_NPCSOLID,
-				RayType_EndPoint,
-				TraceRayDontHitEntity,
-				slender);
-				
-			bTraceDidHit = TR_DidHit(hTrace);
-			iTraceHitEntity = TR_GetEntityIndex(hTrace);
-			CloseHandle(hTrace);
-		}
-		
-		if (!bTraceDidHit || iTraceHitEntity == i)
-		{
-			flTargetDist = GetVectorDistance(flTargetPos, flMyEyePos);
-			
-			if (flTargetDist <= flAttackRange)
-			{
-				decl Float:flDirection[3];
-				SubtractVectors(flTargetPos, flMyEyePos, flDirection);
-				GetVectorAngles(flDirection, flDirection);
-				
-				if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV)
-				{
-					bHit = true;
-					GetAngleVectors(flDirection, flDirection, NULL_VECTOR, NULL_VECTOR);
-					NormalizeVector(flDirection, flDirection);
-					ScaleVector(flDirection, flAttackDamageForce);
-					
-					Call_StartForward(fOnClientDamagedByBoss);
-					Call_PushCell(i);
-					Call_PushCell(iBossIndex);
-					Call_PushCell(slender);
-					Call_PushFloat(flDamage);
-					Call_PushCell(iDamageType);
-					Call_Finish();
-					
-					SDKHooks_TakeDamage(i, slender, slender, flDamage, iDamageType, _, flDirection, flMyEyePos);
-					ClientViewPunch(i, flViewPunch);
-					
-					if (NPCHasAttribute(iBossIndex, "bleed player on hit"))
-					{
-						new Float:flDuration = NPCGetAttributeValue(iBossIndex, "bleed player on hit");
-						if (flDuration > 0.0)
-						{
-							TF2_MakeBleed(i, slender, flDuration);
-						}
-					}
-					
-					// Add stress
-					new Float:flStressScalar = flDamage / 125.0;
-					if (flStressScalar > 1.0) flStressScalar = 1.0;
-					ClientAddStress(i, 0.33 * flStressScalar);
-				}
-			}
-		}
-	}
-	
-	decl String:sSoundPath[PLATFORM_MAX_PATH];
-	
-	if (bHit)
-	{
-		// Fling it.
-		new phys = CreateEntityByName("env_physexplosion");
-		if (phys != -1)
-		{
-			TeleportEntity(phys, flMyEyePos, NULL_VECTOR, NULL_VECTOR);
-			DispatchKeyValue(phys, "spawnflags", "1");
-			DispatchKeyValueFloat(phys, "radius", flAttackRange);
-			DispatchKeyValueFloat(phys, "magnitude", flAttackDamageForce);
-			DispatchSpawn(phys);
-			ActivateEntity(phys);
-			AcceptEntityInput(phys, "Explode");
-			AcceptEntityInput(phys, "Kill");
-		}
-		
-		GetRandomStringFromProfile(sProfile, "sound_hitenemy", sSoundPath, sizeof(sSoundPath));
-		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
-	}
-	else
-	{
-		GetRandomStringFromProfile(sProfile, "sound_missenemy", sSoundPath, sizeof(sSoundPath));
-		if (sSoundPath[0]) EmitSoundToAll(sSoundPath, slender, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
-	}
-	
-	g_hSlenderAttackTimer[iBossIndex] = CreateTimer(GetProfileFloat(sProfile, "attack_endafter"), Timer_SlenderChaseBossAttackEnd, entref, TIMER_FLAG_NO_MAPCHANGE);
-}
-
-SlenderAttackValidateTarget(iBossIndex, iTarget, Float:flAttackRange, Float:flAttackFOV)
-{
-	new iBoss = NPCGetEntIndex(iBossIndex);
-	
-	decl Float:flMyEyePos[3], Float:flMyEyeAng[3];
-	NPCGetEyePosition(iBossIndex, flMyEyePos);
-	GetEntPropVector(iBoss, Prop_Data, "m_angAbsRotation", flMyEyeAng);
-	AddVectors(g_flSlenderEyeAngOffset[iBossIndex], flMyEyeAng, flMyEyeAng);
-	for (new i = 0; i < 3; i++) flMyEyeAng[i] = AngleNormalize(flMyEyeAng[i]);
-	
-	decl Float:flTargetPos[3], Float:flTargetMins[3], Float:flTargetMaxs[3];
-	GetEntPropVector(iTarget, Prop_Data, "m_vecAbsOrigin", flTargetPos);
-	GetEntPropVector(iTarget, Prop_Send, "m_vecMins", flTargetMins);
-	GetEntPropVector(iTarget, Prop_Send, "m_vecMaxs", flTargetMaxs);
-	
-	for (new i = 0; i < 3; i++)
-	{
-		flTargetPos[i] += (flTargetMins[i] + flTargetMaxs[i]) / 2.0;
-	}
-	
-	new Float:flTargetDist = GetVectorDistance(flTargetPos, flMyEyePos);
-	if (flTargetDist <= flAttackRange)
-	{
-		decl Float:flDirection[3];
-		SubtractVectors(g_flSlenderGoalPos[iBossIndex], flMyEyePos, flDirection);
-		GetVectorAngles(flDirection, flDirection);
-		
-		if (FloatAbs(AngleDiff(flDirection[1], flMyEyeAng[1])) <= flAttackFOV / 2.0)
-		{
-			new Handle:hTrace = TR_TraceRayFilterEx(flMyEyePos,
-				flTargetPos,
-				MASK_NPCSOLID,
-				RayType_EndPoint,
-				TraceRayDontHitEntity,
-				iBoss);
-				
-			new bool:bTraceDidHit = TR_DidHit(hTrace);
-			new iTraceHitEntity = TR_GetEntityIndex(hTrace);
-			CloseHandle(hTrace);
-			
-			if (!bTraceDidHit || iTraceHitEntity == iTarget)
-			{
-				return true;
-			}
-		}
-	}
-	
-	return false;
-}
-
-public Action:Timer_SlenderChaseBossAttackEnd(Handle:timer, any:entref)
-{
-	if (!g_bEnabled) return;
-
-	new slender = EntRefToEntIndex(entref);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return;
-	
-	new iBossIndex = NPCGetFromEntIndex(slender);
-	if (iBossIndex == -1) return;
-	
-	if (timer != g_hSlenderAttackTimer[iBossIndex]) return;
-	
-	g_bSlenderAttacking[iBossIndex] = false;
-	g_hSlenderAttackTimer[iBossIndex] = INVALID_HANDLE;
-}
-
-SlenderPerformVoice(iBossIndex, const String:sSectionName[], iIndex=-1)
-{
-	if (iBossIndex == -1) return;
-
-	new slender = NPCGetEntIndex(iBossIndex);
-	if (!slender || slender == INVALID_ENT_REFERENCE) return;
-	
-	decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
-	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
-	
-	decl String:sPath[PLATFORM_MAX_PATH];
-	GetRandomStringFromProfile(sProfile, sSectionName, sPath, sizeof(sPath), iIndex);
-	if (sPath[0])
-	{
-		decl String:sBuffer[512];
-		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
-		StrCat(sBuffer, sizeof(sBuffer), "_cooldown_min");
-		new Float:flCooldownMin = GetProfileFloat(sProfile, sBuffer, 1.5);
-		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
-		StrCat(sBuffer, sizeof(sBuffer), "_cooldown_max");
-		new Float:flCooldownMax = GetProfileFloat(sProfile, sBuffer, 1.5);
-		new Float:flCooldown = GetRandomFloat(flCooldownMin, flCooldownMax);
-		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
-		StrCat(sBuffer, sizeof(sBuffer), "_volume");
-		new Float:flVolume = GetProfileFloat(sProfile, sBuffer, 1.0);
-		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
-		StrCat(sBuffer, sizeof(sBuffer), "_channel");
-		new iChannel = GetProfileNum(sProfile, sBuffer, SNDCHAN_AUTO);
-		strcopy(sBuffer, sizeof(sBuffer), sSectionName);
-		StrCat(sBuffer, sizeof(sBuffer), "_level");
-		new iLevel = GetProfileNum(sProfile, sBuffer, SNDLEVEL_SCREAMING);
-		
-		g_flSlenderNextVoiceSound[iBossIndex] = GetGameTime() + flCooldown;
-		EmitSoundToAll(sPath, slender, iChannel, iLevel, _, flVolume);
 	}
 }
 
@@ -8386,6 +5163,7 @@ static InitializeMapEntities()
 	
 	g_bRoundInfiniteFlashlight = false;
 	g_bRoundInfiniteBlink = false;
+	g_bRoundInfiniteSprint = false;
 	g_bRoundHasEscapeObjective = false;
 	
 	g_iRoundTimeLimit = GetConVarInt(g_cvTimeLimit);
@@ -8458,6 +5236,10 @@ static InitializeMapEntities()
 			else if (!StrContains(targetName, "sf2_infiniteblink", false))
 			{
 				g_bRoundInfiniteBlink = true;
+			}
+			else if (!StrContains(targetName, "sf2_infinitesprint", false))
+			{
+				g_bRoundInfiniteSprint = true;
 			}
 			else if (!StrContains(targetName, "sf2_time_limit_", false))
 			{
@@ -8683,6 +5465,39 @@ static HandleSpecialRoundState()
 #endif
 }
 
+bool:IsNewBossRoundRunning()
+{
+	return g_bNewBossRound;
+}
+
+/**
+ *	Returns an array which contains all the profile names valid to be chosen for a new boss round.
+ */
+static Handle:GetNewBossRoundProfileList()
+{
+	new Handle:hBossList = CloneArray(GetSelectableBossProfileList());
+	
+	if (GetArraySize(hBossList) > 0)
+	{
+		decl String:sMainBoss[SF2_MAX_PROFILE_NAME_LENGTH];
+		GetConVarString(g_cvBossMain, sMainBoss, sizeof(sMainBoss));
+		
+		new index = FindStringInArray(hBossList, sMainBoss);
+		if (index != -1)
+		{
+			// Main boss exists; remove him from the list.
+			RemoveFromArray(hBossList, index);
+		}
+		else
+		{
+			// Main boss doesn't exist; remove the first boss from the list.
+			RemoveFromArray(hBossList, 0);
+		}
+	}
+	
+	return hBossList;
+}
+
 static HandleNewBossRoundState()
 {
 #if defined DEBUG
@@ -8721,12 +5536,16 @@ static HandleNewBossRoundState()
 		}
 	}
 	
-	new iRoundInterval = GetConVarInt(g_cvNewBossRoundInterval);
-	
-	if (iRoundInterval > 0 && g_iNewBossRoundCount >= iRoundInterval)
+	// Don't force a new special round while a continuous round is going on.
+	if (!g_bNewBossRoundContinuous)
 	{
-		g_bNewBossRound = true;
-		bForceNew = true;
+		new iRoundInterval = GetConVarInt(g_cvNewBossRoundInterval);
+		
+		if (/*iRoundInterval > 0 &&*/ iRoundInterval <= 0 || g_iNewBossRoundCount >= iRoundInterval)
+		{
+			g_bNewBossRound = true;
+			bForceNew = true;
+		}
 	}
 	
 	// Do boss round force override and reset it.
@@ -8739,10 +5558,14 @@ static HandleNewBossRoundState()
 	// Check if we have enough bosses.
 	if (g_bNewBossRound)
 	{
-		if (GetArraySize(GetSelectableBossProfileList()) < 2)
+		new Handle:hBossList = GetNewBossRoundProfileList();
+	
+		if (GetArraySize(hBossList) < 1)
 		{
 			g_bNewBossRound = false; // Not enough bosses.
 		}
+		
+		CloseHandle(hBossList);
 	}
 	
 	if (g_bNewBossRound)
@@ -8817,7 +5640,11 @@ static SelectStartingBossesForRound()
 	{
 		if (g_bNewBossRoundNew)
 		{
-			GetArrayString(hSelectableBossList, GetRandomInt(0, GetArraySize(hSelectableBossList) - 1), g_strNewBossRoundProfile, sizeof(g_strNewBossRoundProfile));
+			new Handle:hBossList = GetNewBossRoundProfileList();
+		
+			GetArrayString(hBossList, GetRandomInt(0, GetArraySize(hBossList) - 1), g_strNewBossRoundProfile, sizeof(g_strNewBossRoundProfile));
+		
+			CloseHandle(hBossList);
 		}
 		
 		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), g_strNewBossRoundProfile);
@@ -8837,6 +5664,11 @@ static SelectStartingBossesForRound()
 			{
 				// Pick the first boss in our array if the main boss doesn't exist.
 				GetArrayString(hSelectableBossList, 0, g_strRoundBossProfile, sizeof(g_strRoundBossProfile));
+			}
+			else
+			{
+				// No bosses to pick. What?
+				strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), "");
 			}
 		}
 	}
@@ -9110,10 +5942,6 @@ public Action:Timer_IntroTextSequence(Handle:timer)
 	
 	if (g_iRoundIntroText != 0)
 	{
-		decl String:sTargetname[64];
-		Format(sTargetname, sizeof(sTargetname), "sf2_intro_text_%d", g_iRoundIntroText);
-		
-		new iGameText = INVALID_ENT_REFERENCE;
 		new bool:bFoundGameText = false;
 		
 		new iClients[MAXPLAYERS + 1];
@@ -9129,21 +5957,18 @@ public Action:Timer_IntroTextSequence(Handle:timer)
 		
 		if (!g_bRoundIntroTextDefault)
 		{
-			while ((iGameText = FindEntityByClassname(iGameText, "game_text")) != -1)
+			decl String:sTargetname[64];
+			Format(sTargetname, sizeof(sTargetname), "sf2_intro_text_%d", g_iRoundIntroText);
+		
+			new iGameText = FindEntityByTargetname(sTargetname, "game_text");
+			if (iGameText && iGameText != INVALID_ENT_REFERENCE)
 			{
-				decl String:sName[64];
-				GetEntPropString(iGameText, Prop_Data, "m_iName", sName, sizeof(sName));
+				bFoundGameText = true;
+				flDuration = GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fadeinTime") + GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fadeoutTime") + GetEntPropFloat(iGameText, Prop_Data, "m_textParms.holdTime");
 				
-				if (StrEqual(sName, sTargetname, false))
-				{
-					bFoundGameText = true;
-					flDuration = GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fadeinTime") + GetEntPropFloat(iGameText, Prop_Data, "m_textParms.fadeoutTime") + GetEntPropFloat(iGameText, Prop_Data, "m_textParms.holdTime");
-					
-					decl String:sMessage[512];
-					GetEntPropString(iGameText, Prop_Data, "m_iszMessage", sMessage, sizeof(sMessage));
-					ShowHudTextUsingTextEntity(iClients, iClientsNum, iGameText, g_hHudSync, sMessage);
-					break;
-				}
+				decl String:sMessage[512];
+				GetEntPropString(iGameText, Prop_Data, "m_iszMessage", sMessage, sizeof(sMessage));
+				ShowHudTextUsingTextEntity(iClients, iClientsNum, iGameText, g_hHudSync, sMessage);
 			}
 		}
 		else
