@@ -78,7 +78,7 @@ SendPlayerGroupInvitation(client, iGroupID, iInviter=-1)
 		return;
 	}
 	
-	if (GetPlayerGroupMemberCount(iGroupIndex) >= GetConVarInt(g_cvMaxPlayers))
+	if (GetPlayerGroupMemberCount(iGroupIndex) >= GetMaxPlayersForRound())
 	{
 		if (IsValidClient(iInviter))
 		{
@@ -166,7 +166,7 @@ public Menu_GroupInvite(Handle:menu, MenuAction:action, param1, param2)
 						CPrintToChat(param1, "%T", "SF2 In Another Group", param1);
 					}
 				}
-				else if (GetPlayerGroupMemberCount(iGroupIndex) >= GetConVarInt(g_cvMaxPlayers))
+				else if (GetPlayerGroupMemberCount(iGroupIndex) >= GetMaxPlayersForRound())
 				{
 					CPrintToChat(param1, "%T", "SF2 Group Is Full", param1);
 				}
@@ -281,7 +281,7 @@ CheckPlayerGroup(iGroupIndex)
 		}
 		
 		iMemberCount = GetPlayerGroupMemberCount(iGroupIndex);
-		new iMaxPlayers = GetConVarInt(g_cvMaxPlayers);
+		new iMaxPlayers = GetMaxPlayersForRound();
 		new iExcessMemberCount = (iMemberCount - iMaxPlayers);
 		
 		if (iExcessMemberCount > 0)

@@ -369,6 +369,7 @@ new Handle:g_cvGraceTime;
 new Handle:g_cvAllChat;
 new Handle:g_cv20Dollars;
 new Handle:g_cvMaxPlayers;
+new Handle:g_cvMaxPlayersOverride;
 new Handle:g_cvCampingEnabled;
 new Handle:g_cvCampingMaxStrikes;
 new Handle:g_cvCampingStrikesWarn;
@@ -645,8 +646,11 @@ public OnPluginStart()
 	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cv20Dollars, OnConVarChanged);
 	
-	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players than can be in one round.", _, true, 1.0);
+	g_cvMaxPlayers = CreateConVar("sf2_maxplayers", "5", "The maximum amount of players that can be in one round.", _, true, 1.0);
 	HookConVarChange(g_cvMaxPlayers, OnConVarChanged);
+	
+	g_cvMaxPlayersOverride = CreateConVar("sf2_maxplayers_override", "-1", "Overrides the maximum amount of players that can be in one round.", _, true, -1.0);
+	HookConVarChange(g_cvMaxPlayersOverride, OnConVarChanged);
 	
 	g_cvCampingEnabled = CreateConVar("sf2_anticamping_enabled", "1", "Enable/Disable anti-camping system for RED.", _, true, 0.0, true, 1.0);
 	g_cvCampingMaxStrikes = CreateConVar("sf2_anticamping_maxstrikes", "4", "How many 5-second intervals players are allowed to stay in one spot before he/she is forced to suicide.", _, true, 0.0);
@@ -2528,6 +2532,13 @@ public Action:Timer_WelcomeMessage(Handle:timer, any:userid)
 	CPrintToChat(client, "%T", "SF2 Welcome Message", client);
 }
 
+GetMaxPlayersForRound()
+{
+	new iOverride = GetConVarInt(g_cvMaxPlayersOverride);
+	if (iOverride != -1) return iOverride;
+	return GetConVarInt(g_cvMaxPlayers);
+}
+
 public OnConVarChanged(Handle:cvar, const String:oldValue[], const String:newValue[])
 {
 	if (cvar == g_cvDifficulty)
@@ -2540,7 +2551,7 @@ public OnConVarChanged(Handle:cvar, const String:oldValue[], const String:newVal
 			default: g_flRoundDifficultyModifier = DIFFICULTY_NORMAL;
 		}
 	}
-	else if (cvar == g_cvMaxPlayers)
+	else if (cvar == g_cvMaxPlayers || cvar == g_cvMaxPlayersOverride)
 	{
 		for (new i = 0; i < SF2_MAX_PLAYER_GROUPS; i++)
 		{
@@ -5868,7 +5879,7 @@ InitializeNewGame()
 	
 	SelectStartingBossesForRound();
 	
-	ForceInNextPlayersInQueue(GetConVarInt(g_cvMaxPlayers));
+	ForceInNextPlayersInQueue(GetMaxPlayersForRound());
 	
 	// Respawn all players, if needed.
 	for (new i = 1; i <= MaxClients; i++)
