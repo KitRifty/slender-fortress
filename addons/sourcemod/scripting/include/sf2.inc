@@ -73,6 +73,15 @@ enum
 	Static_Decrease
 };
 
+enum
+{
+	SF2BossType_Unknown = -1,
+	SF2BossType_Static = 0,
+	SF2BossType_Creeper,
+	SF2BossType_Chaser,
+	SF2BossType_MaxTypes
+};
+
 enum SF2RoundState
 {
 	SF2RoundState_Invalid = -1,
