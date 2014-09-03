@@ -5,4 +5,4 @@ Slender Fortress
 
 A modification of Team Fortress 2 based on the game Slender: The Eight Pages.
 
-Wiki and more information located here: https://github.com/KitRifty/slender-fortress/wiki
+Wiki, installation instructions, and more located here: https://github.com/KitRifty/slender-fortress/wiki
