@@ -49,6 +49,7 @@ enum SF2NPCAdvChaser_BaseAttack
 	Float:SF2NPCAdvChaser_BaseAttackCooldown,
 	Float:SF2NPCAdvChaser_BaseAttackNextAttackTime,
 	String:SF2NPCAdvChaser_BaseAttackAnimation[64]
+	Float:SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate
 };
 
 // Generic stuff.
@@ -188,6 +189,11 @@ Float:NPCAdvChaser_GetAttackBeginFOV(iNPCIndex, iAttackIndex)
 NPCAdvChaser_GetAttackAnimation(iNPCIndex, iAttackIndex, String:buffer[], bufferlen)
 {
 	strcopy(buffer, bufferlen, g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimation]);
+}
+
+Float:NPCAdvChaser_GetAttackAnimationPlaybackRate(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate];
 }
 
 NPCAdvChaser_GetInterruptConditions(iNPCIndex)
