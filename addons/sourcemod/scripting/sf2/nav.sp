@@ -6,32 +6,70 @@
 #define JumpCrouchHeight 58.0
 
 #if defined METHODMAPS
- #include "sf2/nav_methodmap.sp"
+
+methodmap NavPath < Handle
+{
+	public NavPath()
+	{
+		return NavPath:CreateNavPath();
+	}
+
+	public int AddNodeToHead(float nodePos[3])
+	{
+		return NavPathAddNodeToHead(this, nodePos);
+	}
+	
+	public int AddNodeToTail(float nodePos[3])
+	{
+		return NavPathAddNodeToTail(this, nodePos);
+	}
+	
+	public void GetNodePosition(int nodeIndex, float buffer[3])
+	{
+		NavPathGetNodePosition(this, nodeIndex, buffer);
+	}
+	
+	public int GetNodeAreaIndex(int nodeIndex)
+	{
+		return NavPathGetNodeAreaIndex(this, nodeIndex);
+	}
+	
+	public int GetNodeLadderIndex(int nodeIndex)
+	{
+		return NavPathGetNodeLadderIndex(this, nodeIndex);
+	}
+	
+	public bool ConstructPathFromPoints(float startPos[3], float endPos[3], float nearestAreaRadius, Function costFunction, any costData, bool populateIfIncomplete = true, int &closestAreaIndex = -1)
+	{
+		return NavPathConstructPathFromPoints(this, startPos, endPos, nearestAreaRadius, costFunction, costData, populateIfIncomplete, closestAreaIndex);
+	}
+}
+
 #endif
 
-Handle:CreateNavPath()
+stock Handle:CreateNavPath()
 {
 	return CreateArray(5);
 }
 
-NavPathGetNodePosition(Handle:hNavPath, iNodeIndex, Float:buffer[3])
+stock NavPathGetNodePosition(Handle:hNavPath, iNodeIndex, Float:buffer[3])
 {
 	buffer[0] = Float:GetArrayCell(hNavPath, iNodeIndex, 0);
 	buffer[1] = Float:GetArrayCell(hNavPath, iNodeIndex, 1);
 	buffer[2] = Float:GetArrayCell(hNavPath, iNodeIndex, 2);
 }
 
-NavPathGetNodeAreaIndex(Handle:hNavPath, iNodeIndex)
+stock NavPathGetNodeAreaIndex(Handle:hNavPath, iNodeIndex)
 {
 	return GetArrayCell(hNavPath, iNodeIndex, 3);
 }
 
-NavPathGetNodeLadderIndex(Handle:hNavPath, iNodeIndex)
+stock NavPathGetNodeLadderIndex(Handle:hNavPath, iNodeIndex)
 {
 	return GetArrayCell(hNavPath, iNodeIndex, 4);
 }
 
-NavPathAddNodeToHead(Handle:hNavPath, const Float:flNodePos[3], iNodeAreaIndex, iLadderIndex=-1)
+stock NavPathAddNodeToHead(Handle:hNavPath, const Float:flNodePos[3], iNodeAreaIndex, iLadderIndex=-1)
 {
 	new iIndex = -1;
 
@@ -53,7 +91,7 @@ NavPathAddNodeToHead(Handle:hNavPath, const Float:flNodePos[3], iNodeAreaIndex, 
 	return iIndex;
 }
 
-NavPathAddNodeToTail(Handle:hNavPath, const Float:flNodePos[3], iNodeAreaIndex, iLadderIndex=-1)
+stock NavPathAddNodeToTail(Handle:hNavPath, const Float:flNodePos[3], iNodeAreaIndex, iLadderIndex=-1)
 {
 	new iIndex = PushArrayArray(hNavPath, flNodePos, 3);
 	SetArrayCell(hNavPath, iIndex, iNodeAreaIndex, 3);
@@ -62,7 +100,10 @@ NavPathAddNodeToTail(Handle:hNavPath, const Float:flNodePos[3], iNodeAreaIndex, 
 	return iIndex;
 }
 
-bool:NavPathConstructTrivialPath(Handle:hNavPath, const Float:flStartPos[3], const Float:flEndPos[3], Float:flNearestAreaRadius)
+/**
+ *	Constructs a straight path leading from flStartPos to flEndPos. Useful if both points are within the same area, so pathing around is unnecessary.
+ */
+stock bool:NavPathConstructTrivialPath(Handle:hNavPath, const Float:flStartPos[3], const Float:flEndPos[3], Float:flNearestAreaRadius)
 {
 	ClearArray(hNavPath);
 
@@ -93,7 +134,7 @@ bool:NavPathConstructTrivialPath(Handle:hNavPath, const Float:flStartPos[3], con
 /**
  *	Constructs a path leading from flStartPos to flEndPos. First node index (0) is the start of the path, last node index is the end.
  */
-bool:NavPathConstructPathFromPoints(Handle:hNavPath, const Float:flStartPos[3], const Float:flEndPos[3], Float:flNearestAreaRadius, Function:fCostFunction, any:iCostData=-1, bool:bPopulateIfIncomplete=false, &iClosestAreaIndex=0)
+stock bool:NavPathConstructPathFromPoints(Handle:hNavPath, const Float:flStartPos[3], const Float:flEndPos[3], Float:flNearestAreaRadius, Function:fCostFunction, any:iCostData=-1, bool:bPopulateIfIncomplete=false, &iClosestAreaIndex=0)
 {
 	ClearArray(hNavPath);
 	
@@ -534,7 +575,7 @@ stock FindAheadPathPoint(Handle:hNavPath, Float:flAheadRange, iPathNodeIndex, co
 }
 
 
-CalculateFeelerReflexAdjustment(const Float:flOriginalMovePos[3], 
+stock CalculateFeelerReflexAdjustment(const Float:flOriginalMovePos[3], 
 	const Float:flOriginalFeetPos[3], 
 	const Float:flFloorNormalDir[3],
 	Float:flFeelerHeight, 

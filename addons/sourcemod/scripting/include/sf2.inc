@@ -79,6 +79,7 @@ enum
 	SF2BossType_Static = 0,
 	SF2BossType_Creeper,
 	SF2BossType_Chaser,
+	SF2BossType_AdvancedChaser,
 	SF2BossType_MaxTypes
 };
 
