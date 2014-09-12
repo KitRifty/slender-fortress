@@ -35,15 +35,178 @@ static Float:g_flNPCAnger[MAX_BOSSES] = { 1.0, ... };
 static Float:g_flNPCAngerAddOnPageGrab[MAX_BOSSES] = { 0.0, ... };
 static Float:g_flNPCAngerAddOnPageGrabTimeDiff[MAX_BOSSES] = { 0.0, ... };
 
-static Float:g_flNPCSearchRadius[MAX_BOSSES];
-static Float:g_flNPCInstantKillRadius[MAX_BOSSES];
+static Float:g_flNPCSearchRadius[MAX_BOSSES] = { 0.0, ... };
+static Float:g_flNPCInstantKillRadius[MAX_BOSSES] = { 0.0, ... };
 
 static g_iNPCEnemy[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 
 #if defined METHODMAPS
- #include "sf2/npc_methodmap.sp"
+
+const SF2NPC_BaseNPC SF2_INVALID_NPC = SF2NPC_BaseNPC:-1;
+
+methodmap SF2NPC_BaseNPC
+{
+	property int Index
+	{
+		public get() { return _:this; }
+	}
+	
+	property int Type
+	{
+		public get() { return NPCGetType(this.Index); }
+	}
+	
+	property int ProfileIndex
+	{
+		public get() { return NPCGetProfileIndex(this.Index); }
+	}
+	
+	property int UniqueProfileIndex
+	{
+		public get() { return NPCGetUniqueProfileIndex(this.Index); }
+	}
+	
+	property int EntRef
+	{
+		public get() { return NPCGetEntRef(this.Index); }
+	}
+	
+	property int EntIndex
+	{
+		public get() { return NPCGetEntIndex(this.Index); }
+	}
+	
+	property int Flags
+	{
+		public get() { return NPCGetFlags(this.Index); }
+		public set(int flags) { NPCSetFlags(this.Index); }
+	}
+	
+	property float ModelScale
+	{
+		public get() { return NPCGetModelScale(this.Index) };
+	}
+	
+	property float TurnRate
+	{
+		public get() { return NPCGetTurnRate(this.Index) };
+	}
+	
+	property float FOV
+	{
+		public get() { return NPCGetFOV(this.Index); }
+	}
+	
+	property float Anger
+	{
+		public get() { return NPCGetAnger(this.Index); }
+		public set(float amount) { NPCSetAnger(this.Index, amount); }
+	}
+	
+	property float AngerAddOnPageGrab
+	{
+		public get() { return NPCGetAngerAddOnPageGrab(this.Index); }
+	}
+	
+	property float AngerAddOnPageGrabTimeDiff
+	{
+		public get() { return NPCGetAngerAddOnPageGrabTimeDiff(this.Index); }
+	}
+	
+	property float SearchRadius
+	{
+		public get() { return NPCGetSearchRadius(this.Index); }
+	}
+	
+	property float ScareRadius
+	{
+		public get() { return NPCGetScareRadius(this.Index); }
+	}
+	
+	property float ScareCooldown
+	{
+		public get() { return NPCGetScareCooldown(this.Index); }
+	}
+	
+	property float InstantKillRadius
+	{
+		public get() { return NPCGetInstantKillRadius(this.Index); }
+	}
+	
+	property int TeleportType
+	{
+		public get() { return NPCGetTeleportType(this.Index); }
+	}
+	
+	property int Enemy
+	{
+		public get() { return NPCGetEnemy(this.Index); }
+		public set(int entIndex) { NPCSetEnemy(this.Index, entIndex); }
+	}
+	
+	public SF2NPC_BaseNPC(int index)
+	{
+		return SF2NPC_BaseNPC:index;
+	}
+	
+	public ~SF2NPC_BaseNPC()
+	{
+		NPCRemove(this.Index);
+	}
+	
+	public bool IsValid()
+	{
+		return NPCIsValid(this.Index);
+	}
+	
+	public void GetProfile(char[] buffer, int bufferlen) 
+	{
+		NPCGetProfile(this.Index, buffer, bufferlen);
+	}
+	
+	public void SetProfile(const char[] profileName)
+	{
+		NPCSetProfile(this.Index, profileName);
+	}
+	
+	public float GetSpeed(int difficulty)
+	{
+		return NPCGetSpeed(this.Index, difficulty);
+	}
+	
+	public float GetMaxSpeed(int difficulty)
+	{
+		return NPCGetMaxSpeed(this.Index, difficulty);
+	}
+	
+	public void GetEyePosition(float buffer[3], const float defaultValue[3] = { 0.0, 0.0, 0.0 })
+	{
+		NPCGetEyePosition(this.Index, buffer, defaultValue);
+	}
+	
+	public void GetEyePositionOffset(float buffer[3])
+	{
+		NPCGetEyePositionOffset(this.Index, buffer);
+	}
+	
+	public void AddAnger(float amount)
+	{
+		NPCAddAnger(this.Index, amount);
+	}
+	
+	public bool HasAttribute(const char[] attributeName)
+	{
+		return NPCHasAttribute(this.Index, attributeName);
+	}
+	
+	public float GetAttributeValue(const char[] attributeName, float defaultValue = 0.0)
+	{
+		return NPCGetAttributeValue(this.Index, attributeName, defaultValue);
+	}
+}
+
 #endif
- 
+
 public NPCInitialize()
 {
 	NPCChaserInitialize();
@@ -79,9 +242,14 @@ NPCGetFromUniqueID(iNPCUniqueID)
 	return -1;
 }
 
+NPCGetEntRef(iNPCIndex)
+{
+	return g_iSlender[iNPCIndex];
+}
+
 NPCGetEntIndex(iNPCIndex)
 {
-	return EntRefToEntIndex(g_iSlender[iNPCIndex]);
+	return EntRefToEntIndex(NPCGetEntRef(iNPCIndex));
 }
 
 NPCGetFromEntIndex(entity)

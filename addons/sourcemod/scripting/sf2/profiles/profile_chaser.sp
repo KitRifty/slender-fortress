@@ -233,7 +233,6 @@ bool:LoadChaserBossProfile(const String:sProfile[], &iUniqueProfileIndex, String
 	return true;
 }
 
-// @TODO: actually make this parse attacks. But for now just use the current system.
 static ParseChaserProfileAttacks(iUniqueProfileIndex)
 {
 	decl String:sBuffer[PLATFORM_MAX_PATH];
