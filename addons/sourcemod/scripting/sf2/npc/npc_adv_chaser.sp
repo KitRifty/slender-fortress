@@ -3,6 +3,12 @@
 #endif
 #define _sf2_npc_adv_chaser_included
 
+/*	
+ *	=====================================================
+ *	GLOBAL VARIABLES
+ *	=====================================================
+ */
+
 enum SF2AdvChaserState
 {
 	SF2AdvChaserState_Invalid = -1,
@@ -84,7 +90,126 @@ static g_iNPCInterruptConditions[MAX_BOSSES] = { 0, ... };
 static Handle:g_hNPCPath[MAX_BOSSES] = { INVALID_HANDLE, ... };
 static g_iNPCPathNodeIndex[MAX_BOSSES] = { -1, ... };
 static g_iNPCPathBehindNodeIndex[MAX_BOSSES] = { -1, ... };
+static Float:g_flNPCPathToleranceDistance[MAX_BOSSES] = { 32.0, ... };
 static Float:g_flNPCMovePosition[MAX_BOSSES][3];
+
+/*	
+ *	=====================================================
+ *	SCHEDULE FUNCTIONS AND DEFINES
+ *	=====================================================
+ */
+
+enum ScheduleStruct
+{
+	ScheduleStruct_TaskListHeadIndex = 0,
+	ScheduleStruct_TaskListTailIndex,
+	ScheduleStruct_InterruptConditions,
+	ScheduleStruct_MaxStats
+};
+
+enum ScheduleTaskStruct
+{
+	ScheduleTaskStruct_ID = 0,
+	ScheduleTaskStruct_Data,
+	ScheduleTaskStruct_MaxStats
+};
+
+enum ScheduleTask
+{
+	TASK_WAIT = 0,
+	TASK_WAIT_FOR_MOVEMENT,
+	TASK_WAIT_FOR_ATTACK,
+	TASK_WAIT_FOR_ANIMATION,
+	
+	TASK_SET_SCHEDULE,
+	TASK_SET_FAIL_SCHEDULE,
+	
+	TASK_SET_PREFERRED_MOVEMENT_ACTIVITY,
+	
+	TASK_FACE_ENEMY,
+	TASK_FACE_TARGET,
+	
+	TASK_GET_PATH_TO_ENEMY,
+	TASK_GET_CHASE_PATH_TO_ENEMY,
+	TASK_GET_PATH_TO_TARGET,
+	TASK_GET_CHASE_PATH_TO_TARGET,
+	TASK_SET_PATH_TOLERANCE_DIST,
+	
+	TASK_SET_ANIMATION,
+	
+	TASK_MAX
+};
+
+// Interrupt conditions.
+#define SF2_INTERRUPTCOND_NEW_ENEMY (1 << 0)
+#define SF2_INTERRUPTCOND_SAW_ENEMY (1 << 1)
+#define SF2_INTERRUPTCOND_ENEMY_UNREACHABLE (1 << 2)
+#define SF2_INTERRUPTCOND_ENEMY_OCCLUDED (1 << 3)
+#define SF2_INTERRUPTCOND_LOST_ENEMY (1 << 4)
+#define SF2_INTERRUPTCOND_CAN_USE_ATTACK_BEST (1 << 5)
+
+static Handle:g_hSchedules = INVALID_HANDLE;
+static Handle:g_hScheduleTasks = INVALID_HANDLE;
+
+new SCHED_NONE;
+new SCHED_CHASE_ENEMY;
+
+static InitializeScheduleSystem()
+{
+	g_hSchedules = CreateArray(ScheduleStruct_MaxStats);
+	g_hScheduleTasks = CreateArray(ScheduleTaskStruct_MaxStats);
+	
+	// Define schedule presets.
+	SCHED_CHASE_ENEMY = StartScheduleDefinition();
+	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_GET_CHASE_PATH_TO_ENEMY);
+	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_SET_PREFERRED_MOVEMENT_ACTIVITY, SF2AdvChaserActivity_Run);
+	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_WAIT_FOR_MOVEMENT);
+	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_FACE_ENEMY);
+}
+
+static StartScheduleDefinition()
+{
+	new scheduleIndex = PushArrayCell(g_hSchedules, -1);
+	SetArrayCell(g_hSchedules, scheduleIndex, -1, ScheduleStruct_TaskListHeadIndex);
+	SetArrayCell(g_hSchedules, scheduleIndex, -1, ScheduleStruct_TaskListTailIndex);
+	SetArrayCell(g_hSchedules, scheduleIndex, 0, ScheduleStruct_InterruptConditions);
+	
+	return scheduleIndex;
+}
+
+static AddTaskToSchedule(scheduleIndex, taskID, any:data=-1)
+{
+	if (task < 0 || task >= TASK_MAX)
+	{
+		return;
+	}
+	
+	new taskListHeadIndex = GetArrayCell(g_hSchedules, scheduleIndex, ScheduleStruct_TaskListHeadIndex);
+	new taskListTailIndex = GetArrayCell(g_hSchedules, scheduleIndex, ScheduleStruct_TaskListTailIndex);
+	
+	taskListTailIndex = PushArrayCell(g_hScheduleTasks, -1);
+	SetArrayCell(g_hScheduleTasks, taskListTailIndex, taskID, ScheduleTaskStruct_ID);
+	SetArrayCell(g_hScheduleTasks, taskListTailIndex, data, ScheduleTaskStruct_Data);
+	
+	if (taskListHeadIndex < 0)
+	{
+		taskListHeadIndex = taskListTailIndex;
+	}
+	
+	SetArrayCell(g_hSchedules, scheduleIndex, taskListHeadIndex, ScheduleStruct_TaskListHeadIndex);
+	SetArrayCell(g_hSchedules, scheduleIndex, taskListTailIndex, ScheduleStruct_TaskListTailIndex);
+}
+
+static SetScheduleInterruptConditions(scheduleIndex, conditions)
+{
+	SetArrayCell(g_hSchedule, scheduleIndex, conditions, ScheduleStruct_InterruptConditions);
+}
+
+/*	
+ *	=====================================================
+ *	GENERIC FUNCTIONS
+ *	=====================================================
+ */
 
 SF2AdvChaserState:NPCAdvChaser_GetState(iNPCIndex)
 {
