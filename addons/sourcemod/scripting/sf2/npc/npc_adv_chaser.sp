@@ -79,13 +79,6 @@ static Float:g_flNPCWakeRadius[MAX_BOSSES];
 
 static g_NPCBaseAttackData[MAX_BOSSES][SF2_ADV_CHASER_BOSS_MAX_ATTACKS][SF2NPCAdvChaser_BaseAttack];
 
-// Schedules.
-static g_iNPCSchedule[MAX_BOSSES] = { -1, ... };
-static g_iNPCScheduleTaskPosition[MAX_BOSSES] = { -1, ... };
-static g_iNPCScheduleInterruptConditions[MAX_BOSSES] = { 0, ... };
-
-static g_iNPCInterruptConditions[MAX_BOSSES] = { 0, ... };
-
 // Nav stuff.
 static Handle:g_hNPCPath[MAX_BOSSES] = { INVALID_HANDLE, ... };
 static g_iNPCPathNodeIndex[MAX_BOSSES] = { -1, ... };
@@ -140,6 +133,25 @@ enum ScheduleTask
 	TASK_MAX
 };
 
+enum ScheduleTaskState
+{
+	ScheduleTaskState_Invalid = 1,
+	ScheduleTaskState_Failed = 0,
+	ScheduleTaskState_Finished,
+	ScheduleTaskState_Running
+};
+
+static Schedule:g_iNPCSchedule[MAX_BOSSES] = { -1, ... };
+static g_iNPCScheduleTaskPosition[MAX_BOSSES] = { -1, ... };
+static ScheduleTaskState:g_iNPCScheduleTaskState[MAX_BOSSES] = { -1, ... };
+static bool:g_bNPCScheduleTaskStarted[MAX_BOSSES] = { false, ... };
+static g_iNPCScheduleInterruptConditions[MAX_BOSSES] = { 0, ... };
+
+static g_iNPCNextSchedule[MAX_BOSSES] = { -1, ... };
+static g_iNPCFailSchedule[MAX_BOSSES] = { -1, ... };
+
+static g_iNPCInterruptConditions[MAX_BOSSES] = { 0, ... };
+
 // Interrupt conditions.
 #define SF2_INTERRUPTCOND_NEW_ENEMY (1 << 0)
 #define SF2_INTERRUPTCOND_SAW_ENEMY (1 << 1)
@@ -147,12 +159,15 @@ enum ScheduleTask
 #define SF2_INTERRUPTCOND_ENEMY_OCCLUDED (1 << 3)
 #define SF2_INTERRUPTCOND_LOST_ENEMY (1 << 4)
 #define SF2_INTERRUPTCOND_CAN_USE_ATTACK_BEST (1 << 5)
+#define SF2_INTERRUPTCOND_DAMAGED (1 << 6)
+#define SF2_INTERRUPTCOND_STUNNED (1 << 7)
 
 static Handle:g_hSchedules = INVALID_HANDLE;
 static Handle:g_hScheduleTasks = INVALID_HANDLE;
 
-new SCHED_NONE;
-new SCHED_CHASE_ENEMY;
+new Schedule:SCHED_NONE;
+new Schedule:SCHED_IDLE_STAND;
+new Schedule:SCHED_CHASE_ENEMY;
 
 static InitializeScheduleSystem()
 {
@@ -160,6 +175,10 @@ static InitializeScheduleSystem()
 	g_hScheduleTasks = CreateArray(ScheduleTaskStruct_MaxStats);
 	
 	// Define schedule presets.
+	SCHED_IDLE_STAND = StartScheduleDefinition();
+	AddTaskToSchedule(SCHED_IDLE_STAND, TASK_SET_PREFERRED_MOVEMENT_ACTIVITY, SF2AdvChaserActivity_Stand);
+	AddTaskToSchedule(SCHED_IDLE_STAND, TASK_WAIT, 5.0);
+	
 	SCHED_CHASE_ENEMY = StartScheduleDefinition();
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_GET_CHASE_PATH_TO_ENEMY);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_SET_PREFERRED_MOVEMENT_ACTIVITY, SF2AdvChaserActivity_Run);
@@ -167,25 +186,25 @@ static InitializeScheduleSystem()
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_FACE_ENEMY);
 }
 
-static StartScheduleDefinition()
+static Schedule:StartScheduleDefinition()
 {
 	new scheduleIndex = PushArrayCell(g_hSchedules, -1);
 	SetArrayCell(g_hSchedules, scheduleIndex, -1, ScheduleStruct_TaskListHeadIndex);
 	SetArrayCell(g_hSchedules, scheduleIndex, -1, ScheduleStruct_TaskListTailIndex);
 	SetArrayCell(g_hSchedules, scheduleIndex, 0, ScheduleStruct_InterruptConditions);
 	
-	return scheduleIndex;
+	return Schedule:scheduleIndex;
 }
 
-static AddTaskToSchedule(scheduleIndex, taskID, any:data=-1)
+static AddTaskToSchedule(Schedule:schedule, ScheduleTask:taskID, any:data=-1)
 {
 	if (task < 0 || task >= TASK_MAX)
 	{
 		return;
 	}
 	
-	new taskListHeadIndex = GetArrayCell(g_hSchedules, scheduleIndex, ScheduleStruct_TaskListHeadIndex);
-	new taskListTailIndex = GetArrayCell(g_hSchedules, scheduleIndex, ScheduleStruct_TaskListTailIndex);
+	new taskListHeadIndex = GetArrayCell(g_hSchedules, _:schedule, ScheduleStruct_TaskListHeadIndex);
+	new taskListTailIndex = GetArrayCell(g_hSchedules, _:schedule, ScheduleStruct_TaskListTailIndex);
 	
 	taskListTailIndex = PushArrayCell(g_hScheduleTasks, -1);
 	SetArrayCell(g_hScheduleTasks, taskListTailIndex, taskID, ScheduleTaskStruct_ID);
@@ -196,13 +215,13 @@ static AddTaskToSchedule(scheduleIndex, taskID, any:data=-1)
 		taskListHeadIndex = taskListTailIndex;
 	}
 	
-	SetArrayCell(g_hSchedules, scheduleIndex, taskListHeadIndex, ScheduleStruct_TaskListHeadIndex);
-	SetArrayCell(g_hSchedules, scheduleIndex, taskListTailIndex, ScheduleStruct_TaskListTailIndex);
+	SetArrayCell(g_hSchedules, _:schedule, taskListHeadIndex, ScheduleStruct_TaskListHeadIndex);
+	SetArrayCell(g_hSchedules, _:schedule, taskListTailIndex, ScheduleStruct_TaskListTailIndex);
 }
 
-static SetScheduleInterruptConditions(scheduleIndex, conditions)
+static SetScheduleInterruptConditions(Schedule:schedule, conditions)
 {
-	SetArrayCell(g_hSchedule, scheduleIndex, conditions, ScheduleStruct_InterruptConditions);
+	SetArrayCell(g_hSchedule, _:schedule, conditions, ScheduleStruct_InterruptConditions);
 }
 
 /*	
@@ -346,18 +365,72 @@ NPCAdvChaser_RemoveInterruptCondition(iNPCIndex, iCondition)
 	g_iNPCInterruptConditions[iNPCIndex] &= ~iCondition;
 }
 
-NPCAdvChaser_GetSchedule(iNPCIndex)
+Schedule:NPCAdvChaser_GetSchedule(iNPCIndex)
 {
 	return g_iNPCSchedule[iNPCIndex];
 }
 
-NPCAdvChaser_SetSchedule(iNPCIndex, iSchedule)
+NPCAdvChaser_SetSchedule(iNPCIndex, Schedule:schedule)
 {
-	g_iNPCSchedule[iNPCIndex] = iSchedule;
+	g_iNPCSchedule[iNPCIndex] = schedule;
 }
 
-NPCAdvChaser_ScheduleThink(iNPCIndex)
+static NPCAdvChaser_SelectSchedule(iNPCIndex)
 {
+}
+
+static NPCAdvChaser_MaintainSchedule(iNPCIndex)
+{
+}
+
+static NPCAdvChaser_ScheduleThink(iNPCIndex)
+{
+	new Schedule:schedule = NPCAdvChaser_GetSchedule(iNPCIndex);
+	
+	new scheduleTaskPosition = g_iNPCScheduleTaskPosition[iNPCIndex];
+	new scheduleTaskListHeadIndex = GetArrayCell(g_hSchedules, _:schedule, ScheduleStruct_TaskListHeadIndex);
+	new scheduleTaskListTailIndex = GetArrayCell(g_hSchedules, _:schedule, ScheduleStruct_TaskListTailIndex);
+	
+	if (scheduleTaskListHeadIndex < 0 || scheduleTaskListTailIndex < 0)
+	{
+		return;
+	}
+	
+	new ScheduleTaskState:scheduleTaskState = g_iNPCScheduleTaskState[iNPCIndex];
+	
+	new ScheduleTask:taskID = GetArrayCell(g_hScheduleTasks, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_ID);
+	new taskData = GetArrayCell(g_hScheduleTasks, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_Data);
+	
+	if (!g_bNPCScheduleTaskStarted[iNPCIndex])
+	{
+		g_bNPCScheduleTaskStarted[iNPCIndex] = true;
+		scheduleTaskState = NPCAdvChaser_StartTask(iNPCIndex, taskID, taskData);
+	}
+	
+	if (scheduleTaskState == ScheduleTaskState_Running)
+	{
+		scheduleTaskState = NPCAdvChaser_RunTask(iNPCIndex, taskID, taskData);
+	}
+	
+	g_iNPCScheduleTaskState[iNPCIndex] = scheduleTaskState;
+}
+
+static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, any:taskData)
+{
+	switch (taskID)
+	{
+	}
+
+	return ScheduleTaskState_Failed;
+}
+
+static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, any:taskData)
+{
+	switch (taskID)
+	{
+	}
+
+	return ScheduleTaskState_Failed;
 }
 
 NPCAdvChaser_OnSelectProfile(iNPCIndex)
