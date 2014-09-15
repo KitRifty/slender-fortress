@@ -64,7 +64,8 @@ static SF2AdvChaserState:g_iNPCState[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserState:g_iNPCPreferredState[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserActivity:g_iNPCActivity[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserActivity:g_iNPCPreferredActivity[MAX_BOSSES] = { -1, ... };
-static bool:g_iNPCActivityFinished[MAX_BOSSES] = { true, ... };
+static bool:g_iNPCShouldSelectNewActivity[MAX_BOSSES] = { true, ... };
+static bool:g_iNPCAnimationNeedsUpdate[MAX_BOSSES] = { true, ... };
 
 static g_iNPCDamageAccumulated[MAX_BOSSES] = { 0, ... };
 static g_iNPCDamageAccumulatedForStun[MAX_BOSSES] = { 0, ... };
@@ -114,7 +115,6 @@ enum ScheduleTask
 	TASK_WAIT = 0,
 	TASK_WAIT_FOR_MOVEMENT,
 	TASK_WAIT_FOR_ATTACK,
-	TASK_WAIT_FOR_ANIMATION,
 	
 	TASK_SET_SCHEDULE,
 	TASK_SET_FAIL_SCHEDULE,
@@ -159,6 +159,9 @@ static g_iNPCInterruptConditions[MAX_BOSSES] = { 0, ... };
 
 // Wait
 static Float:g_flNPCWaitFinishTime[MAX_BOSSES] = { -1.0, ... };
+
+// Animation
+static Float:g_flNPCAnimationFinishTime[MAX_BOSSES] = { -1.0, ... };
 
 // Interrupt conditions.
 #define SF2_INTERRUPTCOND_NEW_ENEMY (1 << 0)
@@ -281,6 +284,13 @@ SF2AdvChaserActivity:NPCAdvChaser_GetActivity(iNPCIndex)
 NPCAdvChaser_SetActivity(iNPCIndex, SF2AdvChaserActivity:iActivity)
 {
 	g_iNPCActivity[iNPCIndex] = iActivity;
+	g_iNPCShouldSelectNewActivity[iNPCIndex] = false;
+	g_iNPCAnimationNeedsUpdate[iNPCIndex] = true;
+}
+
+static SF2AdvChaserActivity:NPCAdvChaser_SelectActivity(iNPCIndex)
+{
+	return SF2AdvChaserActivity_Stand;
 }
 
 static NPCAdvChaser_StopMoving(iNPCIndex)
@@ -395,8 +405,14 @@ Schedule:NPCAdvChaser_GetSchedule(iNPCIndex)
 NPCAdvChaser_SetSchedule(iNPCIndex, Schedule:schedule)
 {
 	NPCAdvChaser_ClearSchedule(iNPCIndex);
-
+	
+	if (_:schedule < 0 || _:schedule >= GetArraySize(g_hSchedules))
+	{
+		return;
+	}
+	
 	g_iNPCSchedule[iNPCIndex] = schedule;
+	g_iNPCScheduleTaskPosition[iNPCIndex] = 0;
 }
 
 static NPCAdvChaser_ClearSchedule(iNPCIndex)
@@ -405,8 +421,10 @@ static NPCAdvChaser_ClearSchedule(iNPCIndex)
 	g_iNPCNextSchedule[iNPCIndex] = INVALID_SCHEDULE;
 	g_iNPCFailSchedule[iNPCIndex] = INVALID_SCHEDULE;
 	g_bNPCScheduleInterrupted[iNPCIndex] = false;
+	g_iNPCScheduleInterruptConditions[iNPCIndex] = 0;
 	g_iNPCScheduleTaskState[iNPCIndex] = ScheduleTaskState_Invalid;
 	g_bNPCScheduleTaskStarted[iNPCIndex] = false;
+	g_iNPCScheduleTaskPosition[iNPCIndex] = -1;
 }
 
 static Schedule:NPCAdvChaser_SelectSchedule(iNPCIndex)
@@ -603,6 +621,26 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity:taskData);
 			return ScheduleTaskState_Completed;
 		}
+		case TASK_SET_ANIMATION:
+		{
+			new Handle:pack = Handle:taskData;
+			ResetPack(pack);
+			
+			decl String:animationName[64];
+			ReadPackString(pack, animationName, sizeof(animationName));
+			
+			new Float:animationPlaybackRate = ReadPackFloat(pack);
+			new Float:animationDuration = ReadPackFloat(pack);
+			
+			g_flNPCAnimationFinishTime[iNPCIndex] = GetGameTime() + animationDuration;
+			
+			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Custom);
+			
+			// @TODO: Set the animation of the boss's model.
+			
+			
+			return ScheduleTaskState_Running;
+		}
 	}
 
 	return ScheduleTaskState_Failed;
@@ -618,6 +656,19 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			{
 				return ScheduleTaskState_Complete;
 			}
+			
+			return ScheduleTaskState_Running;
+		}
+		case TASK_SET_ANIMATION:
+		{
+			if (GetGameTime() >= g_flNPCAnimationFinishTime[iNPCIndex])
+			{
+				g_iNPCShouldSelectNewActivity[iNPCIndex] = true;
+				
+				return ScheduleTaskState_Complete;
+			}
+			
+			return ScheduleTaskState_Running;
 		}
 	}
 
@@ -626,6 +677,13 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 
 static NPCAdvChaser_OnTaskInterrupted(iNPCIndex, ScheduleTask:taskID, any:taskData)
 {
+	switch (taskID)
+	{
+		case TASK_SET_ANIMATION:
+		{
+			g_iNPCShouldSelectNewActivity[iNPCIndex] = true;
+		}
+	}
 }
 
 NPCAdvChaser_OnSelectProfile(iNPCIndex)
@@ -634,4 +692,18 @@ NPCAdvChaser_OnSelectProfile(iNPCIndex)
 
 NPCAdvChaser_Think(iNPCIndex)
 {
+	// Gather and select enemies.
+	
+	// Maintain schedule (preset list of instructions for a specific situation). A new schedule could be chosen during this time, or just maintain the current one.
+	
+	// Select the activity to be in. Running, standing, jumping, or something else, etc. The preferred activity is the main activity to be in.
+	
+	// Handle movement. If the current activity is about movement, move the NPC towards MovePosition, change angles, speed, etc.
+	
+	// Handle animations. Some animations are directly associated with the current activity.
+	
+	// Reset for the next frame.
+	
+	g_iNPCInterruptConditions[iNPCIndex] = 0;
+	g_iNPCAnimationNeedsUpdate[iNPCIndex] = false;
 }
