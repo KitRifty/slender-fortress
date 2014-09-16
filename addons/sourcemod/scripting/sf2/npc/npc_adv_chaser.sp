@@ -64,7 +64,6 @@ static SF2AdvChaserState:g_iNPCState[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserState:g_iNPCPreferredState[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserActivity:g_iNPCActivity[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserActivity:g_iNPCPreferredActivity[MAX_BOSSES] = { -1, ... };
-static bool:g_iNPCShouldSelectNewActivity[MAX_BOSSES] = { true, ... };
 static bool:g_iNPCAnimationNeedsUpdate[MAX_BOSSES] = { true, ... };
 
 static g_iNPCDamageAccumulated[MAX_BOSSES] = { 0, ... };
@@ -88,6 +87,7 @@ static g_iNPCPathNodeIndex[MAX_BOSSES] = { -1, ... };
 static g_iNPCPathBehindNodeIndex[MAX_BOSSES] = { -1, ... };
 static Float:g_flNPCPathToleranceDistance[MAX_BOSSES] = { 32.0, ... };
 static Float:g_flNPCMovePosition[MAX_BOSSES][3];
+static g_iNPCPathGoalEntity[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 
 /*	
  *	=====================================================
@@ -263,6 +263,12 @@ static SetScheduleInterruptConditions(Schedule:schedule, conditions)
 
 static GetScheduleName(Schedule:schedule, String:buffer[], bufferlen)
 {
+	if (_:schedule < 0 || _:schedule >= GetArraySize(g_hSchedules))
+	{
+		strcopy(buffer, bufferlen, "INVALID_SCHEDULE");
+		return;
+	}
+
 	GetArrayString(g_hScheduleNames, _:schedule, buffer, bufferlen);
 }
 
@@ -271,6 +277,11 @@ static GetScheduleName(Schedule:schedule, String:buffer[], bufferlen)
  *	GENERIC FUNCTIONS
  *	=====================================================
  */
+
+InitializeAdvChaserSystem()
+{
+	InitializeScheduleSystem();
+}
 
 SF2AdvChaserState:NPCAdvChaser_GetState(iNPCIndex)
 {
@@ -315,7 +326,6 @@ SF2AdvChaserActivity:NPCAdvChaser_GetActivity(iNPCIndex)
 NPCAdvChaser_SetActivity(iNPCIndex, SF2AdvChaserActivity:iActivity)
 {
 	g_iNPCActivity[iNPCIndex] = iActivity;
-	g_iNPCShouldSelectNewActivity[iNPCIndex] = false;
 	g_iNPCAnimationNeedsUpdate[iNPCIndex] = true;
 }
 
@@ -688,7 +698,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 	}
 	
 	Format(failReasonMsg, failReasonMsgLen, "Task ID %d does not exist.", _:taskID);
-
+	
 	return ScheduleTaskState_Failed;
 }
 
@@ -712,8 +722,7 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 		{
 			if (GetGameTime() >= g_flNPCAnimationFinishTime[iNPCIndex])
 			{
-				g_iNPCShouldSelectNewActivity[iNPCIndex] = true;
-				
+				NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
 				return ScheduleTaskState_Complete;
 			}
 			
@@ -735,9 +744,26 @@ static NPCAdvChaser_OnTaskInterrupted(iNPCIndex, ScheduleTask:taskID, any:taskDa
 		}
 		case TASK_SET_ANIMATION:
 		{
-			g_iNPCShouldSelectNewActivity[iNPCIndex] = true;
+			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
 		}
 	}
+}
+
+static NPCAdvChaser_ClearPath(iNPCIndex)
+{
+	if (g_hNPCPath[iNPCIndex] != INVALID_HANDLE)
+	{
+		CloseHandle(g_hNPCPath[iNPCIndex]);
+		g_hNPCPath[iNPCIndex] = INVALID_HANDLE;
+	}
+	
+	g_iNPCPathNodeIndex[iNPCIndex] = -1;
+	g_iNPCPathBehindNodeIndex[iNPCIndex] = -1;
+	g_flNPCPathToleranceDistance[iNPCIndex] = 32.0;
+	g_flNPCMovePosition[iNPCIndex][0] = 0.0;
+	g_flNPCMovePosition[iNPCIndex][1] = 0.0;
+	g_flNPCMovePosition[iNPCIndex][2] = 0.0;
+	g_iNPCPathGoalEntity[iNPCIndex] = INVALID_ENT_REFERENCE;
 }
 
 NPCAdvChaser_OnSelectProfile(iNPCIndex)
