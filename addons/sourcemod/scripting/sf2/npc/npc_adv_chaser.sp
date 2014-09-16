@@ -119,7 +119,7 @@ enum ScheduleTask
 	TASK_SET_SCHEDULE,
 	TASK_SET_FAIL_SCHEDULE,
 	
-	TASK_SET_PREFERRED_MOVEMENT_ACTIVITY,
+	TASK_SET_PREFERRED_ACTIVITY,
 	
 	TASK_FACE_ENEMY,
 	TASK_FACE_TARGET,
@@ -141,6 +141,29 @@ enum ScheduleTaskState
 	ScheduleTaskState_Failed = 0,
 	ScheduleTaskState_Complete,
 	ScheduleTaskState_Running
+};
+
+static const g_ScheduleTaskNames[TASK_MAX][] =
+{
+	"TASK_WAIT",
+	"TASK_WAIT_FOR_MOVEMENT",
+	"TASK_WAIT_FOR_ATTACK",
+	
+	"TASK_SET_SCHEDULE",
+	"TASK_SET_FAIL_SCHEDULE",
+	
+	"TASK_SET_PREFERRED_ACTIVITY",
+	
+	"TASK_FACE_ENEMY",
+	"TASK_FACE_TARGET",
+	
+	"TASK_GET_PATH_TO_ENEMY",
+	"TASK_GET_CHASE_PATH_TO_ENEMY",
+	"TASK_GET_PATH_TO_TARGET",
+	"TASK_GET_CHASE_PATH_TO_TARGET",
+	"TASK_SET_PATH_TOLERANCE_DIST",
+	
+	"TASK_SET_ANIMATION"
 };
 
 static const Schedule:INVALID_SCHEDULE = Schedule:-1;
@@ -174,7 +197,8 @@ static Float:g_flNPCAnimationFinishTime[MAX_BOSSES] = { -1.0, ... };
 #define SF2_INTERRUPTCOND_STUNNED (1 << 7)
 
 static Handle:g_hSchedules = INVALID_HANDLE;
-static Handle:g_hScheduleTasks = INVALID_HANDLE;
+static Handle:g_hScheduleNames = INVALID_HANDLE;
+static Handle:g_hScheduleTaskLists = INVALID_HANDLE;
 
 new Schedule:SCHED_NONE;
 new Schedule:SCHED_IDLE_STAND;
@@ -183,26 +207,28 @@ new Schedule:SCHED_CHASE_ENEMY;
 static InitializeScheduleSystem()
 {
 	g_hSchedules = CreateArray(ScheduleStruct_MaxStats);
-	g_hScheduleTasks = CreateArray(ScheduleTaskStruct_MaxStats);
+	g_hScheduleTaskLists = CreateArray(ScheduleTaskStruct_MaxStats);
 	
 	// Define schedule presets.
-	SCHED_IDLE_STAND = StartScheduleDefinition();
+	SCHED_IDLE_STAND = StartScheduleDefinition("SCHED_IDLE_STAND");
 	AddTaskToSchedule(SCHED_IDLE_STAND, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Stand);
 	AddTaskToSchedule(SCHED_IDLE_STAND, TASK_WAIT, 5.0);
 	
-	SCHED_CHASE_ENEMY = StartScheduleDefinition();
+	SCHED_CHASE_ENEMY = StartScheduleDefinition("SCHED_CHASE_ENEMY");
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_GET_CHASE_PATH_TO_ENEMY);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Run);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_WAIT_FOR_MOVEMENT);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_FACE_ENEMY);
 }
 
-static Schedule:StartScheduleDefinition()
+static Schedule:StartScheduleDefinition(const String:scheduleName[])
 {
 	new scheduleIndex = PushArrayCell(g_hSchedules, -1);
 	SetArrayCell(g_hSchedules, scheduleIndex, -1, ScheduleStruct_TaskListHeadIndex);
 	SetArrayCell(g_hSchedules, scheduleIndex, -1, ScheduleStruct_TaskListTailIndex);
 	SetArrayCell(g_hSchedules, scheduleIndex, 0, ScheduleStruct_InterruptConditions);
+	
+	PushArrayString(g_hScheduleNames, scheduleName);
 	
 	return Schedule:scheduleIndex;
 }
@@ -217,9 +243,9 @@ static AddTaskToSchedule(Schedule:schedule, ScheduleTask:taskID, any:data=-1)
 	new taskListHeadIndex = GetArrayCell(g_hSchedules, _:schedule, ScheduleStruct_TaskListHeadIndex);
 	new taskListTailIndex = GetArrayCell(g_hSchedules, _:schedule, ScheduleStruct_TaskListTailIndex);
 	
-	taskListTailIndex = PushArrayCell(g_hScheduleTasks, -1);
-	SetArrayCell(g_hScheduleTasks, taskListTailIndex, taskID, ScheduleTaskStruct_ID);
-	SetArrayCell(g_hScheduleTasks, taskListTailIndex, data, ScheduleTaskStruct_Data);
+	taskListTailIndex = PushArrayCell(g_hScheduleTaskLists, -1);
+	SetArrayCell(g_hScheduleTaskLists, taskListTailIndex, taskID, ScheduleTaskStruct_ID);
+	SetArrayCell(g_hScheduleTaskLists, taskListTailIndex, data, ScheduleTaskStruct_Data);
 	
 	if (taskListHeadIndex < 0)
 	{
@@ -233,6 +259,11 @@ static AddTaskToSchedule(Schedule:schedule, ScheduleTask:taskID, any:data=-1)
 static SetScheduleInterruptConditions(Schedule:schedule, conditions)
 {
 	SetArrayCell(g_hSchedule, _:schedule, conditions, ScheduleStruct_InterruptConditions);
+}
+
+static GetScheduleName(Schedule:schedule, String:buffer[], bufferlen)
+{
+	GetArrayString(g_hScheduleNames, _:schedule, buffer, bufferlen);
 }
 
 /*	
@@ -505,8 +536,8 @@ static NPCAdvChaser_MaintainSchedule(iNPCIndex)
 			{
 				if (scheduleInterrupted)
 				{
-					new ScheduleTask:taskID = GetArrayCell(g_hScheduleTasks, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_ID);
-					new taskData = GetArrayCell(g_hScheduleTasks, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_Data);
+					new ScheduleTask:taskID = GetArrayCell(g_hScheduleTaskLists, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_ID);
+					new taskData = GetArrayCell(g_hScheduleTaskLists, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_Data);
 					
 					NPCAdvChaser_OnTaskInterrupted(iNPCIndex, taskID, taskData);
 					
@@ -562,24 +593,31 @@ static NPCAdvChaser_ScheduleThink(iNPCIndex)
 	
 	new ScheduleTaskState:scheduleTaskState = g_iNPCScheduleTaskState[iNPCIndex];
 	
-	new ScheduleTask:taskID = GetArrayCell(g_hScheduleTasks, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_ID);
-	new taskData = GetArrayCell(g_hScheduleTasks, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_Data);
+	new ScheduleTask:taskID = GetArrayCell(g_hScheduleTaskLists, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_ID);
+	new taskData = GetArrayCell(g_hScheduleTaskLists, scheduleTaskListHeadIndex + scheduleTaskPosition, ScheduleTaskStruct_Data);
+	
+	new String:failReasonMsg[512];
 	
 	if (!g_bNPCScheduleTaskStarted[iNPCIndex])
 	{
 		g_bNPCScheduleTaskStarted[iNPCIndex] = true;
-		scheduleTaskState = NPCAdvChaser_StartTask(iNPCIndex, taskID, taskData);
+		scheduleTaskState = NPCAdvChaser_StartTask(iNPCIndex, taskID, taskData, failReasonMsg, sizeof(failReasonMsg));
 	}
 	
 	if (scheduleTaskState == ScheduleTaskState_Running)
 	{
-		scheduleTaskState = NPCAdvChaser_RunTask(iNPCIndex, taskID, taskData);
+		scheduleTaskState = NPCAdvChaser_RunTask(iNPCIndex, taskID, taskData, failReasonMsg, sizeof(failReasonMsg));
+	}
+	
+	if (strlen(failReasonMsg) > 0)
+	{
+		// @TODO: Print the reason for the task failing.
 	}
 	
 	g_iNPCScheduleTaskState[iNPCIndex] = scheduleTaskState;
 }
 
-static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, any:taskData)
+static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, any:taskData, String:failReasonMsg[], failReasonMsgLen)
 {
 	switch (taskID)
 	{
@@ -588,11 +626,15 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			g_flNPCWaitFinishTime[iNPCIndex] = GetGameTime() + Float:taskData;
 			return ScheduleTaskState_Running;
 		}
+		case TASK_WAIT_FOR_MOVEMENT:
+		{
+		}
 		case TASK_SET_SCHEDULE:
 		{
 			new scheduleIndex = taskData;
 			if (scheduleIndex < 0 || scheduleIndex >= GetArraySize(g_hSchedules))
 			{
+				Format(failReasonMsg, failReasonMsgLen, "Schedule ID %d does not exist.", scheduleIndex);
 				return ScheduleTaskState_Failed;
 			}
 			
@@ -604,6 +646,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			new scheduleIndex = taskData;
 			if (scheduleIndex < 0 || scheduleIndex >= GetArraySize(g_hSchedules))
 			{
+				Format(failReasonMsg, failReasonMsgLen, "Schedule ID %d does not exist.", scheduleIndex);
 				return ScheduleTaskState_Failed;
 			}
 			
@@ -615,6 +658,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			new SF2AdvChaserActivity:activity = SF2AdvChaserActivity:taskData;
 			if (activity == SF2AdvChaserActivity_None || activity >= SF2AdvChaserActivity_Max)
 			{
+				Format(failReasonMsg, failReasonMsgLen, "Activity %d does not exist.", _:activity);
 				return ScheduleTaskState_Failed;
 			}
 			
@@ -642,6 +686,8 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			return ScheduleTaskState_Running;
 		}
 	}
+	
+	Format(failReasonMsg, failReasonMsgLen, "Task ID %d does not exist.", _:taskID);
 
 	return ScheduleTaskState_Failed;
 }
@@ -659,6 +705,9 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			
 			return ScheduleTaskState_Running;
 		}
+		case TASK_WAIT_FOR_MOVEMENT:
+		{
+		}
 		case TASK_SET_ANIMATION:
 		{
 			if (GetGameTime() >= g_flNPCAnimationFinishTime[iNPCIndex])
@@ -671,7 +720,8 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			return ScheduleTaskState_Running;
 		}
 	}
-
+	
+	Format(failReasonMsg, failReasonMsgLen, "Task ID %d does not exist.", _:taskID);
 	return ScheduleTaskState_Failed;
 }
 
@@ -679,6 +729,10 @@ static NPCAdvChaser_OnTaskInterrupted(iNPCIndex, ScheduleTask:taskID, any:taskDa
 {
 	switch (taskID)
 	{
+		case TASK_WAIT_FOR_MOVEMENT:
+		{
+			
+		}
 		case TASK_SET_ANIMATION:
 		{
 			g_iNPCShouldSelectNewActivity[iNPCIndex] = true;
