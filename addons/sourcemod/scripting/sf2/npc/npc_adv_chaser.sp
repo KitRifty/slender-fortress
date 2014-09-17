@@ -272,6 +272,161 @@ static GetScheduleName(Schedule:schedule, String:buffer[], bufferlen)
 	GetArrayString(g_hScheduleNames, _:schedule, buffer, bufferlen);
 }
 
+
+/*	
+ *	=====================================================
+ *	ENEMY FUNCTIONS AND DEFINES
+ *	=====================================================
+ */
+
+enum EnemyMemoryType
+{
+	EnemyMemoryType_Invalid = -1,
+	EnemyMemoryType_Sound = 0,
+	EnemyMemoryType_Glimpse,
+	EnemyMemoryType_Sight
+};
+
+enum
+{
+	EnemyMemoryStruct_EntRef = 0,
+	EnemyMemoryStruct_Type,
+	EnemyMemoryStruct_LastKnownTime,
+	EnemyMemoryStruct_LastKnownPosX,
+	EnemyMemoryStruct_LastKnownPosY,
+	EnemyMemoryStruct_LastKnownPosZ,
+	EnemyMemoryStruct_MaxStats
+};
+
+static g_iNPCEnemy[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
+
+static Handle:g_hNPCEnemyMemory[MAX_BOSSES] =  { INVALID_HANDLE, ... };
+
+static NPCAdvChaser_InitializeEnemyMemory(iNPCIndex)
+{
+	// Free up memory in case it wasn't freed earlier.
+	NPCAdvChaser_FreeEnemyMemory(iNPCIndex);
+	
+	g_hNPCEnemyMemory[iNPCIndex] = CreateArray(EnemyMemoryStruct_MaxStats);
+}
+
+static NPCAdvChaser_ClearEnemyMemory(iNPCIndex)
+{
+	ClearArray(g_hNPCEnemyMemory[iNPCIndex]);
+}
+
+static NPCAdvChaser_FreeEnemyMemory(iNPCIndex)
+{
+	new Handle:hMemory = g_hNPCEnemyMemory[iNPCIndex];
+	if (hMemory != INVALID_HANDLE)
+	{
+		CloseHandle(g_hNPCEnemyMemory[iNPCIndex]);
+		g_hNPCEnemyMemory[iNPCIndex] = INVALID_HANDLE;
+	}
+}
+
+static NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, ent)
+{
+	if (!IsValidEntity(ent)) return -1;
+	
+	return FindValueInArray(g_hNPCEnemyMemory[iNPCIndex], EntIndexToEntRef(ent));
+}
+
+static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex != -1)
+	{
+		return memoryIndex;
+	}
+	
+	memoryIndex = PushArrayCell(g_hNPCEnemyMemory[iNPCIndex], EntIndexToEntRef(enemy));
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, memoryType, EnemyMemoryStruct_Type);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, GetGameTime(), EnemyMemoryStruct_LastKnownTime);
+	
+	decl Float:flPos[3];
+	GetEntPropVector(enemy, Prop_Data, "m_vecAbsOrigin", flPos);
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[0], EnemyMemoryStruct_LastKnownPosX);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[1], EnemyMemoryStruct_LastKnownPosY);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[2], EnemyMemoryStruct_LastKnownPosZ);
+	
+	return memoryIndex;
+}
+
+static NPCAdvChaser_UpdateEnemyPosInMemory(iNPCIndex, enemy, const Float:flPos[3])
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return;
+	}
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, GetGameTime(), EnemyMemoryStruct_LastKnownTime);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[0], EnemyMemoryStruct_LastKnownPosX);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[1], EnemyMemoryStruct_LastKnownPosY);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[2], EnemyMemoryStruct_LastKnownPosZ);
+}
+
+static bool:NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, enemy, Float:buffer[3])
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return false;
+	}
+	
+	buffer[0] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosX);
+	buffer[1] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosY);
+	buffer[2] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosZ);
+	
+	return true;
+}
+
+static NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, enemy, EnemyMemoryType:memoryType)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return;
+	}
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, memoryType, EnemyMemoryStruct_Type);
+}
+
+static NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, enemy)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return EnemyMemoryType_Invalid;
+	}
+	
+	return EnemyMemoryType:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Type);
+}
+
+NPCAdvChaser_GetEnemy(iNPCIndex)
+{
+	return EntRefToEntIndex(g_iNPCEnemy[iNPCIndex]);
+}
+
+NPCAdvChaser_SetEnemy(iNPCIndex, ent)
+{
+	g_iNPCEnemy[iNPCIndex] = IsValidEntity(ent) ? EntIndexToEntRef(ent) : INVALID_ENT_REFERENCE;
+}
+
+static NPCAdvChaser_CheckForStaleMemory(iNPCIndex)
+{
+	for (new memoryIndex = 0; memoryIndex < GetArraySize(g_hNPCEnemyMemory[iNPCIndex]); memoryIndex++)
+	{
+	}
+}
+
+static NPCAdvChaser_SelectEnemy(iNPCIndex)
+{
+	return INVALID_ENT_REFERENCE;
+}
+
 /*	
  *	=====================================================
  *	GENERIC FUNCTIONS
@@ -336,6 +491,8 @@ static SF2AdvChaserActivity:NPCAdvChaser_SelectActivity(iNPCIndex)
 
 static NPCAdvChaser_StopMoving(iNPCIndex)
 {
+	NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
+	NPCAdvChaser_ClearPath(iNPCIndex);
 }
 
 Float:NPCAdvChaser_GetWakeRadius(iNPCIndex)
@@ -638,6 +795,16 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 		}
 		case TASK_WAIT_FOR_MOVEMENT:
 		{
+			new Handle:hPath = g_hNPCPath[iNPCIndex];
+			if (hPath == INVALID_HANDLE || !GetArraySize(hPath))
+			{
+				NPCAdvChaser_StopMoving(iNPCIndex);
+			
+				strcopy(failReasonMsg, failReasonMsgLen, "Path is invalid.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			return ScheduleTaskState_Running;
 		}
 		case TASK_SET_SCHEDULE:
 		{
@@ -675,6 +842,19 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity:taskData);
 			return ScheduleTaskState_Completed;
 		}
+		case TASK_GET_PATH_TO_ENEMY:
+		{
+			NPCAdvChaser_ClearPath(iNPCIndex);
+			
+			new enemy = NPCAdvChaser_GetEnemy(iNPCIndex);
+			if (!enemy || enemy == INVALID_ENT_REFERENCE)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "NPC does not have an enemy.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			return ScheduleTaskState_Completed;
+		}
 		case TASK_SET_ANIMATION:
 		{
 			new Handle:pack = Handle:taskData;
@@ -702,7 +882,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 	return ScheduleTaskState_Failed;
 }
 
-static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, any:taskData)
+static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, any:taskData, String:failReasonMsg[], failReasonMsgLen)
 {
 	switch (taskID)
 	{
@@ -717,12 +897,25 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 		}
 		case TASK_WAIT_FOR_MOVEMENT:
 		{
+			new Handle:hPath = g_hNPCPath[iNPCIndex];
+			if (hPath == INVALID_HANDLE || !GetArraySize(hPath))
+			{
+				NPCAdvChaser_StopMoving(iNPCIndex);
+			
+				strcopy(failReasonMsg, failReasonMsgLen, "Path is invalid.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			// @TODO: Check if the entity has made it to the goal.
+			
+			return ScheduleTaskState_Running;
 		}
 		case TASK_SET_ANIMATION:
 		{
 			if (GetGameTime() >= g_flNPCAnimationFinishTime[iNPCIndex])
 			{
-				NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
+				NPCAdvChaser_StopMoving(iNPCIndex);
+				
 				return ScheduleTaskState_Complete;
 			}
 			
@@ -740,11 +933,11 @@ static NPCAdvChaser_OnTaskInterrupted(iNPCIndex, ScheduleTask:taskID, any:taskDa
 	{
 		case TASK_WAIT_FOR_MOVEMENT:
 		{
-			
+			NPCAdvChaser_StopMoving(iNPCIndex);
 		}
 		case TASK_SET_ANIMATION:
 		{
-			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
+			NPCAdvChaser_StopMoving(iNPCIndex);
 		}
 	}
 }
