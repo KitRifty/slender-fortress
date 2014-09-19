@@ -113,7 +113,7 @@ enum ScheduleTaskStruct
 enum ScheduleTask
 {
 	TASK_WAIT = 0,
-	TASK_WAIT_FOR_MOVEMENT,
+	TASK_TRAVERSE_PATH,
 	TASK_WAIT_FOR_ATTACK,
 	
 	TASK_SET_SCHEDULE,
@@ -146,7 +146,7 @@ enum ScheduleTaskState
 static const g_ScheduleTaskNames[TASK_MAX][] =
 {
 	"TASK_WAIT",
-	"TASK_WAIT_FOR_MOVEMENT",
+	"TASK_TRAVERSE_PATH",
 	"TASK_WAIT_FOR_ATTACK",
 	
 	"TASK_SET_SCHEDULE",
@@ -217,7 +217,7 @@ static InitializeScheduleSystem()
 	SCHED_CHASE_ENEMY = StartScheduleDefinition("SCHED_CHASE_ENEMY");
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_GET_CHASE_PATH_TO_ENEMY);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Run);
-	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_WAIT_FOR_MOVEMENT);
+	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_TRAVERSE_PATH);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_FACE_ENEMY);
 }
 
@@ -793,7 +793,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			g_flNPCWaitFinishTime[iNPCIndex] = GetGameTime() + Float:taskData;
 			return ScheduleTaskState_Running;
 		}
-		case TASK_WAIT_FOR_MOVEMENT:
+		case TASK_TRAVERSE_PATH:
 		{
 			new Handle:hPath = g_hNPCPath[iNPCIndex];
 			if (hPath == INVALID_HANDLE || !GetArraySize(hPath))
@@ -844,6 +844,13 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 		}
 		case TASK_GET_PATH_TO_ENEMY:
 		{
+			new npc = NPCGetEntIndex(iNPCIndex);
+			if (!npc || npc == INVALID_ENT_REFERENCE)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "NPC entity does not exist");
+				return ScheduleTaskState_Failed;
+			}
+			
 			NPCAdvChaser_ClearPath(iNPCIndex);
 			
 			new enemy = NPCAdvChaser_GetEnemy(iNPCIndex);
@@ -852,6 +859,28 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 				Format(failReasonMsg, failReasonMsgLen, "NPC does not have an enemy.");
 				return ScheduleTaskState_Failed;
 			}
+			
+			decl Float:flEndPos[3];
+			if (!NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, enemy, flEndPos))
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Enemy is not in memory.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			decl Float:flStartPos[3];
+			GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", flStartPos);
+			
+			new Handle:hPath = CreateNavPath();
+			if (!NavPathConstructPathFromPoints(hPath, flStartPos, flEndPos, 256.0, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
+			{
+				CloseHandle(hPath);
+				Format(failReasonMsg, failReasonMsgLen, "Failed to construct path to enemy.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			g_hNPCPath[iNPCIndex] = hPath;
+			g_iNPCPathNodeIndex[iNPCIndex] = 1;
+			g_iNPCPathBehindNodeIndex[iNPCIndex] = 0;
 			
 			return ScheduleTaskState_Completed;
 		}
@@ -895,18 +924,146 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			
 			return ScheduleTaskState_Running;
 		}
-		case TASK_WAIT_FOR_MOVEMENT:
+		case TASK_TRAVERSE_PATH:
 		{
 			new Handle:hPath = g_hNPCPath[iNPCIndex];
 			if (hPath == INVALID_HANDLE || !GetArraySize(hPath))
 			{
 				NPCAdvChaser_StopMoving(iNPCIndex);
-			
+				
 				strcopy(failReasonMsg, failReasonMsgLen, "Path is invalid.");
 				return ScheduleTaskState_Failed;
 			}
 			
-			// @TODO: Check if the entity has made it to the goal.
+			new npc = NPCGetEntIndex(iNPCIndex);
+			if (!npc || npc == INVALID_ENT_REFERENCE)
+			{
+				strcopy(failReasonMsg, failReasonMsgLen, "NPC entity does not exist.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			// Check if the entity has made it to the goal.
+			new pathNodeIndex = g_iNPCPathNodeIndex[iNPCIndex];
+			if (pathNodeIndex < 0 || pathNodeIndex >= GetArraySize(hPath))
+			{
+				strcopy(failReasonMsg, failReasonMsgLen, "NPC path index is out of range.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			decl Float:vPathNodePos[3];
+			NavPathGetNodePosition(hPath, pathNodeIndex, vPathNodePos);
+			
+			decl Float:vFeetPos[3];
+			GetEntPropVector(iNPCIndex, Prop_Data, "m_vecAbsOrigin", vFeetPos);
+			
+			decl Float:vEyePos[3];
+			NPCGetEyePosition(iNPCIndex, vEyePos);
+			
+			decl Float:vCentroidPos[3];
+			AddVectors(vFeetPos, vEyePos, vCentroidPos);
+			ScaleVector(vCentroidPos, 0.5);
+			
+			new pathNodeLadderIndex = NavPathGetNodeLadderIndex(hPath, pathNodeIndex);
+			if (pathNodeLadderIndex != -1)
+			{
+				// @TODO: Traverse ladders, maybe?
+			}
+			
+			if (GetVectorDistance(vFeetPos, vPathNodePos) < g_flNPCPathToleranceDistance[iNPCIndex])
+			{
+				g_iNPCPathNodeIndex[iNPCIndex] = ++pathNodeIndex;
+				
+				if (pathNodeIndex >= GetArraySize(hPath))
+				{
+					NPCAdvChaser_StopMoving(iNPCIndex);
+					return ScheduleTaskState_Complete;
+				}
+				
+				NavPathGetNodePosition(hPath, pathNodeIndex, vPathNodePos);
+			}
+			
+			CopyVector(vPathNodePos, g_flNPCMovePosition[iNPCIndex]);
+			
+			new pathBehindNodeIndex = 0;
+			
+			static const Float:aheadRange = 300.0;
+			
+			pathNodeIndex = FindAheadPathPoint(hPath, aheadRange, pathNodeIndex, vFeetPos, vCentroidPos, vEyePos, g_flNPCMovePosition[iNPCIndex], pathBehindNodeIndex);
+			
+			// Clamp point to the path.
+			if (pathNodeIndex >= GetArraySize(hPath))
+			{
+				pathNodeIndex = GetArraySize(hPath) - 1;
+			}
+			
+			g_iNPCPathNodeIndex[iNPCIndex] = pathNodeIndex;
+			g_iNPCPathBehindNodeIndex[iNPCIndex] = pathBehindNodeIndex;
+			
+			new bool:approachingJumpArea = false;
+			
+			{
+				for (new i = pathNodeIndex; i < GetArraySize(hPath); i++)
+				{
+					new toAreaIndex = NavPathGetNodeAreaIndex(hPath, i);
+					if (NavMeshArea_GetFlags(iAreaIndex) & NAV_MESH_JUMP)
+					{
+						approachingJumpArea = true;
+						break;
+					}
+				}
+			}
+			
+			if ((g_flNPCMovePosition[iNPCIndex][2] - vFeetPos[2]) > JumpCrouchHeight)
+			{
+				static const Float:jumpCloseRange = 50.0;
+				
+				decl Float:vTo2D[3];
+				MakeVectorFromPoints(vFeetPos, g_flNPCMovePosition[iNPCIndex], vTo2D);
+				vTo2D[2] = 0.0;
+				
+				if (GetVectorLength(vTo2D) < jumpCloseRange)
+				{
+					new pathNextNodeIndex = pathBehindNodeIndex + 1;
+					if (pathBehindNodeIndex >= 0 && pathNextNodeIndex < GetArraySize(hPath))
+					{
+						decl Float:vNextPathNodePos[3];
+						NavPathGetNodePosition(hPath, pathNextNodeIndex, vNextPathNodePos);
+						
+						if ((vNextPathNodePos[2] - vFeetPos[2]) > JumpCrouchHeight)
+						{
+							NPCAdvChaser_StopMoving(iNPCIndex);
+							Format(failReasonMsg, failReasonMsgLen, "NPC fell off the path.");
+							return ScheduleTaskState_Failed;
+						}
+					}
+					else
+					{
+						NPCAdvChaser_StopMoving(iNPCIndex);
+						Format(failReasonMsg, failReasonMsgLen, "NPC fell off the path (out of range).");
+						return ScheduleTaskState_Failed;
+					}
+				}
+			}
+			
+			if (pathNodeIndex < (GetArraySize(hPath) - 1))
+			{
+				new Float:vFloorNormalDir[3] = { 0.0, 0.0, 1.0 };
+				
+				decl Float:vFloorPos[3];
+				CopyVector(vFeetPos, vFloorPos);
+				vFloorPos[2] -= 10.0;
+				
+				new Handle:trace = TR_TraceRayFilterEx(vFeetPos, vFloorPos, MASK_NPCSOLID_BRUSHONLY, RayType_EndPoint, TraceRayDontHitEntity, npc);
+				new bool:traceDidHit = TR_DidHit(trace);
+				TR_GetPlaneNormal(trace, vFloorNormalDir);
+				CloseHandle(hTrace);
+				
+				if (traceDidHit)
+				{
+					NormalizeVector(flFloorNormalDir, flFloorNormalDir);
+					CalculateFeelerReflexAdjustment(g_flNPCMovePosition[iNPCIndex], vFeetPos, vFloorNormalDir, NPCAdvChaser_GetStepSize(iNPCIndex), 16.0, 120.0, 300.0, g_flNPCMovePosition[iNPCIndex], _, TraceRayDontHitEntity, npc);
+				}
+			}
 			
 			return ScheduleTaskState_Running;
 		}
@@ -931,7 +1088,7 @@ static NPCAdvChaser_OnTaskInterrupted(iNPCIndex, ScheduleTask:taskID, any:taskDa
 {
 	switch (taskID)
 	{
-		case TASK_WAIT_FOR_MOVEMENT:
+		case TASK_TRAVERSE_PATH:
 		{
 			NPCAdvChaser_StopMoving(iNPCIndex);
 		}
@@ -957,6 +1114,41 @@ static NPCAdvChaser_ClearPath(iNPCIndex)
 	g_flNPCMovePosition[iNPCIndex][1] = 0.0;
 	g_flNPCMovePosition[iNPCIndex][2] = 0.0;
 	g_iNPCPathGoalEntity[iNPCIndex] = INVALID_ENT_REFERENCE;
+}
+
+// Shortest-path cost function for NavMesh_BuildPath.
+public NPCAdvChaser_ShortestPathCost(iAreaIndex, iFromAreaIndex, iLadderIndex, any:iStepSize)
+{
+	if (iFromAreaIndex == -1)
+	{
+		return 0;
+	}
+	else
+	{
+		new iDist;
+		decl Float:flAreaCenter[3], Float:flFromAreaCenter[3];
+		NavMeshArea_GetCenter(iAreaIndex, flAreaCenter);
+		NavMeshArea_GetCenter(iFromAreaIndex, flFromAreaCenter);
+		
+		if (iLadderIndex != -1)
+		{
+			iDist = RoundFloat(NavMeshLadder_GetLength(iLadderIndex));
+		}
+		else
+		{
+			iDist = RoundFloat(GetVectorDistance(flAreaCenter, flFromAreaCenter));
+		}
+		
+		new iCost = iDist + NavMeshArea_GetCostSoFar(iFromAreaIndex);
+		
+		new iAreaFlags = NavMeshArea_GetFlags(iAreaIndex);
+		if (iAreaFlags & NAV_MESH_CROUCH) iCost += 20;
+		if (iAreaFlags & NAV_MESH_JUMP) iCost += (5 * iDist);
+		
+		if ((flAreaCenter[2] - flFromAreaCenter[2]) > iStepSize) iCost += iStepSize;
+		
+		return iCost;
+	}
 }
 
 NPCAdvChaser_OnSelectProfile(iNPCIndex)
