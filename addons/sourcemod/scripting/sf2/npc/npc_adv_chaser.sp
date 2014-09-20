@@ -9,6 +9,8 @@
  *	=====================================================
  */
 
+#define SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS 256.0
+ 
 enum SF2AdvChaserState
 {
 	SF2AdvChaserState_Invalid = -1,
@@ -38,6 +40,14 @@ enum SF2NPCAdvChaserAttackType
 	SF2NPCAdvChaserAttackType_Ranged,
 	SF2NPCAdvChaserAttackType_Projectile,
 	SF2NPCAdvChaserAttackType_Grab
+};
+
+enum SF2NPCAdvChaserGoalType
+{
+	SF2NPCAdvChaserGoalType_Invalid = -1,
+	SF2NPCAdvChaserGoalType_Point,
+	SF2NPCAdvChaserGoalType_Enemy,
+	SF2NPCAdvChaserGoalType_Target
 };
 
 enum SF2NPCAdvChaser_BaseAttack
@@ -88,6 +98,14 @@ static g_iNPCPathBehindNodeIndex[MAX_BOSSES] = { -1, ... };
 static Float:g_flNPCPathToleranceDistance[MAX_BOSSES] = { 32.0, ... };
 static Float:g_flNPCMovePosition[MAX_BOSSES][3];
 static g_iNPCPathGoalEntity[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
+static g_iNPCPathGoalEntityLastKnownAreaIndex[MAX_BOSSES] = { -1, ... };
+static g_iNPCPathGoalType[MAX_BOSSES] = { SF2NPCAdvChaserGoalType_Invalid, ... }:
+
+#if defined DEBUG
+
+static Handle:g_cvDebugScheduleThink = INVALID_HANDLE;
+
+#endif
 
 /*	
  *	=====================================================
@@ -143,7 +161,7 @@ enum ScheduleTaskState
 	ScheduleTaskState_Running
 };
 
-static const g_ScheduleTaskNames[TASK_MAX][] =
+static const g_ScheduleTaskNames[][] =
 {
 	"TASK_WAIT",
 	"TASK_TRAVERSE_PATH",
@@ -295,10 +313,9 @@ enum
 	EnemyMemoryStruct_LastKnownPosX,
 	EnemyMemoryStruct_LastKnownPosY,
 	EnemyMemoryStruct_LastKnownPosZ,
+	EnemyMemoryStruct_LastKnownAreaIndex,
 	EnemyMemoryStruct_MaxStats
 };
-
-static g_iNPCEnemy[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 
 static Handle:g_hNPCEnemyMemory[MAX_BOSSES] =  { INVALID_HANDLE, ... };
 
@@ -351,6 +368,10 @@ static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryTyp
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[1], EnemyMemoryStruct_LastKnownPosY);
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[2], EnemyMemoryStruct_LastKnownPosZ);
 	
+	new areaIndex = NavMesh_GetNearestArea(flPos, _, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS);
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, areaIndex, EnemyMemoryStruct_LastKnownAreaIndex);
+	
 	return memoryIndex;
 }
 
@@ -366,6 +387,10 @@ static NPCAdvChaser_UpdateEnemyPosInMemory(iNPCIndex, enemy, const Float:flPos[3
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[0], EnemyMemoryStruct_LastKnownPosX);
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[1], EnemyMemoryStruct_LastKnownPosY);
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, flPos[2], EnemyMemoryStruct_LastKnownPosZ);
+	
+	new areaIndex = NavMesh_GetNearestArea(flPos, _, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS);
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, areaIndex, EnemyMemoryStruct_LastKnownAreaIndex);
 }
 
 static bool:NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, enemy, Float:buffer[3])
@@ -381,6 +406,11 @@ static bool:NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, enemy, Float:buffer[3])
 	buffer[2] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosZ);
 	
 	return true;
+}
+
+static NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, enemy)
+{
+	return GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownAreaIndex);
 }
 
 static NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, enemy, EnemyMemoryType:memoryType)
@@ -405,16 +435,6 @@ static NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, enemy)
 	return EnemyMemoryType:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Type);
 }
 
-NPCAdvChaser_GetEnemy(iNPCIndex)
-{
-	return EntRefToEntIndex(g_iNPCEnemy[iNPCIndex]);
-}
-
-NPCAdvChaser_SetEnemy(iNPCIndex, ent)
-{
-	g_iNPCEnemy[iNPCIndex] = IsValidEntity(ent) ? EntIndexToEntRef(ent) : INVALID_ENT_REFERENCE;
-}
-
 static NPCAdvChaser_CheckForStaleMemory(iNPCIndex)
 {
 	for (new memoryIndex = 0; memoryIndex < GetArraySize(g_hNPCEnemyMemory[iNPCIndex]); memoryIndex++)
@@ -436,6 +456,10 @@ static NPCAdvChaser_SelectEnemy(iNPCIndex)
 InitializeAdvChaserSystem()
 {
 	InitializeScheduleSystem();
+	
+#if defined DEBUG
+	g_cvDebugScheduleThink = CreateConVar("sf2_debug_advchaser_schedule", "0");
+#endif
 }
 
 SF2AdvChaserState:NPCAdvChaser_GetState(iNPCIndex)
@@ -769,16 +793,49 @@ static NPCAdvChaser_ScheduleThink(iNPCIndex)
 	{
 		g_bNPCScheduleTaskStarted[iNPCIndex] = true;
 		scheduleTaskState = NPCAdvChaser_StartTask(iNPCIndex, taskID, taskData, failReasonMsg, sizeof(failReasonMsg));
+		
+		if (scheduleTaskState == ScheduleTaskState_Failed)
+		{
+			if (strlen(failReasonMsg) > 0)
+			{
+#if defined DEBUG
+				if (GetConVarBool(g_cvDebugScheduleThink))
+				{
+					decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+					NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+					
+					decl String:scheduleName[64];
+					GetScheduleName(schedule, scheduleName, sizeof(scheduleName));
+					
+					DebugMessage("Boss %d (%s): schedule %s failed at task %s in StartTask! (%s)", iNPCIndex, sProfile, scheduleName, g_ScheduleTaskNames[_:taskID], failReasonMsg);
+				}
+#endif
+			}
+		}
 	}
 	
 	if (scheduleTaskState == ScheduleTaskState_Running)
 	{
 		scheduleTaskState = NPCAdvChaser_RunTask(iNPCIndex, taskID, taskData, failReasonMsg, sizeof(failReasonMsg));
-	}
-	
-	if (strlen(failReasonMsg) > 0)
-	{
-		// @TODO: Print the reason for the task failing.
+		
+		if (scheduleTaskState == ScheduleTaskState_Failed)
+		{
+			if (strlen(failReasonMsg) > 0)
+			{
+#if defined DEBUG
+				if (GetConVarBool(g_cvDebugScheduleThink))
+				{
+					decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+					NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+					
+					decl String:scheduleName[64];
+					GetScheduleName(schedule, scheduleName, sizeof(scheduleName));
+					
+					DebugMessage("Boss %d (%s): schedule %s failed at task %s in RunTask! (%s)", iNPCIndex, sProfile, scheduleName, g_ScheduleTaskNames[_:taskID], failReasonMsg);
+				}
+#endif
+			}
+		}
 	}
 	
 	g_iNPCScheduleTaskState[iNPCIndex] = scheduleTaskState;
@@ -853,7 +910,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			NPCAdvChaser_ClearPath(iNPCIndex);
 			
-			new enemy = NPCAdvChaser_GetEnemy(iNPCIndex);
+			new enemy = NPCGetEnemy(iNPCIndex);
 			if (!enemy || enemy == INVALID_ENT_REFERENCE)
 			{
 				Format(failReasonMsg, failReasonMsgLen, "NPC does not have an enemy.");
@@ -871,7 +928,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", flStartPos);
 			
 			new Handle:hPath = CreateNavPath();
-			if (!NavPathConstructPathFromPoints(hPath, flStartPos, flEndPos, 256.0, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
+			if (!NavPathConstructPathFromPoints(hPath, flStartPos, flEndPos, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
 			{
 				CloseHandle(hPath);
 				Format(failReasonMsg, failReasonMsgLen, "Failed to construct path to enemy.");
@@ -881,6 +938,12 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			g_hNPCPath[iNPCIndex] = hPath;
 			g_iNPCPathNodeIndex[iNPCIndex] = 1;
 			g_iNPCPathBehindNodeIndex[iNPCIndex] = 0;
+			
+			g_iNPCPathGoalType[iNPCIndex] = SF2NPCAdvChaserGoalType_Enemy;
+			g_iNPCPathGoalEntity[iNPCIndex] = EntIndexToEntRef(entity);
+			
+			new lastAreaIndex = NavPathGetNodeAreaIndex(hPath, GetArraySize(hPath) - 1);
+			g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex] = lastAreaIndex;
 			
 			return ScheduleTaskState_Completed;
 		}
@@ -938,11 +1001,78 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			new npc = NPCGetEntIndex(iNPCIndex);
 			if (!npc || npc == INVALID_ENT_REFERENCE)
 			{
+				NPCAdvChaser_StopMoving(iNPCIndex);
+			
 				strcopy(failReasonMsg, failReasonMsgLen, "NPC entity does not exist.");
 				return ScheduleTaskState_Failed;
 			}
 			
-			// Check if the entity has made it to the goal.
+			// Validate our goal entity and check if we need to repath.
+			switch (g_iNPCPathGoalType[iNPCIndex])
+			{
+				case SF2NPCAdvChaserGoalType_Enemy:
+				{
+					new enemy = EntRefToEntIndex(g_iNPCPathGoalEntity[iNPCIndex]);
+					if (!enemy || enemy == INVALID_ENT_REFERENCE)
+					{
+						// No enemy selected? Abort.
+						NPCAdvChaser_StopMoving(iNPCIndex);
+						
+						strcopy(failReasonMsg, failReasonMsgLen, "Goal entity (enemy) does not exist.");
+						return ScheduleTaskState_Failed;
+					}
+					
+					decl Float:flEnemyLKP[3];
+					if (NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, enemy, flEnemyLKP))
+					{
+						new areaIndex = NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, enemy);
+						if (areaIndex != -1)
+						{
+							if (areaIndex != lastAreaIndex)
+							{
+								// The entity moved to a different area. Attempt to repath.
+								new Handle:hNewPath = CreateNavPath();
+								if (!NavPathConstructPathFromPoints(hNewPath, flStartPos, flEnemyLKP, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
+								{
+									// Repath failed. Enemy is unreachable.
+									CloseHandle(hNewPath);
+									NPCAdvChaser_StopMoving(iNPCIndex);
+									
+									strcopy(failReasonMsg, failReasonMsgLen, "Attempt to repath to goal entity (enemy) failed.");
+									return ScheduleTaskState_Failed;
+								}
+								
+								// Repath successful. Set our path to the new path.
+								CloseHandle(g_hNPCPath[iNPCIndex]);
+								
+								g_hNPCPath[iNPCIndex] = hNewPath;
+								g_iNPCPathNodeIndex[iNPCIndex] = 1;
+								g_iNPCPathBehindNodeIndex[iNPCIndex] = 0;
+								
+								hPath = hNewPath;
+							}
+							else
+							{
+								decl Float:flEndPos[3];
+								CopyVector(flEnemyLKP, flEndPos);
+								flEndPos[2] = NavMeshArea_GetZ(areaIndex, flEnemyLKP);
+								
+								// Entity might have moved but is still in the same area. Don't repath; just update the goal position.
+								NavPathSetNodePosition(hPath, GetArraySize(hPath) - 1, flEndPos);
+							}
+						}
+						else
+						{
+							NPCAdvChaser_StopMoving(iNPCIndex);
+							
+							strcopy(failReasonMsg, failReasonMsgLen, "Goal entity (enemy) deemed unreachable due to invalid area index.");
+							return ScheduleTaskState_Failed;
+						}
+					}
+				}
+			}
+			
+			// Check if the NPC has made it to the goal.
 			new pathNodeIndex = g_iNPCPathNodeIndex[iNPCIndex];
 			if (pathNodeIndex < 0 || pathNodeIndex >= GetArraySize(hPath))
 			{
@@ -1114,6 +1244,8 @@ static NPCAdvChaser_ClearPath(iNPCIndex)
 	g_flNPCMovePosition[iNPCIndex][1] = 0.0;
 	g_flNPCMovePosition[iNPCIndex][2] = 0.0;
 	g_iNPCPathGoalEntity[iNPCIndex] = INVALID_ENT_REFERENCE;
+	g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex] = -1;
+	g_iNPCPathGoalType[iNPCIndex] = SF2NPCAdvChaserGoalType_Invalid;
 }
 
 // Shortest-path cost function for NavMesh_BuildPath.

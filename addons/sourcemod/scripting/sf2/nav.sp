@@ -29,6 +29,11 @@ methodmap NavPath < Handle
 		NavPathGetNodePosition(this, nodeIndex, buffer);
 	}
 	
+	public void SetNodePosition(int nodeIndex, const float pos[3])
+	{
+		NavPathSetNodePosition(this, nodeIndex, pos);
+	}
+	
 	public int GetNodeAreaIndex(int nodeIndex)
 	{
 		return NavPathGetNodeAreaIndex(this, nodeIndex);
@@ -57,6 +62,13 @@ stock NavPathGetNodePosition(Handle:hNavPath, iNodeIndex, Float:buffer[3])
 	buffer[0] = Float:GetArrayCell(hNavPath, iNodeIndex, 0);
 	buffer[1] = Float:GetArrayCell(hNavPath, iNodeIndex, 1);
 	buffer[2] = Float:GetArrayCell(hNavPath, iNodeIndex, 2);
+}
+
+stock NavPathSetNodePosition(Handle:hNavPath, iNodeIndex, const Float:pos[3])
+{
+	SetArrayCell(hNavPath, iNodeIndex, pos[0], 0);
+	SetArrayCell(hNavPath, iNodeIndex, pos[1], 1);
+	SetArrayCell(hNavPath, iNodeIndex, pos[2], 2);
 }
 
 stock NavPathGetNodeAreaIndex(Handle:hNavPath, iNodeIndex)
