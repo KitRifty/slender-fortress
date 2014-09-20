@@ -300,9 +300,10 @@ static GetScheduleName(Schedule:schedule, String:buffer[], bufferlen)
 enum EnemyMemoryType
 {
 	EnemyMemoryType_Invalid = -1,
-	EnemyMemoryType_Sound = 0,
-	EnemyMemoryType_Glimpse,
-	EnemyMemoryType_Sight
+	EnemyMemoryType_Sound = 0,	// Heard this entity.
+	EnemyMemoryType_Scent,		// "Smells" this entity. Used for patrolling around enemies that "get away".
+	EnemyMemoryType_Glimpse,		// Saw this entity, but not enough for the NPC to go into full chase mode.
+	EnemyMemoryType_Sight			// LET'S GO MUTHATFUCKA!
 };
 
 enum
@@ -314,6 +315,7 @@ enum
 	EnemyMemoryStruct_LastKnownPosY,
 	EnemyMemoryStruct_LastKnownPosZ,
 	EnemyMemoryStruct_LastKnownAreaIndex,
+	EnemyMemoryStruct_Awareness,
 	EnemyMemoryStruct_MaxStats
 };
 
@@ -349,7 +351,7 @@ static NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, ent)
 	return FindValueInArray(g_hNPCEnemyMemory[iNPCIndex], EntIndexToEntRef(ent));
 }
 
-static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType)
+static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType, awareness=0)
 {
 	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
 	if (memoryIndex != -1)
@@ -371,6 +373,8 @@ static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryTyp
 	new areaIndex = NavMesh_GetNearestArea(flPos, _, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS);
 	
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, areaIndex, EnemyMemoryStruct_LastKnownAreaIndex);
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
 	
 	return memoryIndex;
 }
@@ -424,7 +428,7 @@ static NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, enemy, EnemyMemoryType:memo
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, memoryType, EnemyMemoryStruct_Type);
 }
 
-static NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, enemy)
+static EnemyMemoryType:NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, enemy)
 {
 	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
 	if (memoryIndex == -1)
@@ -433,6 +437,28 @@ static NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, enemy)
 	}
 	
 	return EnemyMemoryType:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Type);
+}
+
+static NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, enemy, awareness)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return;
+	}
+	
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
+}
+
+static NPCAdvChaser_GetEnemyAwareness(iNPCIndex, enemy)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return 0;
+	}
+	
+	return GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
 }
 
 static NPCAdvChaser_CheckForStaleMemory(iNPCIndex)
@@ -510,7 +536,72 @@ NPCAdvChaser_SetActivity(iNPCIndex, SF2AdvChaserActivity:iActivity)
 
 static SF2AdvChaserActivity:NPCAdvChaser_SelectActivity(iNPCIndex)
 {
-	return SF2AdvChaserActivity_Stand;
+	new SF2AdvChaserActivity:activity = NPCAdvChaser_GetActivity(iNPCIndex);
+	new SF2AdvChaserActivity:preferredActivity = NPCAdvChaser_GetPreferredActivity(iNPCIndex)
+	
+	switch (preferredActivity)
+	{
+		case SF2AdvChaserActivity_Walk, SF2AdvChaserActivity_Run:
+		{
+			new npc = NPCGetEntIndex(iNPCIndex);
+			if (npc && npc != INVALID_ENT_REFERENCE)
+			{
+				if (activity != SF2AdvChaserActivity_Jump)
+				{
+					new Handle:hPath = g_hNPCPath[iNPCIndex];
+					if (hPath != INVALID_HANDLE && GetArraySize(hPath) > 0)
+					{
+						new behindPathNodeIndex = g_iNPCPathBehindNodeIndex[iNPCIndex];
+						if (behindPathNodeIndex != -1)
+						{
+							new areaIndex = NavPathGetNodeAreaIndex(hPath, behindPathNodeIndex);
+							if (areaIndex != -1)
+							{
+								new areaFlags = NavMeshArea_GetFlags(areaIndex);
+								if (areaFlags & NAV_MESH_JUMP)
+								{
+									if (NPCAdvChaser_IsOnGround(iNPCIndex))
+									{
+										return SF2AdvChaserActivity_Jump;
+									}
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					if (!NPCAdvChaser_IsOnGround(iNPCIndex))
+					{
+						// We're still in the air; maintain this activity.
+						return SF2AdvChaserActivity_Jump;
+					}
+				}
+			}
+		}
+	}
+
+	return preferredActivity;
+}
+
+static bool:NPCAdvChaser_IsOnGround(iNPCIndex)
+{
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE) return false;
+	
+	// Check if the NPC is on the ground first.
+	decl Float:vPos[3], Float:vFloorPos[3], Float:vMins[3], Float:vMaxs[3];
+	GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", vPos);
+	GetEntPropVector(npc, Prop_Send, "m_vecMins", vMins);
+	GetEntPropVector(npc, Prop_Send, "m_vecMaxs", vMaxs);
+	CopyVector(vPos, vFloorPos);
+	vFloorPos[2] -= 1.0;
+	
+	new Handle:trace = TR_TraceHullFilterEx(vPos, vFloorPos, vMins, vMaxs, MASK_NPCSOLID_BRUSHONLY, RayType_EndPoint, TraceRayDontHitEntity, npc);
+	new bool:traceDidHit = TR_DidHit(trace);
+	CloseHandle(hTrace);
+	
+	return traceDidHit;
 }
 
 static NPCAdvChaser_StopMoving(iNPCIndex)
@@ -1002,12 +1093,12 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			if (!npc || npc == INVALID_ENT_REFERENCE)
 			{
 				NPCAdvChaser_StopMoving(iNPCIndex);
-			
+				
 				strcopy(failReasonMsg, failReasonMsgLen, "NPC entity does not exist.");
 				return ScheduleTaskState_Failed;
 			}
 			
-			// Validate our goal entity and check if we need to repath.
+			// If applicable, validate our goal entity and check if we need to repath.
 			switch (g_iNPCPathGoalType[iNPCIndex])
 			{
 				case SF2NPCAdvChaserGoalType_Enemy:
@@ -1028,6 +1119,9 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 						new areaIndex = NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, enemy);
 						if (areaIndex != -1)
 						{
+							new lastAreaIndex = g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex];
+							g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex] = areaIndex;
+							
 							if (areaIndex != lastAreaIndex)
 							{
 								// The entity moved to a different area. Attempt to repath.
