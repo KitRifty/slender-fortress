@@ -10,7 +10,8 @@
  */
 
 #define SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS 256.0
- 
+#define SF2_NPC_ADVCHASER_THINK_RATE GetTickInterval() 
+
 enum SF2AdvChaserState
 {
 	SF2AdvChaserState_Invalid = -1,
@@ -316,6 +317,8 @@ enum
 	EnemyMemoryStruct_LastKnownPosZ,
 	EnemyMemoryStruct_LastKnownAreaIndex,
 	EnemyMemoryStruct_Awareness,
+	EnemyMemoryStruct_AwarenessDecayRate,
+	EnemyMemoryStruct_NextAwarenessDecayTime,
 	EnemyMemoryStruct_MaxStats
 };
 
@@ -351,7 +354,12 @@ static NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, ent)
 	return FindValueInArray(g_hNPCEnemyMemory[iNPCIndex], EntIndexToEntRef(ent));
 }
 
-static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType, awareness=0)
+static bool:NPCAdvChaser_IsEntityInMemory(iNPCIndex, ent)
+{
+	return bool:(NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, ent) != -1)
+}
+
+static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType, awareness=0, Float:awarenessDecayRate=1.0)
 {
 	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
 	if (memoryIndex != -1)
@@ -375,6 +383,10 @@ static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryTyp
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, areaIndex, EnemyMemoryStruct_LastKnownAreaIndex);
 	
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awarenessDecayRate, EnemyMemoryStruct_AwarenessDecayRate);
+	
+	new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRate);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
 	
 	return memoryIndex;
 }
@@ -414,6 +426,12 @@ static bool:NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, enemy, Float:buffer[3])
 
 static NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, enemy)
 {
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return -1;
+	}
+	
 	return GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownAreaIndex);
 }
 
@@ -461,16 +479,81 @@ static NPCAdvChaser_GetEnemyAwareness(iNPCIndex, enemy)
 	return GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
 }
 
-static NPCAdvChaser_CheckForStaleMemory(iNPCIndex)
+static NPCAdvChaser_GatherEnemies(iNPCIndex)
+{
+}
+
+static NPCAdvChaser_CheckEnemyMemory(iNPCIndex)
 {
 	for (new memoryIndex = 0; memoryIndex < GetArraySize(g_hNPCEnemyMemory[iNPCIndex]); memoryIndex++)
 	{
+		new awareness = GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
+		if (awareness > 0)
+		{
+			new Float:nextDecayTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessDecayTime);
+			if (GetGameTime() >= nextDecayTime)
+			{
+				awareness--;
+				SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
+				
+				new Float:awarenessDecayRate = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_AwarenessDecayRate);
+				
+				new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRate);
+				SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+			}
+		}
+		else
+		{
+			// No longer aware of this entity. Remove from memory.
+			RemoveFromArray(g_hNPCEnemyMemory[iNPCIndex], memoryIndex);
+			memoryIndex--;
+			continue;
+		}
 	}
 }
 
 static NPCAdvChaser_SelectEnemy(iNPCIndex)
 {
-	return INVALID_ENT_REFERENCE;
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE)
+	{
+		return INVALID_ENT_REFERENCE;
+	}
+
+	decl Float:vPos[3], Float:vEnemyPos[3];
+	GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", vPos);
+	
+	new bestEnemy = INVALID_ENT_REFERENCE;
+	new Float:bestPriority = -1.0;
+	
+	for (new memoryIndex = 0; memoryIndex < GetArraySize(g_hNPCEnemyMemory[iNPCIndex]); memoryIndex++)
+	{
+		new enemy = EntRefToEntIndex(GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_EntRef));
+		if (!enemy || enemy == INVALID_ENT_REFERENCE) continue;
+		
+		new EnemyMemoryType:type = EnemyMemoryType:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Type);
+		if (type != EnemyMemoryType_Sight) continue;
+		
+		vEnemyPos[0] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosX);
+		vEnemyPos[1] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosY);
+		vEnemyPos[2] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosZ);
+		
+		new Float:dist = GetVectorDistance(vPos, vEnemyPos);
+		new awareness = GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
+		new Float:priority = dist * (1.0 - (float(awareness) / 100.0))
+		if (priority < 0.0)
+		{
+			priority = 0.0;
+		}
+		
+		if (bestPriority < 0.0 || priority < bestPriority)
+		{
+			bestEnemy = enemy;
+			bestPriority = priority;
+		}
+	}
+	
+	return bestEnemy;
 }
 
 /*	
@@ -1383,17 +1466,54 @@ NPCAdvChaser_OnSelectProfile(iNPCIndex)
 
 NPCAdvChaser_Think(iNPCIndex)
 {
-	// Gather and select enemies.
+	// 1. Gather and select enemies.
 	
-	// Maintain schedule (preset list of instructions for a specific situation). A new schedule could be chosen during this time, or just maintain the current one.
+	NPCAdvChaser_GatherEnemies(iNPCIndex);
 	
-	// Select the activity to be in. Running, standing, jumping, or something else, etc. The preferred activity is the main activity to be in.
+	NPCAdvChaser_CheckEnemyMemory(iNPCIndex);
 	
-	// Handle movement. If the current activity is about movement, move the NPC towards MovePosition, change angles, speed, etc.
+	new preferredEnemy = NPCAdvChaser_SelectEnemy(iNPCIndex);
+	new enemy = NPCGetEnemy(iNPCIndex);
 	
-	// Handle animations. Some animations are directly associated with the current activity.
+	if (enemy != preferredEnemy)
+	{
+		if (preferredEnemy != INVALID_ENT_REFERENCE)
+		{
+			NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_NEW_ENEMY);
+		}
+		else
+		{
+			if (enemy != INVALID_ENT_REFERENCE)
+			{
+				NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_LOST_ENEMY);
+			}
+		}
+	}
 	
-	// Reset for the next frame.
+	NPCSetEnemy(iNPCIndex, preferredEnemy);
+	enemy = preferredEnemy;
+	
+	// 2. Execute schedule (preset list of instructions for a specific situation). A new schedule could be chosen during this time, or just maintain the current one.
+	
+	NPCAdvChaser_MaintainSchedule(iNPCIndex);
+	
+	// 3. Select the activity to be in. Running, standing, jumping, or something else, etc. The preferred activity is the main activity to be in.
+	
+	new SF2AdvChaserActivity:preferredActivity = NPCAdvChaser_SelectActivity(iNPCIndex);
+	new SF2AdvChaserActivity:activity = NPCAdvChaser_GetActivity(iNPCIndex);
+	
+	NPCAdvChaser_SetActivity(iNPCIndex, preferredActivity);
+	
+	if (activity != preferredActivity)
+	{
+		// @TODO: Add a response to change of activities...?
+	}
+	
+	// 4. Handle movement. If the current activity is about movement, move the NPC towards MovePosition, change angles, speed, etc.
+	
+	// 5. Handle animations. Some animations are directly associated with the current activity.
+	
+	// 6. Finally, reset for the next think.
 	
 	g_iNPCInterruptConditions[iNPCIndex] = 0;
 	g_iNPCAnimationNeedsUpdate[iNPCIndex] = false;
