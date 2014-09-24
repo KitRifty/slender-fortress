@@ -3405,6 +3405,7 @@ ClientSetGhostModeState(client, bool:bState)
 		if (IsClientInGame(client))
 		{
 			TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
+			SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
 		}
 	}
 }
@@ -3423,6 +3424,7 @@ ClientHandleGhostMode(client, bool:bForceSpawn=false)
 	if (!TF2_IsPlayerInCondition(client, TFCond_HalloweenGhostMode) || bForceSpawn)
 	{
 		TF2_AddCondition(client, TFCond_HalloweenGhostMode, -1.0);
+		SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_DEBRIS);
 		
 		// Set first observer target.
 		ClientGhostModeNextTarget(client);
