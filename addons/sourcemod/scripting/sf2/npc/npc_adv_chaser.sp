@@ -35,42 +35,6 @@ enum SF2AdvChaserActivity
 	SF2AdvChaserActivity_Max
 };
 
-enum SF2NPCAdvChaserAttackType
-{
-	SF2NPCAdvChaserAttackType_Invalid = -1,
-	SF2NPCAdvChaserAttackType_Melee = 0,
-	SF2NPCAdvChaserAttackType_Ranged,
-	SF2NPCAdvChaserAttackType_Projectile,
-	SF2NPCAdvChaserAttackType_Grab
-};
-
-enum SF2NPCAdvChaserGoalType
-{
-	SF2NPCAdvChaserGoalType_Invalid = -1,
-	SF2NPCAdvChaserGoalType_Point,
-	SF2NPCAdvChaserGoalType_Enemy,
-	SF2NPCAdvChaserGoalType_Target
-};
-
-enum SF2NPCAdvChaser_BaseAttack
-{
-	SF2NPCAdvChaserAttackType:SF2NPCAdvChaser_BaseAttackType,
-	Float:SF2NPCAdvChaser_BaseAttackDamage,
-	Float:SF2NPCAdvChaser_BaseAttackDamageVsProps,
-	Float:SF2NPCAdvChaser_BaseAttackDamageForce,
-	SF2NPCAdvChaser_BaseAttackDamageType,
-	Float:SF2NPCAdvChaser_BaseAttackDamageDelay,
-	Float:SF2NPCAdvChaser_BaseAttackRange,
-	Float:SF2NPCAdvChaser_BaseAttackDuration,
-	Float:SF2NPCAdvChaser_BaseAttackSpread,
-	Float:SF2NPCAdvChaser_BaseAttackBeginRange,
-	Float:SF2NPCAdvChaser_BaseAttackBeginFOV,
-	Float:SF2NPCAdvChaser_BaseAttackCooldown,
-	Float:SF2NPCAdvChaser_BaseAttackNextAttackTime,
-	String:SF2NPCAdvChaser_BaseAttackAnimation[64]
-	Float:SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate
-};
-
 // Generic stuff.
 static SF2AdvChaserState:g_iNPCState[MAX_BOSSES] = { -1, ... };
 static SF2AdvChaserState:g_iNPCPreferredState[MAX_BOSSES] = { -1, ... };
@@ -90,8 +54,6 @@ static Float:g_flNPCMaxWalkSpeed[MAX_BOSSES][Difficulty_Max];
 static Float:g_flNPCMaxAirSpeed[MAX_BOSSES][Difficulty_Max];
 
 static Float:g_flNPCWakeRadius[MAX_BOSSES];
-
-static g_NPCBaseAttackData[MAX_BOSSES][SF2_ADV_CHASER_BOSS_MAX_ATTACKS][SF2NPCAdvChaser_BaseAttack];
 
 // Nav stuff.
 static Handle:g_hNPCPath[MAX_BOSSES] = { INVALID_HANDLE, ... };
@@ -565,8 +527,49 @@ static NPCAdvChaser_SelectEnemy(iNPCIndex)
  *	=====================================================
  */
 
-static SF2NPCAdvChaserAttackType:g_iAttackType[MAX_BOSSES] = { SF2NPCAdvChaserAttackType_Invalid, ... };
+enum SF2NPCAdvChaserAttackType
+{
+	SF2NPCAdvChaserAttackType_Invalid = -1,
+	SF2NPCAdvChaserAttackType_Melee = 0,
+	SF2NPCAdvChaserAttackType_Ranged,
+	SF2NPCAdvChaserAttackType_Projectile,
+	SF2NPCAdvChaserAttackType_Grab
+};
+
+enum SF2NPCAdvChaserGoalType
+{
+	SF2NPCAdvChaserGoalType_Invalid = -1,
+	SF2NPCAdvChaserGoalType_Point,
+	SF2NPCAdvChaserGoalType_Enemy,
+	SF2NPCAdvChaserGoalType_Target
+};
+
+enum SF2NPCAdvChaser_BaseAttackData
+{
+	SF2NPCAdvChaserAttackType:SF2NPCAdvChaser_BaseAttackType,
+	Float:SF2NPCAdvChaser_BaseAttackDamage,
+	Float:SF2NPCAdvChaser_BaseAttackDamageVsProps,
+	Float:SF2NPCAdvChaser_BaseAttackDamageForce,
+	SF2NPCAdvChaser_BaseAttackDamageType,
+	Float:SF2NPCAdvChaser_BaseAttackDamageDelay,
+	Float:SF2NPCAdvChaser_BaseAttackRange,
+	Float:SF2NPCAdvChaser_BaseAttackDuration,
+	Float:SF2NPCAdvChaser_BaseAttackSpread,
+	Float:SF2NPCAdvChaser_BaseAttackBeginRange,
+	Float:SF2NPCAdvChaser_BaseAttackBeginFOV,
+	Float:SF2NPCAdvChaser_BaseAttackCooldown,
+	Float:SF2NPCAdvChaser_BaseAttackNextAttackTime,
+	Float:SF2NPCAdvChaser_BaseAttackViewPunch[3],
+	String:SF2NPCAdvChaser_BaseAttackAnimation[64]
+	Float:SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate
+};
+
 static Handle:g_hNPCAttackDurationTimer[MAX_BOSSES] = { INVALID_HANDLE, ... };
+static g_iNPCAttackIndex[MAX_BOSSES] = { -1, ... };
+
+// Base attack data
+
+static g_NPCBaseAttackData[MAX_BOSSES][SF2_ADV_CHASER_BOSS_MAX_ATTACKS][SF2NPCAdvChaser_BaseAttackData];
 
 SF2NPCAdvChaserAttackType:NPCAdvChaser_GetAttackType(iNPCIndex, iAttackIndex)
 {
@@ -623,6 +626,26 @@ Float:NPCAdvChaser_GetAttackBeginFOV(iNPCIndex, iAttackIndex)
 	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackBeginFOV];
 }
 
+Float:NPCAdvChaser_GetAttackCooldown(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackCooldown];
+}
+
+Float:NPCAdvChaser_GetNextAttackTime(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackNextAttackTime];
+}
+
+NPCAdvChaser_SetNextAttackTime(iNPCIndex, iAttackIndex, Float:time)
+{
+	g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackNextAttackTime] = time;
+}
+
+NPCAdvChaser_GetAttackViewPunch(iNPCIndex, iAttackIndex, Float:buffer[3])
+{
+	CopyVector(g_NPCBaseAttackData[iNPCIndex][SF2NPCAdvChaser_BaseAttackViewPunch], buffer);
+}
+
 NPCAdvChaser_GetAttackAnimation(iNPCIndex, iAttackIndex, String:buffer[], bufferlen)
 {
 	strcopy(buffer, bufferlen, g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimation]);
@@ -633,6 +656,7 @@ Float:NPCAdvChaser_GetAttackAnimationPlaybackRate(iNPCIndex, iAttackIndex)
 	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate];
 }
 
+// MELEE ATTACK
 static Handle:g_hNPCMeleeAttackDamageDelayTimer[MAX_BOSSES] = { INVALID_HANDLE, ... };
 
 static NPCAdvChaser_StartMeleeAttack(iNPCIndex, attackIndex)
@@ -642,15 +666,13 @@ static NPCAdvChaser_StartMeleeAttack(iNPCIndex, attackIndex)
 	new Float:damageDelay = NPCAdvChaser_GetAttackDamageDelay(iNPCIndex, attackIndex);
 	new Float:attackDuration = NPCAdvChaser_GetAttackDuration(iNPCIndex, attackIndex);
 	
-	new Handle:dataPack;
-	new Handle:damageTimer = CreateDataTimer(damageDelay, Timer_NPCAdvChaser_MeleeAttackDamage, dataPack, TIMER_FLAG_NO_MAPCHANGE);
-	WritePackCell(dataPack, iNPCIndex);
-	WritePackCell(dataPack, attackIndex);
+	new Handle:damageTimer = CreateTimer(damageDelay, Timer_NPCAdvChaser_MeleeAttackDamage, iNPCIndex, TIMER_FLAG_NO_MAPCHANGE);
 	
 	new Handle:durationTimer = CreateTimer(attackDuration, Timer_NPCAdvChaser_MeleeAttackEnd, iNPCIndex, TIMER_FLAG_NO_MAPCHANGE);
 	
 	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = damageTimer;
 	g_hNPCAttackDurationTimer[iNPCIndex] = durationTimer;
+	g_iNPCAttackIndex[iNPCIndex] = attackIndex;
 	
 	// @TODO: Set animation of the boss's model.
 	
@@ -662,28 +684,33 @@ static NPCAdvChaser_StartMeleeAttack(iNPCIndex, attackIndex)
 	}
 }
 
-static NPCAdvChaser_EndMeleeAttack(iNPCIndex, attackIndex, bool:wasInterrupted)
+static NPCAdvChaser_EndMeleeAttack(iNPCIndex, bool:wasInterrupted)
 {
 	NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
-
+	
 	g_hNPCAttackDurationTimer[iNPCIndex] = INVALID_HANDLE;
-	g_iNPCAttackType[iNPCIndex] = SF2NPCAdvChaserAttackType_Invalid;
+	g_iNPCAttackIndex[iNPCIndex] = -1;
 	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = INVALID_HANDLE;
 }
 
-public Action:Timer_NPCAdvChaser_MeleeAttackDamage(Handle:timer, Handle:dataPack)
+public Action:Timer_NPCAdvChaser_MeleeAttackEnd(Handle:timer, any:iNPCIndex)
 {
-	ResetPack(dataPack);
-	new iNPCIndex = ReadPackCell(dataPack);
-
 	if (timer != g_hNPCAttackDurationTimer[iNPCIndex]) return;
 	
 	g_hNPCAttackDurationTimer[iNPCIndex] = INVALID_HANDLE;
+	NPCAdvChaser_EndMeleeAttack(iNPCIndex, false);
+}
+
+public Action:Timer_NPCAdvChaser_MeleeAttackDamage(Handle:timer, any:iNPCIndex)
+{
+	if (timer != g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex]) return;
+	
+	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = INVALID_HANDLE;
 	
 	new npc = NPCGetEntIndex(iNPCIndex);
 	if (!npc || npc == INVALID_ENT_REFERENCE) return;
 	
-	new attackIndex = ReadPackCell(dataPack);
+	new attackIndex = g_iNPCAttackIndex[iNPCIndex];
 	
 	new Float:attackSpread = NPCAdvChaser_GetAttackSpread(iNPCIndex, attackIndex);
 	new Float:attackRange = NPCAdvChaser_GetAttackRange(iNPCIndex, attackIndex);
@@ -725,6 +752,8 @@ public Action:Timer_NPCAdvChaser_MeleeAttackDamage(Handle:timer, Handle:dataPack
 		PushArrayCell(targetList, ent);
 	}
 	
+	new Float:cosAng = Cosine(DegToRad(attackSpread / 2.0));
+	
 	// Loop through target list.
 	for (new i = 0; i < GetArraySize(targetList); i++)
 	{
@@ -740,7 +769,7 @@ public Action:Timer_NPCAdvChaser_MeleeAttackDamage(Handle:timer, Handle:dataPack
 		
 		MakeVectorFromPoints(vPos, vTargetPos, vTo);
 		NormalizeVector(vTo, vTo);
-		if (GetVectorDotProduct(vDir, vTo) >= Cosine(DegToRad(attackSpread / 2.0)))
+		if (GetVectorDotProduct(vDir, vTo) >= cosAng)
 		{
 			// Next, check distance.
 			if (GetVectorDistance(vPos, vTargetPos) < attackRange)
@@ -778,6 +807,83 @@ public Action:Timer_NPCAdvChaser_MeleeAttackDamage(Handle:timer, Handle:dataPack
 	}
 	
 	CloseHandle(targetList);
+	
+	// @TODO: Grab random sounds from a section INSIDE the attack.
+	decl String:npcProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	new String:soundPath[PLATFORM_MAX_PATH];
+	NPCGetProfile(iNPCIndex, npcProfile, sizeof(npcProfile));
+	
+	if (hitSomething)
+	{
+		//GetRandomStringFromProfile(npcProfile, "sound_hitenemy", soundPath, sizeof(soundPath));
+		if (soundPath[0]) EmitSoundToAll(soundPath, npc, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
+	}
+	else
+	{
+		//GetRandomStringFromProfile(npcProfile, "sound_missenemy", soundPath, sizeof(soundPath));
+		if (soundPath[0]) EmitSoundToAll(soundPath, npc, SNDCHAN_AUTO, SNDLEVEL_SCREAMING);
+	}
+}
+
+// RANGED ATTACK
+
+enum SF2NPCAdvChaser_RangedAttackData
+{
+	SF2NPCAdvChaser_RangedAttackNumBulletsPerShot,
+	SF2NPCAdvChaser_RangedAttackBurstNum,
+	Float:SF2NPCAdvChaser_RangedAttackBurstDuration,
+	Float:SF2NPCAdvChaser_RangedAttackNextBurstShotTime,
+	SF2NPCAdvChaser_RangedAttackBurstShotsLeft,
+	Float:SF2NPCAdvChaser_RangedAttackShootRelativePos[3],
+	String:SF2NPCAdvChaser_RangedAttackShootAttachment[64],
+	SF2NPCAdvChaser_RangedAttackShootPosEntity,
+	String:SF2NPCAdvChaser_RangedAttackTracerParticle[64]
+};
+
+static g_NPCRangedAttackData[MAX_BOSSES][SF2_ADV_CHASER_BOSS_MAX_ATTACKS][SF2NPCAdvChaser_RangedAttackData];
+
+static NPCAdvChaser_StartRangedAttack(iNPCIndex, attackIndex)
+{
+	new burstShotsNum = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstNum];
+	
+	g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackNextBurstShotTime] = GetGameTime();
+	g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstShotsLeft] = burstShotsNum;
+}
+
+static NPCAdvChaser_RangedAttackThink(iNPCIndex)
+{
+	new attackIndex = g_iNPCAttackIndex[iNPCIndex];
+	
+	new burstShotsLeft = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstShotsLeft];
+	if (burstShotsLeft > 0)
+	{
+		if (GetGameTime() >= g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackNextBurstShotTime])
+		{
+			g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstShotsLeft] = --burstShotsLeft;
+			
+			if (burstShotsLeft > 0)
+			{
+				// We still got another bullet to fire in the burst.
+				
+				new Float:burstDuration = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstDuration];
+				new burstNum = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstNum];
+				
+				g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackNextBurstShotTime] = GetGameTime() + (burstDuration / float(burstNum));
+			}
+		}
+	}
+}
+
+static NPCAdvChaser_CreateShootPosEntity(iNPCIndex)
+{
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE) return INVALID_ENT_REFERENCE;
+	
+	new ent = CreateEntityByName("");
+}
+
+static NPCAdvChaser_StopRangedAttack(iNPCIndex, bool:wasInterrupted)
+{
 }
 
 /*	
