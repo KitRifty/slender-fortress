@@ -37,6 +37,7 @@ enum SF2AdvChaserActivity
 
 enum SF2NPCAdvChaserAttackType
 {
+	SF2NPCAdvChaserAttackType_Invalid = -1,
 	SF2NPCAdvChaserAttackType_Melee = 0,
 	SF2NPCAdvChaserAttackType_Ranged,
 	SF2NPCAdvChaserAttackType_Projectile,
@@ -102,6 +103,8 @@ static g_iNPCPathGoalEntity[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 static g_iNPCPathGoalEntityLastKnownAreaIndex[MAX_BOSSES] = { -1, ... };
 static g_iNPCPathGoalType[MAX_BOSSES] = { SF2NPCAdvChaserGoalType_Invalid, ... }:
 
+static Float:g_flNPCSavePosition[MAX_BOSSES][3];
+
 #if defined DEBUG
 
 static Handle:g_cvDebugScheduleThink = INVALID_HANDLE;
@@ -133,20 +136,20 @@ enum ScheduleTask
 {
 	TASK_WAIT = 0,
 	TASK_TRAVERSE_PATH,
-	TASK_WAIT_FOR_ATTACK,
+	TASK_DO_BEST_ATTACK,
 	
 	TASK_SET_SCHEDULE,
 	TASK_SET_FAIL_SCHEDULE,
 	
 	TASK_SET_PREFERRED_ACTIVITY,
 	
+	TASK_FACE_SAVEPOSITION,
 	TASK_FACE_ENEMY,
 	TASK_FACE_TARGET,
 	
+	TASK_GET_PATH_TO_SAVEPOSITION,
 	TASK_GET_PATH_TO_ENEMY,
-	TASK_GET_CHASE_PATH_TO_ENEMY,
 	TASK_GET_PATH_TO_TARGET,
-	TASK_GET_CHASE_PATH_TO_TARGET,
 	TASK_SET_PATH_TOLERANCE_DIST,
 	
 	TASK_SET_ANIMATION,
@@ -166,20 +169,20 @@ static const g_ScheduleTaskNames[][] =
 {
 	"TASK_WAIT",
 	"TASK_TRAVERSE_PATH",
-	"TASK_WAIT_FOR_ATTACK",
+	"TASK_DO_BEST_ATTACK",
 	
 	"TASK_SET_SCHEDULE",
 	"TASK_SET_FAIL_SCHEDULE",
 	
 	"TASK_SET_PREFERRED_ACTIVITY",
 	
+	"TASK_FACE_SAVEPOSITION",
 	"TASK_FACE_ENEMY",
 	"TASK_FACE_TARGET",
 	
+	"TASK_GET_PATH_TO_SAVEPOSITION",
 	"TASK_GET_PATH_TO_ENEMY",
-	"TASK_GET_CHASE_PATH_TO_ENEMY",
 	"TASK_GET_PATH_TO_TARGET",
-	"TASK_GET_CHASE_PATH_TO_TARGET",
 	"TASK_SET_PATH_TOLERANCE_DIST",
 	
 	"TASK_SET_ANIMATION"
@@ -558,6 +561,227 @@ static NPCAdvChaser_SelectEnemy(iNPCIndex)
 
 /*	
  *	=====================================================
+ *	ATTACK FUNCTIONS
+ *	=====================================================
+ */
+
+static SF2NPCAdvChaserAttackType:g_iAttackType[MAX_BOSSES] = { SF2NPCAdvChaserAttackType_Invalid, ... };
+static Handle:g_hNPCAttackDurationTimer[MAX_BOSSES] = { INVALID_HANDLE, ... };
+
+SF2NPCAdvChaserAttackType:NPCAdvChaser_GetAttackType(iNPCIndex, iAttackIndex)
+{
+	return SF2NPCAdvChaserAttackType:g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackType];
+}
+
+Float:NPCAdvChaser_GetAttackDamage(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamage];
+}
+
+Float:NPCAdvChaser_GetAttackDamageVsProps(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageVsProps];
+}
+
+Float:NPCAdvChaser_GetAttackDamageForce(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageForce];
+}
+
+NPCAdvChaser_GetAttackDamageType(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageType];
+}
+
+Float:NPCAdvChaser_GetAttackDamageDelay(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageDelay];
+}
+
+Float:NPCAdvChaser_GetAttackRange(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackRange];
+}
+
+Float:NPCAdvChaser_GetAttackDuration(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDuration];
+}
+
+Float:NPCAdvChaser_GetAttackSpread(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackSpread];
+}
+
+Float:NPCAdvChaser_GetAttackBeginRange(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackBeginRange];
+}
+
+Float:NPCAdvChaser_GetAttackBeginFOV(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackBeginFOV];
+}
+
+NPCAdvChaser_GetAttackAnimation(iNPCIndex, iAttackIndex, String:buffer[], bufferlen)
+{
+	strcopy(buffer, bufferlen, g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimation]);
+}
+
+Float:NPCAdvChaser_GetAttackAnimationPlaybackRate(iNPCIndex, iAttackIndex)
+{
+	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate];
+}
+
+static Handle:g_hNPCMeleeAttackDamageDelayTimer[MAX_BOSSES] = { INVALID_HANDLE, ... };
+
+static NPCAdvChaser_StartMeleeAttack(iNPCIndex, attackIndex)
+{
+	NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Attack);
+	
+	new Float:damageDelay = NPCAdvChaser_GetAttackDamageDelay(iNPCIndex, attackIndex);
+	new Float:attackDuration = NPCAdvChaser_GetAttackDuration(iNPCIndex, attackIndex);
+	
+	new Handle:dataPack;
+	new Handle:damageTimer = CreateDataTimer(damageDelay, Timer_NPCAdvChaser_MeleeAttackDamage, dataPack, TIMER_FLAG_NO_MAPCHANGE);
+	WritePackCell(dataPack, iNPCIndex);
+	WritePackCell(dataPack, attackIndex);
+	
+	new Handle:durationTimer = CreateTimer(attackDuration, Timer_NPCAdvChaser_MeleeAttackEnd, iNPCIndex, TIMER_FLAG_NO_MAPCHANGE);
+	
+	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = damageTimer;
+	g_hNPCAttackDurationTimer[iNPCIndex] = durationTimer;
+	
+	// @TODO: Set animation of the boss's model.
+	
+	// @TODO: Play the starting attack sound of the boss...?
+	
+	if (damageDelay <= 0.0)
+	{
+		TriggerTimer(damageTimer);
+	}
+}
+
+static NPCAdvChaser_EndMeleeAttack(iNPCIndex, attackIndex, bool:wasInterrupted)
+{
+	NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
+
+	g_hNPCAttackDurationTimer[iNPCIndex] = INVALID_HANDLE;
+	g_iNPCAttackType[iNPCIndex] = SF2NPCAdvChaserAttackType_Invalid;
+	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = INVALID_HANDLE;
+}
+
+public Action:Timer_NPCAdvChaser_MeleeAttackDamage(Handle:timer, Handle:dataPack)
+{
+	ResetPack(dataPack);
+	new iNPCIndex = ReadPackCell(dataPack);
+
+	if (timer != g_hNPCAttackDurationTimer[iNPCIndex]) return;
+	
+	g_hNPCAttackDurationTimer[iNPCIndex] = INVALID_HANDLE;
+	
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE) return;
+	
+	new attackIndex = ReadPackCell(dataPack);
+	
+	new Float:attackSpread = NPCAdvChaser_GetAttackSpread(iNPCIndex, attackIndex);
+	new Float:attackRange = NPCAdvChaser_GetAttackRange(iNPCIndex, attackIndex);
+	new Float:attackDamage = NPCAdvChaser_GetAttackDamage(iNPCIndex, attackIndex);
+	new attackDamageType = NPCAdvChaser_GetAttackDamageType(iNPCIndex, attackIndex);
+	
+	decl Float:vPos[3], Float:eyeAng[3];
+	GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", vPos);
+	GetEntPropVector(npc, Prop_Data, "m_angAbsRotation", eyeAng);
+	
+	decl Float:vDir[3];
+	GetAngleVectors(eyeAng, vDir, NULL_VECTOR, NULL_VECTOR);
+	NormalizeVector(vDir, vDir);
+	
+	// Loop through all players (and some prop entities) to check if we hit something.
+	new bool:hitSomething = false;
+	
+	decl Float:vTargetPos[3], Float:vTargetMins[3], Float:vTargetMaxs[3], Float:vCentroid[3], Float:vTo[3];
+	
+	new Handle:targetList = CreateArray();
+	
+	// Gather potential hit targets.
+	for (new client = 1; client <= MaxClients; client++)
+	{
+		if (!IsClientInGame(client) || !IsPlayerAlive(client)) continue;
+		
+		PushArrayCell(targetList, client);
+	}
+	
+	new ent = -1;
+	while ((ent = FindEntityByClassname(ent, "prop_physics")) != -1)
+	{
+		PushArrayCell(targetList, ent);
+	}
+	
+	ent = -1;
+	while ((ent = FindEntityByClassname(ent, "prop_dynamic")) != -1)
+	{
+		PushArrayCell(targetList, ent);
+	}
+	
+	// Loop through target list.
+	for (new i = 0; i < GetArraySize(targetList); i++)
+	{
+		new target = GetArrayCell(targetList, i);
+	
+		// First check if the point is within our FOV.
+		GetEntPropVector(target, Prop_Data, "m_vecAbsOrigin", vTargetPos);
+		GetEntPropVector(target, Prop_Send, "m_vecMins", vTargetMins);
+		GetEntPropVector(target, Prop_Send, "m_vecMaxs", vTargetMaxs);
+		AddVectors(vTargetMins, vTargetMaxs, vCentroid);
+		ScaleVector(vCentroid, 0.5);
+		AddVector(vTargetPos, vCentroid, vTargetPos);
+		
+		MakeVectorFromPoints(vPos, vTargetPos, vTo);
+		NormalizeVector(vTo, vTo);
+		if (GetVectorDotProduct(vDir, vTo) >= Cosine(DegToRad(attackSpread / 2.0)))
+		{
+			// Next, check distance.
+			if (GetVectorDistance(vPos, vTargetPos) < attackRange)
+			{
+				// Finally, do trace check.
+				new Handle:trace = TR_TraceRayFilterEx(vPos,
+					vTargetPos,
+					MASK_NPCSOLID,
+					RayType_EndPoint,
+					TraceRayDontHitEntity,
+					npc);
+				
+				if (!TR_DidHit(trace) || TR_GetEntityIndex(trace) == target)
+				{
+					hitSomething = true;
+					SDKHooks_TakeDamage(target, npc, npc, attackDamage, attackDamageType, _, _, vPos);
+					
+					// Apply attributes, if applicable.
+					if (IsValidClient(target))
+					{
+						if (NPCHasAttribute(iNPCIndex, "bleed player on hit"))
+						{
+							new Float:bleedDuration = NPCGetAttributeValue(iNPCIndex, "bleed player on hit");
+							if (bleedDuration > 0.0)
+							{
+								TF2_MakeBleed(target, npc, bleedDuration);
+							}
+						}
+					}
+				}
+				
+				CloseHandle(trace);
+			}
+		}
+	}
+	
+	CloseHandle(targetList);
+}
+
+/*	
+ *	=====================================================
  *	GENERIC FUNCTIONS
  *	=====================================================
  */
@@ -701,71 +925,6 @@ Float:NPCAdvChaser_GetWakeRadius(iNPCIndex)
 Float:NPCAdvChaser_GetStepSize(iNPCIndex)
 {
 	return g_flNPCStepSize[iNPCIndex];
-}
-
-NPCAdvChaser_GetAttackType(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackType];
-}
-
-Float:NPCAdvChaser_GetAttackDamage(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamage];
-}
-
-Float:NPCAdvChaser_GetAttackDamageVsProps(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageVsProps];
-}
-
-Float:NPCAdvChaser_GetAttackDamageForce(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageForce];
-}
-
-NPCAdvChaser_GetAttackDamageType(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageType];
-}
-
-Float:NPCAdvChaser_GetAttackDamageDelay(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDamageDelay];
-}
-
-Float:NPCAdvChaser_GetAttackRange(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackRange];
-}
-
-Float:NPCAdvChaser_GetAttackDuration(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackDuration];
-}
-
-Float:NPCAdvChaser_GetAttackSpread(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackSpread];
-}
-
-Float:NPCAdvChaser_GetAttackBeginRange(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackBeginRange];
-}
-
-Float:NPCAdvChaser_GetAttackBeginFOV(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackBeginFOV];
-}
-
-NPCAdvChaser_GetAttackAnimation(iNPCIndex, iAttackIndex, String:buffer[], bufferlen)
-{
-	strcopy(buffer, bufferlen, g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimation]);
-}
-
-Float:NPCAdvChaser_GetAttackAnimationPlaybackRate(iNPCIndex, iAttackIndex)
-{
-	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate];
 }
 
 NPCAdvChaser_GetInterruptConditions(iNPCIndex)
@@ -1072,6 +1231,41 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity:taskData);
 			return ScheduleTaskState_Completed;
+		}
+		case TASK_GET_PATH_TO_SAVEPOSITION:
+		{
+			new npc = NPCGetEntIndex(iNPCIndex);
+			if (!npc || npc == INVALID_ENT_REFERENCE)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "NPC entity does not exist");
+				return ScheduleTaskState_Failed;
+			}
+			
+			NPCAdvChaser_ClearPath(iNPCIndex);
+			
+			// g_flNPCSavePosition
+			
+			decl Float:flStartPos[3];
+			GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", flStartPos);
+			
+			new Handle:hPath = CreateNavPath();
+			if (!NavPathConstructPathFromPoints(hPath, flStartPos, flEndPos, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
+			{
+				CloseHandle(hPath);
+				Format(failReasonMsg, failReasonMsgLen, "Failed to construct path to saveposition.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			g_hNPCPath[iNPCIndex] = hPath;
+			g_iNPCPathNodeIndex[iNPCIndex] = 1;
+			g_iNPCPathBehindNodeIndex[iNPCIndex] = 0;
+			
+			g_iNPCPathGoalType[iNPCIndex] = SF2NPCAdvChaserGoalType_Point;
+			g_iNPCPathGoalEntity[iNPCIndex] = INVALID_ENT_REFERENCE;
+			g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex] = -1;
+			
+			return ScheduleTaskState_Completed;
+			
 		}
 		case TASK_GET_PATH_TO_ENEMY:
 		{
