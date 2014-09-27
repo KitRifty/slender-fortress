@@ -150,9 +150,12 @@ static const g_ScheduleTaskNames[][] =
 	"TASK_SET_ANIMATION"
 };
 
-static const Schedule:INVALID_SCHEDULE = Schedule:-1;
+enum Schedule
+{
+	INVALID_SCHEDULE = -1
+};
 
-static Schedule:g_iNPCSchedule[MAX_BOSSES] = { -1, ... };
+static Schedule:g_iNPCSchedule[MAX_BOSSES] = { INVALID_SCHEDULE, ... };
 static g_iNPCScheduleTaskPosition[MAX_BOSSES] = { -1, ... };
 static ScheduleTaskState:g_iNPCScheduleTaskState[MAX_BOSSES] = { -1, ... };
 static bool:g_bNPCScheduleTaskStarted[MAX_BOSSES] = { false, ... };
@@ -844,6 +847,13 @@ static g_NPCRangedAttackData[MAX_BOSSES][SF2_ADV_CHASER_BOSS_MAX_ATTACKS][SF2NPC
 
 static NPCAdvChaser_StartRangedAttack(iNPCIndex, attackIndex)
 {
+	new Float:attackDuration = NPCAdvChaser_GetAttackDuration(iNPCIndex, attackIndex);
+
+	new Handle:durationTimer = CreateTimer(attackDuration, Timer_NPCAdvChaser_RangedAttackEnd, iNPCIndex, TIMER_FLAG_NO_MAPCHANGE);
+	
+	g_hNPCAttackDurationTimer[iNPCIndex] = durationTimer;
+	g_iNPCAttackIndex[iNPCIndex] = attackIndex;
+
 	new burstShotsNum = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstNum];
 	
 	g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackNextBurstShotTime] = GetGameTime();
@@ -870,20 +880,39 @@ static NPCAdvChaser_RangedAttackThink(iNPCIndex)
 				
 				g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackNextBurstShotTime] = GetGameTime() + (burstDuration / float(burstNum));
 			}
+			
+			// @TODO: Fire the bullet.
 		}
 	}
 }
 
-static NPCAdvChaser_CreateShootPosEntity(iNPCIndex)
+static NPCAdvChaser_CreateShootPosEntity(iNPCIndex, const String:attachName[]="")
 {
 	new npc = NPCGetEntIndex(iNPCIndex);
 	if (!npc || npc == INVALID_ENT_REFERENCE) return INVALID_ENT_REFERENCE;
 	
-	new ent = CreateEntityByName("");
+	new ent = CreateEntityByName("info_particle_system");
+	if (ent == -1) return INVALID_ENT_REFERENCE;
+	
+	DispatchKeyValue(ent, "effect_name", "default");
+	SetVariantString("!activator");
+	AcceptEntityInput(ent, "SetParent", npc);
+	SetVariantString(attachName);
+	AcceptEntityInput(ent, "SetParentAttachment");
+	
+	return ent;
 }
 
-static NPCAdvChaser_StopRangedAttack(iNPCIndex, bool:wasInterrupted)
+static NPCAdvChaser_EndRangedAttack(iNPCIndex, bool:wasInterrupted)
 {
+}
+
+public Action:Timer_NPCAdvChaser_RangedAttackEnd(Handle:timer, any:iNPCIndex)
+{
+	if (timer != g_hNPCAttackDurationTimer[iNPCIndex]) return;
+	
+	g_hNPCAttackDurationTimer[iNPCIndex] = INVALID_HANDLE;
+	NPCAdvChaser_EndRangedAttack(iNPCIndex, false);
 }
 
 /*	
