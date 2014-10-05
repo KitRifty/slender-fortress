@@ -70,6 +70,7 @@ static Float:g_flNPCSavePosition[MAX_BOSSES][3];
 #if defined DEBUG
 
 static Handle:g_cvDebugScheduleThink = INVALID_HANDLE;
+static Handle:g_cvDebugAwareness = INVALID_HANDLE;
 
 #endif
 
@@ -554,6 +555,25 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 							
 							new Float:nextAwarenessIncreaseTime = GetGameTime() + (1.0 / awarenessDecayRateOnGlimpse) + awarenessDecayDelayOnGlimpse;
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							
+#if defined DEBUG
+							if (GetConVarBool(g_cvDebugAwareness))
+							{
+								decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+								NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+							
+								DebugMessage("Boss %d (%s): AW -> START TRANSITION: SCENT -------> GLIMPSE", iNPCIndex, sProfile);
+								DebugMessage("-> ent: %d", client);
+								DebugMessage("-> memtype: %d", NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client));
+								DebugMessage("-> aw: %d", NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client));
+								DebugMessage("-> area: %d", NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, client));
+								DebugMessage("-> decay rate: %f", NPCAdvChaser_GetEnemyAwarenessDecayRate(iNPCIndex, client));
+								DebugMessage("-> increase rate: %f", NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client));
+								DebugMessage("-> next decay: %f", nextAwarenessDecayTime);
+								DebugMessage("-> next increase: %f", nextAwarenessIncreaseTime);
+								DebugMessage("Boss %d (%s): AW -> END TRANSITION", iNPCIndex, sProfile);
+							}
+#endif
 						}
 						else
 						{
@@ -592,6 +612,25 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 							
 							new Float:nextAwarenessIncreaseTime = GetGameTime() + (1.0 / awarenessDecayRateOnSight) + awarenessDecayDelayOnSight;
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							
+#if defined DEBUG
+							if (GetConVarBool(g_cvDebugAwareness))
+							{
+								decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+								NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+							
+								DebugMessage("Boss %d (%s): AW -> START TRANSITION: GLIMPSE -------> SIGHT", iNPCIndex, sProfile);
+								DebugMessage("-> ent: %d", client);
+								DebugMessage("-> memtype: %d", NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client));
+								DebugMessage("-> aw: %d", NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client));
+								DebugMessage("-> area: %d", NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, client));
+								DebugMessage("-> decay rate: %f", NPCAdvChaser_GetEnemyAwarenessDecayRate(iNPCIndex, client));
+								DebugMessage("-> increase rate: %f", NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client));
+								DebugMessage("-> next decay: %f", nextAwarenessDecayTime);
+								DebugMessage("-> next increase: %f", nextAwarenessIncreaseTime);
+								DebugMessage("Boss %d (%s): AW -> END TRANSITION", iNPCIndex, sProfile);
+							}
+#endif
 						}
 						else
 						{
@@ -645,8 +684,30 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 				memoryIndex = NPCAdvChaser_AddEnemyToMemory(iNPCIndex, client, EnemyMemoryType_Scent, awarenessInitialAmountOnScent, awarenessIncreaseRateOnScent, awarenessDecayRateOnScent);
 				if (memoryIndex != -1)
 				{
+					new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnScent) + awarenessDecayDelayOnScent;
+					SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+				
 					new Float:nextAwarenessIncreaseTime = GetGameTime() + (1.0 / awarenessIncreaseRateOnScent);
 					SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+					
+#if defined DEBUG
+					if (GetConVarBool(g_cvDebugAwareness))
+					{
+						decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+						NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+						
+						DebugMessage("Boss %d (%s): AW -> START JUMP: -------> SCENT", iNPCIndex, sProfile);
+						DebugMessage("-> ent: %d", client);
+						DebugMessage("-> memtype: %d", NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client));
+						DebugMessage("-> aw: %d", NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client));
+						DebugMessage("-> area: %d", NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, client));
+						DebugMessage("-> decay rate: %f", NPCAdvChaser_GetEnemyAwarenessDecayRate(iNPCIndex, client));
+						DebugMessage("-> increase rate: %f", NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client));
+						DebugMessage("-> next decay: %f", nextAwarenessDecayTime);
+						DebugMessage("-> next increase: %d", nextAwarenessIncreaseTime);
+						DebugMessage("Boss %d (%s): AW -> END JUMP", iNPCIndex, sProfile);
+					}
+#endif
 				}
 			}
 		}
@@ -676,6 +737,25 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
 							
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, -1.0, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							
+#if defined DEBUG
+							if (GetConVarBool(g_cvDebugAwareness))
+							{
+								decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+								NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+							
+								DebugMessage("Boss %d (%s): AW -> START TRANSITION: GLIMPSE <------- SIGHT", iNPCIndex, sProfile);
+								DebugMessage("-> ent: %d", client);
+								DebugMessage("-> memtype: %d", NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client));
+								DebugMessage("-> aw: %d", NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client));
+								DebugMessage("-> area: %d", NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, client));
+								DebugMessage("-> decay rate: %f", NPCAdvChaser_GetEnemyAwarenessDecayRate(iNPCIndex, client));
+								DebugMessage("-> increase rate: %f", NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client));
+								DebugMessage("-> next decay: %f", nextAwarenessDecayTime);
+								DebugMessage("-> next increase: -1.0");
+								DebugMessage("Boss %d (%s): AW -> END TRANSITION", iNPCIndex, sProfile);
+							}
+#endif
 						}
 					}
 					case EnemyMemoryType_Glimpse:
@@ -694,6 +774,25 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
 							
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, -1.0, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							
+#if defined DEBUG
+							if (GetConVarBool(g_cvDebugAwareness))
+							{
+								decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+								NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+							
+								DebugMessage("Boss %d (%s): AW -> START TRANSITION: SCENT <------- GLIMPSE", iNPCIndex, sProfile);
+								DebugMessage("-> ent: %d", client);
+								DebugMessage("-> memtype: %d", NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client));
+								DebugMessage("-> aw: %d", NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client));
+								DebugMessage("-> area: %d", NPCAdvChaser_GetEnemyAreaIndexInMemory(iNPCIndex, client));
+								DebugMessage("-> decay rate: %f", NPCAdvChaser_GetEnemyAwarenessDecayRate(iNPCIndex, client));
+								DebugMessage("-> increase rate: %f", NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client));
+								DebugMessage("-> next decay: %f", nextAwarenessDecayTime);
+								DebugMessage("-> next increase: -1.0");
+								DebugMessage("Boss %d (%s): AW -> END TRANSITION", iNPCIndex, sProfile);
+							}
+#endif
 						}
 					}
 					case EnemyMemoryType_Scent:
@@ -703,6 +802,16 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 							// FORGET
 							
 							RemoveFromArray(g_hNPCEnemyMemory[iNPCIndex], memoryIndex);
+							
+#if defined DEBUG
+							if (GetConVarBool(g_cvDebugAwareness))
+							{
+								decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+								NPCGetProfile(iNPCIndex, sProfile, sizeof(sProfile));
+							
+								DebugMessage("Boss %d (%s): AW -> FORGET Entity(%d)", iNPCIndex, sProfile, client);
+							}
+#endif
 						}
 					}
 				}
@@ -1160,6 +1269,9 @@ static NPCAdvChaser_StartRangedAttack(iNPCIndex, attackIndex)
 
 static NPCAdvChaser_RangedAttackThink(iNPCIndex)
 {
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE) return;	// this should NEVER happen.
+
 	new attackIndex = g_iNPCAttackIndex[iNPCIndex];
 	
 	new burstShotsLeft = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstShotsLeft];
@@ -1179,7 +1291,59 @@ static NPCAdvChaser_RangedAttackThink(iNPCIndex)
 				g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackNextBurstShotTime] = GetGameTime() + (burstDuration / float(burstNum));
 			}
 			
-			// @TODO: Fire the bullet.
+			// @TODO: Fire the bullets.
+			
+			new shootPosEnt = EntRefToEntIndex(g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackShootPosEntity]);
+			if (!shootPosEnt || shootPosEnt == INVALID_ENT_REFERENCE)
+			{
+				shootPosEnt = NPCAdvChaser_CreateShootPosEntity(iNPCIndex, g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackShootAttachment]);
+				g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackShootPosEntity] = IsValidEntity(shootPosEnt) ? EntIndexToEntRef(shootPosEnt) : INVALID_ENT_REFERENCE;
+				
+				TeleportEntity(shootPosEnt, g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackShootRelativePos], NULL_VECTOR, NULL_VECTOR);
+			}
+			
+			if (shootPosEnt && shootPosEnt != INVALID_ENT_REFERENCE)
+			{
+				new Float:attackRange = NPCAdvChaser_GetAttackRange(iNPCIndex, attackIndex);
+				new Float:attackSpread = NPCAdvChaser_GetAttackSpread(iNPCIndex, attackIndex);
+			
+				decl Float:vStartPos[3];
+				GetEntPropVector(shootPosEnt, Prop_Data, "m_vecAbsOrigin", vStartPos);
+				
+				// @TODO: Base aim by direction towards the target, not by current direction that I'm facing (add target global var for target?)
+				
+				decl Float:vBulletAng[3], Float:vBulletDir[3];
+				GetEntPropVector(npc, Prop_Data, "m_angAbsRotation", vBulletAng);
+				
+				vBulletAng[0] += GetRandomFloat(-attackSpread, attackSpread);
+				vBulletAng[1] += GetRandomFloat(-attackSpread, attackSpread);
+				
+				GetAngleVectors(vBulletAng, vBulletDir, NULL_VECTOR, NULL_VECTOR);
+				NormalizeVector(vBulletDir, vBulletDir);
+				
+				decl Float:vEndPos[3];
+				CopyVector(vBulletDir, vEndPos);
+				ScaleVector(vEndPos, attackRange);
+				AddVectors(vStartPos, vEndPos, vEndPos);
+				
+				new Handle:trace = TR_TraceRayFilterEx(vStartPos,
+					vEndPos,
+					MASK_NPCSOLID,
+					RayType_EndPoint,
+					TraceRayDontHitEntity,
+					npc);
+				
+				TR_GetEndPosition(vEndPos, trace);
+				
+				if (TR_DidHit(trace))
+				{
+					// @TODO: Damage the hit entity.
+				}
+				
+				CloseHandle(trace);
+				
+				// @TODO: Add tracers.
+			}
 		}
 	}
 }
@@ -1225,6 +1389,7 @@ InitializeAdvChaserSystem()
 	
 #if defined DEBUG
 	g_cvDebugScheduleThink = CreateConVar("sf2_debug_advchaser_schedule", "0");
+	g_cvDebugAwareness = CreateConVar("sf2_debug_advchaser_awareness", "0");
 #endif
 }
 
