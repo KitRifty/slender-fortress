@@ -269,8 +269,7 @@ static GetScheduleName(Schedule:schedule, String:buffer[], bufferlen)
 enum EnemyMemoryType
 {
 	EnemyMemoryType_Invalid = -1,
-	EnemyMemoryType_Sound = 0,	// Heard this entity.
-	EnemyMemoryType_Scent,		// "Smells" this entity. Used for patrolling around enemies that "get away".
+	EnemyMemoryType_Scent = 0,		// "Smells" this entity. Used for patrolling around enemies that "get away".
 	EnemyMemoryType_Glimpse,		// Saw this entity, but not enough for the NPC to go into full chase mode.
 	EnemyMemoryType_Sight			// LET'S GO MUTHATFUCKA!
 };
@@ -327,7 +326,7 @@ static bool:NPCAdvChaser_IsEntityInMemory(iNPCIndex, ent)
 	return bool:(NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, ent) != -1)
 }
 
-static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType, awareness=0, Float:awarenessDecayRate=1.0)
+static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryType, awareness=0, Float:awarenessIncreaseRate=1.0, Float:awarenessDecayRate=1.0)
 {
 	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
 	if (memoryIndex != -1)
@@ -351,10 +350,12 @@ static NPCAdvChaser_AddEnemyToMemory(iNPCIndex, enemy, EnemyMemoryType:memoryTyp
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, areaIndex, EnemyMemoryStruct_LastKnownAreaIndex);
 	
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awarenessIncreaseRate, EnemyMemoryStruct_AwarenessIncreaseRate);
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awarenessDecayRate, EnemyMemoryStruct_AwarenessDecayRate);
 	
 	new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRate);
 	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, -1.0, EnemyMemoryStruct_NextAwarenessIncreaseTime);
 	
 	return memoryIndex;
 }
@@ -447,8 +448,265 @@ static NPCAdvChaser_GetEnemyAwareness(iNPCIndex, enemy)
 	return GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
 }
 
+static NPCAdvChaser_UpdateEnemyAwarenessDecayRate(iNPCIndex, enemy, Float:awarenessDecayRate)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return;
+	}
+
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awarenessDecayRate, EnemyMemoryStruct_AwarenessDecayRate);
+}
+
+static Float:NPCAdvChaser_GetEnemyAwarenessDecayRate(iNPCIndex, enemy)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return 0.0;
+	}
+	
+	return Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_AwarenessDecayRate);
+}
+
+static NPCAdvChaser_UpdateEnemyAwarenessIncreaseRate(iNPCIndex, enemy, Float:awarenessIncreaseRate)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return;
+	}
+
+	SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awarenessIncreaseRate, EnemyMemoryStruct_AwarenessIncreaseRate);
+}
+
+static Float:NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, enemy)
+{
+	new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, enemy);
+	if (memoryIndex == -1)
+	{
+		return 0.0;
+	}
+	
+	return Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_AwarenessIncreaseRate);
+}
+
 static NPCAdvChaser_GatherEnemies(iNPCIndex)
 {
+	// @TODO: Define the variables in the config file instead of hardcoding the values.
+	
+	// Initial values for EnemyMemoryType_Sight
+	new Float:awarenessIncreaseRateOnSight = 5.0;	// how much awareness to increase per second
+	new Float:awarenessDecayDelayOnSight = 1.0;	//  how much to delay awareness decay upon sight (delay does not stack! delay is reset to initial amount every frame upon seeing the enemy!)
+	new Float:awarenessDecayRateOnSight = 1.0; // how much awareness to decrease per second
+	new awarenessInitialAmountOnSight = 50; // awareness will be set to this amount upon entering a certain memory type for the first time
+	
+	// Initial values for EnemyMemoryType_Glimpse
+	new Float:awarenessIncreaseRateOnGlimpse = 5.0;
+	new Float:awarenessDecayDelayOnGlimpse = 1.0;
+	new Float:awarenessDecayRateOnGlimpse = 1.0;
+	new awarenessInitialAmountOnGlimpse = 25;
+	
+	// Initial values for EnemyMemoryType_Scent
+	new Float:awarenessIncreaseRateOnScent = 15.0;
+	new Float:awarenessDecayDelayOnScent = 1.0;
+	new Float:awarenessDecayRateOnScent = 1.0;
+	new awarenessInitialAmountOnScent = 25;
+	
+	// Update clients first.
+	for (new client = 1; client <= MaxClients; client++)
+	{
+		if (!IsClientInGame(client) || !IsPlayerAlive(client)) continue;
+		
+		new bool:enemyIsVisible = false;
+		
+		if (enemyIsVisible) // I see this player...
+		{
+			new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, client);
+			if (memoryIndex != -1)
+			{
+				new awareness = NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client);
+				
+				new EnemyMemoryType:memoryType = NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client);
+				switch (memoryType)
+				{
+					case EnemyMemoryType_Scent:
+					{
+						if (awareness >= 100)
+						{
+							// TRANSITION: SCENT -------> GLIMPSE
+							
+							NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, client, EnemyMemoryType_Glimpse);
+							NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, client, awarenessInitialAmountOnGlimpse);
+							
+							decl Float:flPos[3];
+							GetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", flPos);
+							
+							NPCAdvChaser_UpdateEnemyPosInMemory(iNPCIndex, client, flPos);
+							NPCAdvChaser_UpdateEnemyAwarenessDecayRate(iNPCIndex, client, awarenessDecayRateOnGlimpse);
+							NPCAdvChaser_UpdateEnemyAwarenessIncreaseRate(iNPCIndex, client, awarenessIncreaseRateOnGlimpse);
+							
+							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnGlimpse) + awarenessDecayDelayOnGlimpse;
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+							
+							new Float:nextAwarenessIncreaseTime = GetGameTime() + (1.0 / awarenessDecayRateOnGlimpse) + awarenessDecayDelayOnGlimpse;
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+						}
+						else
+						{
+							// STAY: -------> SCENT <-------
+							
+							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnScent) + awarenessDecayDelayOnScent;
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+							
+							new Float:nextAwarenessIncreaseTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							if (nextAwarenessIncreaseTime < 0.0)
+							{
+								new Float:currentAwarenessIncreaseRate = NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client);
+								nextAwarenessIncreaseTime = GetGameTime() + (1.0 / currentAwarenessIncreaseRate);
+								SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							}
+						}
+					}
+					case EnemyMemoryType_Glimpse:
+					{
+						if (awareness >= 100)
+						{
+							// TRANSITION: GLIMPSE -------> SIGHT
+							
+							NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, client, EnemyMemoryType_Sight);
+							NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, client, awarenessInitialAmountOnSight);
+							
+							decl Float:flPos[3];
+							GetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", flPos);
+							
+							NPCAdvChaser_UpdateEnemyPosInMemory(iNPCIndex, client, flPos);
+							NPCAdvChaser_UpdateEnemyAwarenessDecayRate(iNPCIndex, client, awarenessDecayRateOnSight);
+							NPCAdvChaser_UpdateEnemyAwarenessIncreaseRate(iNPCIndex, client, awarenessIncreaseRateOnSight);
+							
+							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnSight) + awarenessDecayDelayOnSight;
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+							
+							new Float:nextAwarenessIncreaseTime = GetGameTime() + (1.0 / awarenessDecayRateOnSight) + awarenessDecayDelayOnSight;
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+						}
+						else
+						{
+							// STAY: -------> GLIMPSE <-------
+							
+							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnGlimpse) + awarenessDecayDelayOnGlimpse;
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+							
+							new Float:nextAwarenessIncreaseTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							if (nextAwarenessIncreaseTime < 0.0)
+							{
+								new Float:currentAwarenessIncreaseRate = NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client);
+								nextAwarenessIncreaseTime = GetGameTime() + (1.0 / currentAwarenessIncreaseRate);
+								SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+							}
+							
+							// Update enemy position!
+							decl Float:flPos[3];
+							GetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", flPos);
+							
+							NPCAdvChaser_UpdateEnemyPosInMemory(iNPCIndex, client, flPos);
+						}
+					}
+					case EnemyMemoryType_Sight:
+					{
+						// STAY: -------> SIGHT <-------
+						
+						new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnSight) + awarenessDecayDelayOnSight;
+						SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+						
+						new Float:nextAwarenessIncreaseTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+						if (nextAwarenessIncreaseTime < 0.0)
+						{
+							new Float:currentAwarenessIncreaseRate = NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, client);
+							nextAwarenessIncreaseTime = GetGameTime() + (1.0 / currentAwarenessIncreaseRate);
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+						}
+						
+						// Update enemy position!
+						decl Float:flPos[3];
+						GetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", flPos);
+						
+						NPCAdvChaser_UpdateEnemyPosInMemory(iNPCIndex, client, flPos);
+					}
+				}
+			}
+			else
+			{
+				// JUMP: -------> SCENT
+				
+				memoryIndex = NPCAdvChaser_AddEnemyToMemory(iNPCIndex, client, EnemyMemoryType_Scent, awarenessInitialAmountOnScent, awarenessIncreaseRateOnScent, awarenessDecayRateOnScent);
+				if (memoryIndex != -1)
+				{
+					new Float:nextAwarenessIncreaseTime = GetGameTime() + (1.0 / awarenessIncreaseRateOnScent);
+					SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessIncreaseTime, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+				}
+			}
+		}
+		else // I don't see this player...
+		{
+			new memoryIndex = NPCAdvChaser_GetMemoryIndexOfEntity(iNPCIndex, client);
+			if (memoryIndex != -1)
+			{
+				new awareness = NPCAdvChaser_GetEnemyAwareness(iNPCIndex, client);
+				
+				new EnemyMemoryType:memoryType = NPCAdvChaser_GetEnemyMemoryType(iNPCIndex, client);
+				switch (memoryType)
+				{
+					case EnemyMemoryType_Sight:
+					{
+						if (awareness <= 0)
+						{
+							// TRANSITION: GLIMPSE <------- SIGHT
+							
+							NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, client, EnemyMemoryType_Glimpse);
+							NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, client, 99);
+							
+							NPCAdvChaser_UpdateEnemyAwarenessDecayRate(iNPCIndex, client, awarenessDecayRateOnGlimpse);
+							NPCAdvChaser_UpdateEnemyAwarenessIncreaseRate(iNPCIndex, client, awarenessIncreaseRateOnGlimpse);
+							
+							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnGlimpse);
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+							
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, -1.0, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+						}
+					}
+					case EnemyMemoryType_Glimpse:
+					{
+						if (awareness <= 0)
+						{
+							// TRANSITION: SCENT <------- GLIMPSE
+							
+							NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, client, EnemyMemoryType_Scent);
+							NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, client, 99);
+							
+							NPCAdvChaser_UpdateEnemyAwarenessDecayRate(iNPCIndex, client, awarenessDecayRateOnScent);
+							NPCAdvChaser_UpdateEnemyAwarenessIncreaseRate(iNPCIndex, client, awarenessIncreaseRateOnScent);
+							
+							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnScent);
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+							
+							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, -1.0, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+						}
+					}
+					case EnemyMemoryType_Scent:
+					{
+						if (awareness <= 0)
+						{
+							// FORGET
+							
+							RemoveFromArray(g_hNPCEnemyMemory[iNPCIndex], memoryIndex);
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 static NPCAdvChaser_CheckEnemyMemory(iNPCIndex)
@@ -456,31 +714,39 @@ static NPCAdvChaser_CheckEnemyMemory(iNPCIndex)
 	for (new memoryIndex = 0; memoryIndex < GetArraySize(g_hNPCEnemyMemory[iNPCIndex]); memoryIndex++)
 	{
 		new awareness = GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
-		if (awareness > 0)
+		
+		new Float:nextIncreaseTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessIncreaseTime);
+		if (nextIncreaseTime >= 0.0 && GetGameTime() >= nextIncreaseTime)
 		{
-			new Float:nextDecayTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessDecayTime);
-			if (GetGameTime() >= nextDecayTime)
-			{
-				awareness--;
-				SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
-				
-				new Float:awarenessDecayRate = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_AwarenessDecayRate);
-				
-				new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRate);
-				SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
-			}
+			awareness++;
+			if (awareness > 100) awareness = 100;
+			
+			SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
+			
+			// Immediately reset. GatherEnemies will set this to a positive timestamp if need be.
+			SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, -1.0, EnemyMemoryStruct_NextAwarenessIncreaseTime);
 		}
 		else
 		{
-			// No longer aware of this entity. Remove from memory.
-			RemoveFromArray(g_hNPCEnemyMemory[iNPCIndex], memoryIndex);
-			memoryIndex--;
-			continue;
+			if (awareness > 0)
+			{
+				new Float:nextDecayTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessDecayTime);
+				if (GetGameTime() >= nextDecayTime)
+				{
+					awareness--;
+					SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, awareness, EnemyMemoryStruct_Awareness);
+					
+					new Float:awarenessDecayRate = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_AwarenessDecayRate);
+					
+					new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRate);
+					SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
+				}
+			}
 		}
 	}
 }
 
-static NPCAdvChaser_SelectEnemy(iNPCIndex)
+static NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType:memoryType=EnemyMemoryType_Sight)
 {
 	new npc = NPCGetEntIndex(iNPCIndex);
 	if (!npc || npc == INVALID_ENT_REFERENCE)
@@ -500,7 +766,7 @@ static NPCAdvChaser_SelectEnemy(iNPCIndex)
 		if (!enemy || enemy == INVALID_ENT_REFERENCE) continue;
 		
 		new EnemyMemoryType:type = EnemyMemoryType:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Type);
-		if (type != EnemyMemoryType_Sight) continue;
+		if (type != memoryType) continue;
 		
 		vEnemyPos[0] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosX);
 		vEnemyPos[1] = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_LastKnownPosY);
@@ -522,6 +788,36 @@ static NPCAdvChaser_SelectEnemy(iNPCIndex)
 	}
 	
 	return bestEnemy;
+}
+
+static NPCAdvChaser_GetEnemy(iNPCIndex)
+{
+	return NPCGetEnemy(iNPCIndex);
+}
+
+static NPCAdvChaser_SetEnemy(iNPCIndex, enemy)
+{
+	NPCSetEnemy(iNPCIndex, enemy);
+}
+
+static NPCAdvChaser_GetGlimpseTarget(iNPCIndex)
+{
+	return EntRefToEntIndex(g_iNPCGlimpseTarget[iNPCIndex]);
+}
+
+static NPCAdvChaser_SetGlimpseTarget(iNPCIndex, target)
+{
+	g_iNPCGlimpseTarget[iNPCIndex] = IsValidEntity(target) ? EntIndexToEntRef(target) : INVALID_ENT_REFERENCE;
+}
+
+static NPCAdvChaser_GetScentTarget(iNPCIndex)
+{
+	return EntRefToEntIndex(g_iNPCScentTarget[iNPCIndex]);
+}
+
+static NPCAdvChaser_SetScentTarget(iNPCIndex, target)
+{
+	g_iNPCScentTarget[iNPCIndex] = IsValidEntity(target) ? EntIndexToEntRef(target) : INVALID_ENT_REFERENCE;
 }
 
 /*	
@@ -1798,10 +2094,9 @@ NPCAdvChaser_Think(iNPCIndex)
 	// 1. Gather and select enemies.
 	
 	NPCAdvChaser_GatherEnemies(iNPCIndex);
-	
 	NPCAdvChaser_CheckEnemyMemory(iNPCIndex);
 	
-	new preferredEnemy = NPCAdvChaser_SelectEnemy(iNPCIndex);
+	new preferredEnemy = NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType_Sight);
 	new enemy = NPCGetEnemy(iNPCIndex);
 	
 	if (enemy != preferredEnemy)
@@ -1822,7 +2117,28 @@ NPCAdvChaser_Think(iNPCIndex)
 	NPCSetEnemy(iNPCIndex, preferredEnemy);
 	enemy = preferredEnemy;
 	
-	// 2. Execute schedule (preset list of instructions for a specific situation). A new schedule could be chosen during this time, or just maintain the current one.
+	if (!enemy || enemy == INVALID_ENT_REFERENCE)
+	{
+		new target = NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType_Glimpse);
+		NPCAdvChaser_SetGlimpseTarget(iNPCIndex, target);
+		
+		if (!target || target == INVALID_ENT_REFERENCE)
+		{
+			target = NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType_Scent);
+			NPCAdvChaser_SetScentTarget(iNPCIndex, target);
+		}
+		else
+		{
+			NPCAdvChaser_SetScentTarget(iNPCIndex, INVALID_ENT_REFERENCE);
+		}
+	}
+	else
+	{
+		NPCAdvChaser_SetScentTarget(iNPCIndex, INVALID_ENT_REFERENCE);
+		NPCAdvChaser_SetGlimpseTarget(iNPCIndex, INVALID_ENT_REFERENCE);
+	}
+	
+	// 2. Select and execute/maintain schedules.
 	
 	NPCAdvChaser_MaintainSchedule(iNPCIndex);
 	
@@ -1835,7 +2151,7 @@ NPCAdvChaser_Think(iNPCIndex)
 	
 	if (activity != preferredActivity)
 	{
-		// @TODO: Add a response to change of activities...?
+		// @TODO: Add a response to change of activities
 	}
 	
 	// 4. Handle movement. If the current activity is about movement, move the NPC towards MovePosition, change angles, speed, etc.
