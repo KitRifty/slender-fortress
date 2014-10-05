@@ -286,6 +286,8 @@ enum
 	EnemyMemoryStruct_Awareness,
 	EnemyMemoryStruct_AwarenessDecayRate,
 	EnemyMemoryStruct_NextAwarenessDecayTime,
+	EnemyMemoryStruct_AwarenessIncreaseRate,
+	EnemyMemoryStruct_NextAwarenessIncreaseTime,
 	EnemyMemoryStruct_MaxStats
 };
 
