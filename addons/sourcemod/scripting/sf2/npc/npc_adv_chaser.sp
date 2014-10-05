@@ -2264,7 +2264,7 @@ NPCAdvChaser_Think(iNPCIndex)
 	NPCAdvChaser_CheckEnemyMemory(iNPCIndex);
 	
 	new preferredEnemy = NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType_Sight);
-	new enemy = NPCGetEnemy(iNPCIndex);
+	new enemy = NPCAdvChaser_GetEnemy(iNPCIndex);
 	
 	if (enemy != preferredEnemy)
 	{
@@ -2281,7 +2281,7 @@ NPCAdvChaser_Think(iNPCIndex)
 		}
 	}
 	
-	NPCSetEnemy(iNPCIndex, preferredEnemy);
+	NPCAdvChaser_SetEnemy(iNPCIndex, preferredEnemy);
 	enemy = preferredEnemy;
 	
 	if (!enemy || enemy == INVALID_ENT_REFERENCE)
