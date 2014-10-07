@@ -55,6 +55,10 @@ static Float:g_flNPCMaxAirSpeed[MAX_BOSSES][Difficulty_Max];
 
 static Float:g_flNPCWakeRadius[MAX_BOSSES];
 
+static g_iNPCTarget[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
+static g_iNPCGlimpseTarget[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
+static g_iNPCScentTarget[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
+
 // Nav stuff.
 static Handle:g_hNPCPath[MAX_BOSSES] = { INVALID_HANDLE, ... };
 static g_iNPCPathNodeIndex[MAX_BOSSES] = { -1, ... };
@@ -116,6 +120,9 @@ enum ScheduleTask
 	TASK_SET_PATH_TOLERANCE_DIST,
 	
 	TASK_SET_ANIMATION,
+	
+	TASK_ATTACK,
+	TASK_ATTACK_BEST,
 	
 	TASK_MAX
 };
@@ -183,6 +190,15 @@ static Float:g_flNPCAnimationFinishTime[MAX_BOSSES] = { -1.0, ... };
 #define SF2_INTERRUPTCOND_CAN_USE_ATTACK_BEST (1 << 5)
 #define SF2_INTERRUPTCOND_DAMAGED (1 << 6)
 #define SF2_INTERRUPTCOND_STUNNED (1 << 7)
+
+#define SF2_INTERRUPTCOND_CAN_ATTACK1 (1 << 8)
+#define SF2_INTERRUPTCOND_CAN_ATTACK2 (1 << 9)
+#define SF2_INTERRUPTCOND_CAN_ATTACK3 (1 << 10)
+#define SF2_INTERRUPTCOND_CAN_ATTACK4 (1 << 11)
+#define SF2_INTERRUPTCOND_CAN_ATTACK5 (1 << 12)
+#define SF2_INTERRUPTCOND_CAN_ATTACK6 (1 << 13)
+#define SF2_INTERRUPTCOND_CAN_ATTACK7 (1 << 14)
+#define SF2_INTERRUPTCOND_CAN_ATTACK8 (1 << 15)
 
 static Handle:g_hSchedules = INVALID_HANDLE;
 static Handle:g_hScheduleNames = INVALID_HANDLE;
@@ -911,6 +927,16 @@ static NPCAdvChaser_SetEnemy(iNPCIndex, enemy)
 	NPCSetEnemy(iNPCIndex, enemy);
 }
 
+static NPCAdvChaser_GetTarget(iNPCIndex)
+{
+	return EntRefToEntIndex(g_iNPCTarget[iNPCIndex]);
+}
+
+static NPCAdvChaser_SetTarget(iNPCIndex, target)
+{
+	g_iNPCTarget[iNPCIndex] = IsValidEntity(target) ? EntIndexToEntRef(target) : INVALID_ENT_REFERENCE;
+}
+
 static NPCAdvChaser_GetGlimpseTarget(iNPCIndex)
 {
 	return EntRefToEntIndex(g_iNPCGlimpseTarget[iNPCIndex]);
@@ -976,6 +1002,7 @@ enum SF2NPCAdvChaser_BaseAttackData
 
 static Handle:g_hNPCAttackDurationTimer[MAX_BOSSES] = { INVALID_HANDLE, ... };
 static g_iNPCAttackIndex[MAX_BOSSES] = { -1, ... };
+static bool:g_bNPCAttackFinished[MAX_BOSSES] = { true, ... };
 
 // Base attack data
 
@@ -1066,6 +1093,10 @@ Float:NPCAdvChaser_GetAttackAnimationPlaybackRate(iNPCIndex, iAttackIndex)
 	return g_NPCBaseAttackData[iNPCIndex][iAttackIndex][SF2NPCAdvChaser_BaseAttackAnimationPlaybackRate];
 }
 
+static NPCAdvChaser_CheckAttackConditions(iNPCIndex)
+{
+}
+
 // MELEE ATTACK
 static Handle:g_hNPCMeleeAttackDamageDelayTimer[MAX_BOSSES] = { INVALID_HANDLE, ... };
 
@@ -1082,7 +1113,6 @@ static NPCAdvChaser_StartMeleeAttack(iNPCIndex, attackIndex)
 	
 	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = damageTimer;
 	g_hNPCAttackDurationTimer[iNPCIndex] = durationTimer;
-	g_iNPCAttackIndex[iNPCIndex] = attackIndex;
 	
 	// @TODO: Set animation of the boss's model.
 	
@@ -1099,7 +1129,7 @@ static NPCAdvChaser_EndMeleeAttack(iNPCIndex, bool:wasInterrupted)
 	NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity_Stand);
 	
 	g_hNPCAttackDurationTimer[iNPCIndex] = INVALID_HANDLE;
-	g_iNPCAttackIndex[iNPCIndex] = -1;
+	g_bNPCAttackFinished[iNPCIndex] = true;
 	g_hNPCMeleeAttackDamageDelayTimer[iNPCIndex] = INVALID_HANDLE;
 }
 
@@ -1259,7 +1289,6 @@ static NPCAdvChaser_StartRangedAttack(iNPCIndex, attackIndex)
 	new Handle:durationTimer = CreateTimer(attackDuration, Timer_NPCAdvChaser_RangedAttackEnd, iNPCIndex, TIMER_FLAG_NO_MAPCHANGE);
 	
 	g_hNPCAttackDurationTimer[iNPCIndex] = durationTimer;
-	g_iNPCAttackIndex[iNPCIndex] = attackIndex;
 
 	new burstShotsNum = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstNum];
 	
@@ -1273,6 +1302,8 @@ static NPCAdvChaser_RangedAttackThink(iNPCIndex)
 	if (!npc || npc == INVALID_ENT_REFERENCE) return;	// this should NEVER happen.
 
 	new attackIndex = g_iNPCAttackIndex[iNPCIndex];
+	new Float:attackDamage = NPCAdvChaser_GetAttackDamage(iNPCIndex, attackIndex);
+	new attackDamageType = NPCAdvChaser_GetAttackDamageType(iNPCIndex, attackIndex);
 	
 	new burstShotsLeft = g_NPCRangedAttackData[iNPCIndex][attackIndex][SF2NPCAdvChaser_RangedAttackBurstShotsLeft];
 	if (burstShotsLeft > 0)
@@ -1337,7 +1368,11 @@ static NPCAdvChaser_RangedAttackThink(iNPCIndex)
 				
 				if (TR_DidHit(trace))
 				{
-					// @TODO: Damage the hit entity.
+					new hitEnt = TR_GetEntityIndex(trace);
+					if (hitEnt)
+					{
+						SDKHooks_TakeDamage(hitEnt, npc, npc, attackDamage, attackDamageType, _, _, vStartPos);
+					}
 				}
 				
 				CloseHandle(trace);
@@ -1367,6 +1402,7 @@ static NPCAdvChaser_CreateShootPosEntity(iNPCIndex, const String:attachName[]=""
 
 static NPCAdvChaser_EndRangedAttack(iNPCIndex, bool:wasInterrupted)
 {
+	g_bNPCAttackFinished[iNPCIndex] = true;
 }
 
 public Action:Timer_NPCAdvChaser_RangedAttackEnd(Handle:timer, any:iNPCIndex)
@@ -1933,6 +1969,73 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			return ScheduleTaskState_Running;
 		}
+		case TASK_ATTACK:
+		{
+			new attackIndex = taskData;
+			if (attackIndex < 0 || attackIndex >= SF2_ADV_CHASER_BOSS_MAX_ATTACKS)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Attack index %d is out of range!", attackIndex);
+				return ScheduleTaskState_Failed;
+			}
+			
+			new SF2NPCAdvChaserAttackType:attackType = NPCAdvChaser_GetAttackType(iNPCIndex, attackIndex);
+			switch (attackType)
+			{
+				case SF2NPCAdvChaserAttackType_Melee:
+				{
+					g_iNPCAttackIndex[iNPCIndex] = attackIndex;
+					g_bNPCAttackFinished[iNPCIndex] = false;
+				
+					NPCAdvChaser_StartMeleeAttack(iNPCIndex, attackIndex);
+				}
+				case SF2NPCAdvChaserAttackType_Ranged:
+				{
+					g_iNPCAttackIndex[iNPCIndex] = attackIndex;
+					g_bNPCAttackFinished[iNPCIndex] = false;
+				
+					NPCAdvChaser_StartRangedAttack(iNPCIndex, attackIndex);
+				}
+				default:
+				{
+					Format(failReasonMsg, failReasonMsgLen, "Attack index %d has unsupported attack type %d!", attackIndex, _:attackType);
+					return ScheduleTaskState_Failed;
+				}
+			}
+			
+			return ScheduleTaskState_Running;
+		}
+		case TASK_ATTACK_BEST:
+		{
+			new bestAttackIndex = -1;
+			
+			new attackIndexList[SF2_ADV_CHASER_BOSS_MAX_ATTACKS] = { -1, ... };
+			new attackIndexListCount = 0;
+			
+			new interruptCond = NPCAdvChaser_GetInterruptConditions(iNPCIndex);
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK1) attackIndexList[attackIndexListCount++] = 0;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK2) attackIndexList[attackIndexListCount++] = 1;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK3) attackIndexList[attackIndexListCount++] = 2;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK4) attackIndexList[attackIndexListCount++] = 3;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK5) attackIndexList[attackIndexListCount++] = 4;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK6) attackIndexList[attackIndexListCount++] = 5;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK7) attackIndexList[attackIndexListCount++] = 6;
+			if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK8) attackIndexList[attackIndexListCount++] = 7;
+			
+			for (new i = 0; i < attackIndexListCount; i++)
+			{
+				new attackIndex = attackIndexList[i];
+				new SF2NPCAdvChaserAttackType:attackType = NPCAdvChaser_GetAttackType(iNPCIndex, attackIndex); 
+				if (attackType == SF2NPCAdvChaserAttackType_Invalid)
+				{
+					continue;
+				}
+				
+				bestAttackIndex = i;
+				break;
+			}
+			
+			return NPCAdvChaser_StartTask(iNPCIndex, TASK_ATTACK, bestAttackIndex, failReasonMsg, failReasonMsgLen);
+		}
 	}
 	
 	Format(failReasonMsg, failReasonMsgLen, "Task ID %d does not exist.", _:taskID);
@@ -2177,6 +2280,48 @@ static ScheduleTaskState:NPCAdvChaser_RunTask(iNPCIndex, ScheduleTask:taskID, an
 			
 			return ScheduleTaskState_Running;
 		}
+		case TASK_ATTACK:
+		{
+			new attackIndex = g_iNPCAttackIndex[iNPCIndex];
+			if (attackIndex < 0 || attackIndex >= SF2_ADV_CHASER_BOSS_MAX_ATTACKS)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Attack index %d is out of range!", attackIndex);
+				return ScheduleTaskState_Failed;
+			}
+			
+			new SF2NPCAdvChaserAttackType:attackType = NPCAdvChaser_GetAttackType(iNPCIndex, attackIndex);
+			switch (attackType)
+			{
+				case SF2NPCAdvChaserAttackType_Melee:
+				{
+				}
+				case SF2NPCAdvChaserAttackType_Ranged:
+				{
+					NPCAdvChaser_RangedAttackThink(iNPCIndex);
+				}
+				default:
+				{
+					g_iNPCAttackIndex[iNPCIndex] = -1;
+					g_bNPCAttackFinished[iNPCIndex] = true;
+					
+					Format(failReasonMsg, failReasonMsgLen, "Attack index %d has unsupported attack type %d!", attackIndex, _:attackType);
+					return ScheduleTaskState_Failed;
+				}
+			}
+			
+			if (g_bNPCAttackFinished[iNPCIndex])
+			{
+				g_iNPCAttackIndex[iNPCIndex] = -1;
+				
+				return ScheduleTaskState_Complete;
+			}
+			
+			return ScheduleTaskState_Running;
+		}
+		case TASK_ATTACK_BEST:
+		{
+			return NPCAdvChaser_RunTask(iNPCIndex, TASK_ATTACK, -1, failReasonMsg, failReasonMsgLen);
+		}
 	}
 	
 	Format(failReasonMsg, failReasonMsgLen, "Task ID %d does not exist.", _:taskID);
@@ -2194,6 +2339,30 @@ static NPCAdvChaser_OnTaskInterrupted(iNPCIndex, ScheduleTask:taskID, any:taskDa
 		case TASK_SET_ANIMATION:
 		{
 			NPCAdvChaser_StopMoving(iNPCIndex);
+		}
+		case TASK_ATTACK:
+		{
+			new attackIndex = g_iNPCAttackIndex[iNPCIndex];
+			if (attackIndex < 0 || attackIndex >= SF2_ADV_CHASER_BOSS_MAX_ATTACKS)
+			{
+				return;
+			}
+			
+			new SF2NPCAdvChaserAttackType:attackType = NPCAdvChaser_GetAttackType(iNPCIndex, attackIndex);
+			switch (attackType)
+			{
+				case SF2NPCAdvChaserAttackType_Melee:
+				{
+					NPCAdvChaser_EndMeleeAttack(iNPCIndex, true);
+				}
+				case SF2NPCAdvChaserAttackType_Ranged:
+				{
+					NPCAdvChaser_EndRangedAttack(iNPCIndex, true);
+				}
+			}
+			
+			g_iNPCAttackIndex[iNPCIndex] = -1;
+			g_bNPCAttackFinished[iNPCIndex] = true;
 		}
 	}
 }
@@ -2307,6 +2476,7 @@ NPCAdvChaser_Think(iNPCIndex)
 	
 	// 2. Select and execute/maintain schedules.
 	
+	NPCAdvChaser_CheckAttackConditions(iNPCIndex);
 	NPCAdvChaser_MaintainSchedule(iNPCIndex);
 	
 	// 3. Select the activity to be in. Running, standing, jumping, or something else, etc. The preferred activity is the main activity to be in.
