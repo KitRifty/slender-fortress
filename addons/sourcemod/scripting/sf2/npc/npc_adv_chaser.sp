@@ -103,7 +103,6 @@ enum ScheduleTask
 {
 	TASK_WAIT = 0,
 	TASK_TRAVERSE_PATH,
-	TASK_DO_BEST_ATTACK,
 	
 	TASK_SET_SCHEDULE,
 	TASK_SET_FAIL_SCHEDULE,
@@ -141,7 +140,6 @@ static const g_ScheduleTaskNames[][] =
 {
 	"TASK_WAIT",
 	"TASK_TRAVERSE_PATH",
-	"TASK_DO_BEST_ATTACK",
 	
 	"TASK_SET_SCHEDULE",
 	"TASK_SET_FAIL_SCHEDULE",
@@ -192,7 +190,7 @@ static Float:g_flNPCAnimationFinishTime[MAX_BOSSES] = { -1.0, ... };
 
 // Interrupt conditions.
 #define SF2_INTERRUPTCOND_NEW_ENEMY (1 << 0)
-#define SF2_INTERRUPTCOND_SAW_ENEMY (1 << 1)
+#define SF2_INTERRUPTCOND_SEE_ENEMY (1 << 1)
 #define SF2_INTERRUPTCOND_ENEMY_UNREACHABLE (1 << 2)
 #define SF2_INTERRUPTCOND_ENEMY_OCCLUDED (1 << 3)
 #define SF2_INTERRUPTCOND_LOST_ENEMY (1 << 4)
@@ -200,22 +198,30 @@ static Float:g_flNPCAnimationFinishTime[MAX_BOSSES] = { -1.0, ... };
 #define SF2_INTERRUPTCOND_DAMAGED (1 << 6)
 #define SF2_INTERRUPTCOND_STUNNED (1 << 7)
 
-#define SF2_INTERRUPTCOND_CAN_ATTACK1 (1 << 8)
-#define SF2_INTERRUPTCOND_CAN_ATTACK2 (1 << 9)
-#define SF2_INTERRUPTCOND_CAN_ATTACK3 (1 << 10)
-#define SF2_INTERRUPTCOND_CAN_ATTACK4 (1 << 11)
-#define SF2_INTERRUPTCOND_CAN_ATTACK5 (1 << 12)
-#define SF2_INTERRUPTCOND_CAN_ATTACK6 (1 << 13)
-#define SF2_INTERRUPTCOND_CAN_ATTACK7 (1 << 14)
-#define SF2_INTERRUPTCOND_CAN_ATTACK8 (1 << 15)
+#define SF2_INTERRUPTCOND_CAN_ATTACK (1 << 8)
+#define SF2_INTERRUPTCOND_CAN_ATTACK1 (1 << 9)
+#define SF2_INTERRUPTCOND_CAN_ATTACK2 (1 << 10)
+#define SF2_INTERRUPTCOND_CAN_ATTACK3 (1 << 11)
+#define SF2_INTERRUPTCOND_CAN_ATTACK4 (1 << 12)
+#define SF2_INTERRUPTCOND_CAN_ATTACK5 (1 << 13)
+#define SF2_INTERRUPTCOND_CAN_ATTACK6 (1 << 14)
+#define SF2_INTERRUPTCOND_CAN_ATTACK7 (1 << 15)
+#define SF2_INTERRUPTCOND_CAN_ATTACK8 (1 << 16)
+
+#define SF2_INTERRUPTCOND_NEW_SCENT (1 << 17)
+#define SF2_INTERRUPTCOND_NEW_GLIMPSE (1 << 18)
+#define SF2_INTERRUPTCOND_SEE_GLIMPSE (1 << 19)
 
 static Handle:g_hSchedules = INVALID_HANDLE;
 static Handle:g_hScheduleNames = INVALID_HANDLE;
 static Handle:g_hScheduleTaskLists = INVALID_HANDLE;
 
-new Schedule:SCHED_NONE;
+new Schedule:SCHED_NONE = Schedule:0;
 new Schedule:SCHED_IDLE_STAND;
 new Schedule:SCHED_CHASE_ENEMY;
+new Schedule:SCHED_INVESTIGATE_SCENT;
+new Schedule:SCHED_INVESTIGATE_GLIMPSE;
+new Schedule:SCHED_ATTACK_BEST;
 
 static InitializeScheduleSystem()
 {
@@ -226,12 +232,32 @@ static InitializeScheduleSystem()
 	SCHED_IDLE_STAND = StartScheduleDefinition("SCHED_IDLE_STAND");
 	AddTaskToSchedule(SCHED_IDLE_STAND, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Stand);
 	AddTaskToSchedule(SCHED_IDLE_STAND, TASK_WAIT, 5.0);
+	SetScheduleInterruptConditions(SCHED_IDLE_STAND, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_SCENT | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
 	
 	SCHED_CHASE_ENEMY = StartScheduleDefinition("SCHED_CHASE_ENEMY");
-	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_GET_CHASE_PATH_TO_ENEMY);
+	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_GET_PATH_TO_ENEMY);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Run);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_TRAVERSE_PATH);
 	AddTaskToSchedule(SCHED_CHASE_ENEMY, TASK_FACE_ENEMY);
+	SetScheduleInterruptConditions(SCHED_CHASE_ENEMY, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_ENEMY);
+	
+	SCHED_INVESTIGATE_SCENT = StartScheduleDefinition("SCHED_INVESTIGATE_SCENT");
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_SAVE_SCENT_TO_SAVEPOSITION);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_GET_PATH_TO_SAVEPOSITION);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_TRAVERSE_PATH);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_WAIT, 1.0);
+	SetScheduleInterruptConditions(SCHED_INVESTIGATE_SCENT, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_SCENT | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
+	
+	SCHED_INVESTIGATE_GLIMPSE = StartScheduleDefinition("SCHED_INVESTIGATE_GLIMPSE");
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_GET_PATH_TO_GLIMPSE);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_TRAVERSE_PATH);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_WAIT, 2.0);
+	SetScheduleInterruptConditions(SCHED_INVESTIGATE_SCENT, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
+	
+	SCHED_ATTACK_BEST = StartScheduleDefinition("SCHED_ATTACK_BEST");
+	AddTaskToSchedule(SCHED_ATTACK_BEST, TASK_ATTACK_BEST);
 }
 
 static Schedule:StartScheduleDefinition(const String:scheduleName[])
@@ -520,8 +546,51 @@ static Float:NPCAdvChaser_GetEnemyAwarenessIncreaseRate(iNPCIndex, enemy)
 	return Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_AwarenessIncreaseRate);
 }
 
+static bool:NPCAdvChaser_CanSeeEntity(iNPCIndex, entity)
+{
+	if (!IsValidEntity(entity)) return false;
+
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE) return false;
+	
+	if (GetEntityFlags(entity) & FL_NOTARGET) return false;
+	
+	if (IsValidClient(entity) && !IsPlayerAlive(entity)) return false;
+	
+	
+	new Float:searchRange = NPCGetSearchRadius(iNPCIndex);
+	new Float:fov = NPCGetFOV(iNPCIndex);
+	new Float:cosAng = Cosine(DegToRad(fov / 2.0));
+	
+	decl Float:vEyePos[3], Float:vDir[3];
+	NPCGetEyePosition(iNPCIndex, vEyePos);
+	GetEntPropVector(npc, Prop_Data, "m_angAbsRotation", vDir);
+	GetAngleVectors(vDir, vDir, NULL_VECTOR, NULL_VECTOR);
+	NormalizeVector(vDir, vDir);
+	
+	decl Float:vTargetPos[3], Float:vTo[3];
+	GetClientEyePosition(entity, vTargetPos);
+	SubtractVectors(vTargetPos, vEyePos, vTo);
+	NormalizeVector(vTo, vTo);
+	
+	if (GetVectorDotProduct(vTo, vDir) < cosAng) return false;
+	
+	if (GetVectorDistance(vEyePos, vTargetPos) > searchRange) return false;
+	
+	new Handle:trace = TR_TraceRayFilterEx(vEyePos, vTargetPos, MASK_NPCSOLID, RayType_EndPoint, TraceRayDontHitEntity, npc);
+	new bool:traceHit = TR_DidHit(trace);
+	new traceEnt = TR_GetEntityIndex(trace);
+	CloseHandle(trace);
+	
+	if (traceHit && traceEnt != client) return false;
+	
+	return true;
+}
+
 static NPCAdvChaser_GatherEnemies(iNPCIndex)
 {
+	new npc = NPCGetEntIndex(iNPCIndex);
+
 	// @TODO: Define the variables in the config file instead of hardcoding the values.
 	
 	// Initial values for EnemyMemoryType_Sight
@@ -545,9 +614,14 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 	// Update clients first.
 	for (new client = 1; client <= MaxClients; client++)
 	{
+		// @TODO: Add more condition checking.
 		if (!IsClientInGame(client) || !IsPlayerAlive(client)) continue;
 		
 		new bool:enemyIsVisible = false;
+		if (NPCAdvChaser_CanSeeEntity(iNPCIndex, client))
+		{
+			enemyIsVisible = true;
+		}
 		
 		if (enemyIsVisible) // I see this player...
 		{
@@ -564,6 +638,8 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 						if (awareness >= 100)
 						{
 							// TRANSITION: SCENT -------> GLIMPSE
+							
+							NPCAdvChaser_AddInterruptCondition(iNPCIndex, client, SF2_INTERRUPTCOND_SEE_GLIMPSE);
 							
 							NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, client, EnemyMemoryType_Glimpse);
 							NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, client, awarenessInitialAmountOnGlimpse);
@@ -622,6 +698,8 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 						{
 							// TRANSITION: GLIMPSE -------> SIGHT
 							
+							NPCAdvChaser_AddInterruptCondition(iNPCIndex, client, SF2_INTERRUPTCOND_SEE_ENEMY);
+							
 							NPCAdvChaser_UpdateEnemyMemoryType(iNPCIndex, client, EnemyMemoryType_Sight);
 							NPCAdvChaser_UpdateEnemyAwareness(iNPCIndex, client, awarenessInitialAmountOnSight);
 							
@@ -661,6 +739,8 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 						{
 							// STAY: -------> GLIMPSE <-------
 							
+							NPCAdvChaser_AddInterruptCondition(iNPCIndex, client, SF2_INTERRUPTCOND_SEE_GLIMPSE);
+							
 							new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnGlimpse) + awarenessDecayDelayOnGlimpse;
 							SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
 							
@@ -682,6 +762,8 @@ static NPCAdvChaser_GatherEnemies(iNPCIndex)
 					case EnemyMemoryType_Sight:
 					{
 						// STAY: -------> SIGHT <-------
+						
+						NPCAdvChaser_AddInterruptCondition(iNPCIndex, client, SF2_INTERRUPTCOND_SEE_ENEMY);
 						
 						new Float:nextAwarenessDecayTime = GetGameTime() + (1.0 / awarenessDecayRateOnSight) + awarenessDecayDelayOnSight;
 						SetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, nextAwarenessDecayTime, EnemyMemoryStruct_NextAwarenessDecayTime);
@@ -849,6 +931,20 @@ static NPCAdvChaser_CheckEnemyMemory(iNPCIndex)
 {
 	for (new memoryIndex = 0; memoryIndex < GetArraySize(g_hNPCEnemyMemory[iNPCIndex]); memoryIndex++)
 	{
+		new ent = EntRefToEntIndex(GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_EntRef));
+		if (!ent || ent == INVALID_ENT_REFERENCE)
+		{
+			RemoveFromArray(g_hNPCEnemyMemory[iNPCIndex], memoryIndex--);
+			continue;
+		}
+		
+		// @TODO: Add more condition checking.
+		if (IsValidClient(ent) && (!IsPlayerAlive(ent)))
+		{
+			RemoveFromArray(g_hNPCEnemyMemory[iNPCIndex], memoryIndex--);
+			continue;
+		}
+	
 		new awareness = GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_Awareness);
 		
 		new Float:nextIncreaseTime = Float:GetArrayCell(g_hNPCEnemyMemory[iNPCIndex], memoryIndex, EnemyMemoryStruct_NextAwarenessIncreaseTime);
@@ -1139,6 +1235,8 @@ static NPCAdvChaser_CheckAttackConditions(iNPCIndex)
 				new Float:attackBeginRange = NPCAdvChaser_GetAttackBeginRange(iNPCIndex, attackIndex);
 				if (GetVectorDistance(vPos, vTargetPos) <= attackBeginRange)
 				{
+					NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK);
+				
 					if (attackIndex == 0) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK1);
 					else if (attackIndex == 1) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK2);
 					else if (attackIndex == 2) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK3);
@@ -2150,6 +2248,12 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			GetEntPropVector(npc, Prop_Send, "m_vecMins", vMins);
 			GetEntPropVector(npc, Prop_Send, "m_vecMaxs", vMaxs);
 			
+			decl Float:vTraceMins[3], Float:vTraceMaxs[3];
+			CopyVector(vMins, vTraceMins);
+			vTraceMins[2] = 0.0;
+			CopyVector(vMaxs, vTraceMaxs);
+			vTraceMaxs[2] = 0.0;
+			
 			new numTries = 0;
 			for (numTries = 0; i < 50; numTries++)
 			{
@@ -2160,12 +2264,19 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 				// Get the ground point.
 				decl Float:vStartPos[3];
 				CopyVector(vTestPos, vStartPos);
-				vStartPos[2] += HalfHumanHeight;
+				vStartPos[2] += vMaxs[2];
 				
-				new Handle:trace = TR_TraceHullFilterEx(vStartPos, vTestPos, vMins, vMaxs, MASK_NPCSOLID, TraceRayDontHitEntity, npc);
+				new Handle:trace = TR_TraceHullFilterEx(vStartPos, vTestPos, vTraceMins, vTraceMaxs, MASK_NPCSOLID, TraceRayDontHitEntity, npc);
 				new bool:traceHit = TR_DidHit(trace);
 				if (traceHit)
 				{
+					if (TR_GetFraction(trace) <= 0.0)
+					{
+						// Not enough head room.
+						CloseHandle(trace);
+						continue;
+					}
+				
 					decl Float:vFloorNormal[3];
 					TR_GetPlaneNormal(trace, vFloorNormal);
 					NormalizeVector(vFloorNormal, vFloorNormal);
@@ -2179,17 +2290,26 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 					
 					decl Float:vGroundPos[3];
 					TR_GetEndPosition(vGroundPos, trace);
+					vGroundPos[2] += 0.01;
+					
+					CloseHandle(trace);
+					
 					if (IsSpaceOccupiedNPC(vGroundPos, vMins, vMaxs, npc))
 					{
 						// Something's blocking the way.
-						CloseHandle(trace);
 						continue;
 					}
+					
+					// Got it.
+					CopyVector(vGroundPos, g_flNPCSavePosition[iNPCIndex]);
+				}
+				else
+				{
+					// Got it.
+					TR_GetEndPosition(g_flNPCSavePosition[iNPCIndex], trace);
+					CloseHandle(trace);
 				}
 				
-				// Got it.
-				TR_GetEndPosition(g_flNPCSavePosition[iNPCIndex], trace);
-				CloseHandle(trace);
 				break;
 			}
 			
@@ -2619,17 +2739,30 @@ NPCAdvChaser_Think(iNPCIndex)
 	
 	if (!enemy || enemy == INVALID_ENT_REFERENCE)
 	{
+		new lastGlimpse = NPCAdvChaser_GetGlimpseTarget(iNPCIndex);
+		
 		new target = NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType_Glimpse);
 		NPCAdvChaser_SetGlimpseTarget(iNPCIndex, target);
 		
 		if (!target || target == INVALID_ENT_REFERENCE)
 		{
+			new lastScent = NPCAdvChaser_GetScentTarget(iNPCIndex);
 			target = NPCAdvChaser_SelectEnemy(iNPCIndex, EnemyMemoryType_Scent);
 			NPCAdvChaser_SetScentTarget(iNPCIndex, target);
+			
+			if (lastScent != target && target && target != INVALID_ENT_REFERENCE)
+			{
+				NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_NEW_SCENT);
+			}
 		}
 		else
 		{
 			NPCAdvChaser_SetScentTarget(iNPCIndex, INVALID_ENT_REFERENCE);
+			
+			if (lastGlimpse != target)
+			{
+				NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_NEW_GLIMPSE);
+			}
 		}
 	}
 	else
