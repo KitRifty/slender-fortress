@@ -124,6 +124,8 @@ enum ScheduleTask
 	TASK_ATTACK,
 	TASK_ATTACK_BEST,
 	
+	TASK_SAVE_SCENT_TO_SAVEPOSITION,
+	
 	TASK_MAX
 };
 
@@ -156,6 +158,11 @@ static const g_ScheduleTaskNames[][] =
 	"TASK_SET_PATH_TOLERANCE_DIST",
 	
 	"TASK_SET_ANIMATION"
+	
+	"TASK_ATTACK",
+	"TASK_ATTACK_BEST",
+	
+	"TASK_SAVE_SCENT_TO_SAVEPOSITION"
 };
 
 enum Schedule
@@ -174,6 +181,8 @@ static g_iNPCNextSchedule[MAX_BOSSES] = { INVALID_SCHEDULE, ... };
 static g_iNPCFailSchedule[MAX_BOSSES] = { INVALID_SCHEDULE, ... };
 
 static g_iNPCInterruptConditions[MAX_BOSSES] = { 0, ... };
+
+static Float:g_flNPCSavePosition[MAX_BOSSES][3];
 
 // Wait
 static Float:g_flNPCWaitFinishTime[MAX_BOSSES] = { -1.0, ... };
@@ -1095,6 +1104,53 @@ Float:NPCAdvChaser_GetAttackAnimationPlaybackRate(iNPCIndex, iAttackIndex)
 
 static NPCAdvChaser_CheckAttackConditions(iNPCIndex)
 {
+	new npc = NPCGetEntIndex(iNPCIndex);
+	if (!npc || npc == INVALID_ENT_REFERENCE) return;
+	
+	new target = NPCAdvChaser_GetEnemy(iNPCIndex);
+	NPCAdvChaser_SetTarget(iNPCIndex, target);
+	
+	if (!target || target == INVALID_ENT_REFERENCE)
+	{
+		return;
+	}
+	
+	decl Float:vPos[3], Float:vAng[3], Float:vDir[3], Float:vTargetPos[3];
+	GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", vPos);
+	GetEntPropVector(npc, Prop_Data, "m_angAbsRotation", vAng);
+	GetAngleVectors(vAng, vDir, NULL_VECTOR, NULL_VECTOR);
+	NormalizeVector(vDir, vDir);
+	GetEntPropVector(target, Prop_Data, "m_vecAbsOrigin", vTargetPos);
+	
+	for (new attackIndex = 0; attackIndex < SF2_ADV_CHASER_BOSS_MAX_ATTACKS; attackIndex++)
+	{
+		new SF2NPCAdvChaserAttackType:attackType = NPCAdvChaser_GetAttackType(iNPCIndex, attackIndex);
+		if (attackType == SF2NPCAdvChaserAttackType_Invalid) continue;
+		
+		if (GetGameTime() >= NPCAdvChaser_GetNextAttackTime(iNPCIndex, attackIndex))
+		{
+			decl Float:vTo[3];
+			SubtractVectors(vTargetPos, vPos, vTo);
+			NormalizeVector(vTo, vTo);
+			
+			new Float:attackBeginFOV = NPCAdvChaser_GetAttackBeginFOV(iNPCIndex, attackIndex);
+			if (GetVectorDotProduct(vDir, vTo) >= Cosine(DegToRad(attackBeginFOV / 2.0)))
+			{
+				new Float:attackBeginRange = NPCAdvChaser_GetAttackBeginRange(iNPCIndex, attackIndex);
+				if (GetVectorDistance(vPos, vTargetPos) <= attackBeginRange)
+				{
+					if (attackIndex == 0) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK1);
+					else if (attackIndex == 1) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK2);
+					else if (attackIndex == 2) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK3);
+					else if (attackIndex == 3) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK4);
+					else if (attackIndex == 4) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK5);
+					else if (attackIndex == 5) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK6);
+					else if (attackIndex == 6) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK7);
+					else if (attackIndex == 7) NPCAdvChaser_AddInterruptCondition(iNPCIndex, SF2_INTERRUPTCOND_CAN_ATTACK8);
+				}
+			}
+		}
+	}
 }
 
 // MELEE ATTACK
@@ -1840,7 +1896,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			}
 			
 			g_iNPCNextSchedule[iNPCIndex] = Schedule:scheduleIndex;
-			return ScheduleTaskState_Completed;
+			return ScheduleTaskState_Complete;
 		}
 		case TASK_SET_FAIL_SCHEDULE:
 		{
@@ -1852,7 +1908,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			}
 			
 			g_iNPCFailSchedule[iNPCIndex] = Schedule:scheduleIndex;
-			return ScheduleTaskState_Completed;
+			return ScheduleTaskState_Complete;
 		}
 		case TASK_SET_PREFERRED_ACTIVITY:
 		{
@@ -1864,7 +1920,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			}
 			
 			NPCAdvChaser_SetPreferredActivity(iNPCIndex, SF2AdvChaserActivity:taskData);
-			return ScheduleTaskState_Completed;
+			return ScheduleTaskState_Complete;
 		}
 		case TASK_GET_PATH_TO_SAVEPOSITION:
 		{
@@ -1877,13 +1933,11 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			NPCAdvChaser_ClearPath(iNPCIndex);
 			
-			// g_flNPCSavePosition
-			
 			decl Float:flStartPos[3];
 			GetEntPropVector(npc, Prop_Data, "m_vecAbsOrigin", flStartPos);
 			
 			new Handle:hPath = CreateNavPath();
-			if (!NavPathConstructPathFromPoints(hPath, flStartPos, flEndPos, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
+			if (!NavPathConstructPathFromPoints(hPath, flStartPos, g_flNPCSavePosition[iNPCIndex], SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS, NPCAdvChaser_ShortestPathCost, NPCAdvChaser_GetStepSize(iNPCIndex)))
 			{
 				CloseHandle(hPath);
 				Format(failReasonMsg, failReasonMsgLen, "Failed to construct path to saveposition.");
@@ -1898,8 +1952,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			g_iNPCPathGoalEntity[iNPCIndex] = INVALID_ENT_REFERENCE;
 			g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex] = -1;
 			
-			return ScheduleTaskState_Completed;
-			
+			return ScheduleTaskState_Complete;
 		}
 		case TASK_GET_PATH_TO_ENEMY:
 		{
@@ -1947,7 +2000,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			new lastAreaIndex = NavPathGetNodeAreaIndex(hPath, GetArraySize(hPath) - 1);
 			g_iNPCPathGoalEntityLastKnownAreaIndex[iNPCIndex] = lastAreaIndex;
 			
-			return ScheduleTaskState_Completed;
+			return ScheduleTaskState_Complete;
 		}
 		case TASK_SET_ANIMATION:
 		{
@@ -2036,10 +2089,121 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			return NPCAdvChaser_StartTask(iNPCIndex, TASK_ATTACK, bestAttackIndex, failReasonMsg, failReasonMsgLen);
 		}
+		case TASK_SAVE_SCENT_TO_SAVEPOSITION:
+		{
+			new scentTarget = NPCAdvChaser_GetScentTarget(iNPCIndex);
+			if (!scentTarget || scentTarget == INVALID_ENT_REFERENCE)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Scent target does not exist.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			decl Float:vScentPos[3];
+			GetEntPropVector(scentTarget, Prop_Data, "m_vecAbsOrigin", vScentPos);
+			
+			new scentAreaIndex = NavMesh_GetNearestArea(vScentPos, _, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS);
+			if (scentAreaIndex == -1)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Scent target is not on the navmesh.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			// @TODO: Parameterize scentAreaRadius.
+			new Float:scentAreaRadius = 512.0;
+			
+			new Handle:hSurroundingAreas = CreateArray();
+			new Handle:hSurroundingAreaStack = CreateStack();
+			NavMesh_CollectSurroundingAreas(hSurroundingAreaStack, scentAreaIndex, scentAreaRadius);
+			
+			new areaIndex = -1;
+			new numAreas = 0;
+			
+			while (!IsStackEmpty(hSurroundingAreaStack))
+			{
+				PopStackCell(hSurroundingAreaStack, areaIndex);
+				new areaCost = NavMeshArea_GetCostSoFar(areaIndex);
+				
+				if (float(areaCost) < scentAreaRadius)
+				{
+					PushArrayCell(hSurroundingAreas, areaIndex);
+				}
+			}
+			
+			CloseHandle(hSurroundingAreaStack);
+			
+			if (!numAreas)
+			{
+				CloseHandle(hSurroundingAreas);
+				Format(failReasonMsg, failReasonMsgLen, "Failed to retrieve valid areas around scent target.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			new targetAreaIndex = GetArrayCell(hSurroundingAreas, GetRandomInt(0, GetArraySize(hSurroundingAreas) - 1));
+			CloseHandle(hSurroundingAreas);
+			
+			decl Float:vAreaExtentLow[3], Float:vAreaExtentHigh[3], Float:vAreaCenter[3];
+			NavMeshArea_GetExtentLow(targetAreaIndex, vAreaExtentLow);
+			NavMeshArea_GetExtentHigh(targetAreaIndex, vAreaExtentHigh);
+			NavMeshArea_GetCenter(targetAreaIndex, vAreaCenter);
+			
+			decl Float:vTestPos[3], Float:vMins[3], Float:vMaxs[3];
+			GetEntPropVector(npc, Prop_Send, "m_vecMins", vMins);
+			GetEntPropVector(npc, Prop_Send, "m_vecMaxs", vMaxs);
+			
+			new numTries = 0;
+			for (numTries = 0; i < 50; numTries++)
+			{
+				vTestPos[0] = vAreaCenter[0] + (GetRandomFloat(vAreaExtentLow[0], vAreaExtentHigh[0]));
+				vTestPos[1] = vAreaCenter[1] + (GetRandomFloat(vAreaExtentLow[1], vAreaExtentHigh[1]));
+				vTestPos[2] = NavMeshArea_GetZFromXAndY(targetAreaIndex, vTestPos[0], vTestPos[1]);
+				
+				// Get the ground point.
+				decl Float:vStartPos[3];
+				CopyVector(vTestPos, vStartPos);
+				vStartPos[2] += HalfHumanHeight;
+				
+				new Handle:trace = TR_TraceHullFilterEx(vStartPos, vTestPos, vMins, vMaxs, MASK_NPCSOLID, TraceRayDontHitEntity, npc);
+				new bool:traceHit = TR_DidHit(trace);
+				if (traceHit)
+				{
+					decl Float:vFloorNormal[3];
+					TR_GetPlaneNormal(trace, vFloorNormal);
+					NormalizeVector(vFloorNormal, vFloorNormal);
+					
+					if (vFloorNormal[2] < 0.7)
+					{
+						// Too steep...
+						CloseHandle(trace);
+						continue;
+					}
+					
+					decl Float:vGroundPos[3];
+					TR_GetEndPosition(vGroundPos, trace);
+					if (IsSpaceOccupiedNPC(vGroundPos, vMins, vMaxs, npc))
+					{
+						// Something's blocking the way.
+						CloseHandle(trace);
+						continue;
+					}
+				}
+				
+				// Got it.
+				TR_GetEndPosition(g_flNPCSavePosition[iNPCIndex], trace);
+				CloseHandle(trace);
+				break;
+			}
+			
+			if (numTries == 50)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Failed to retrieve valid save position point in scent's area.");
+				return ScheduleTaskState_Failed;
+			}
+			
+			return ScheduleTaskState_Complete;
+		}
 	}
 	
 	Format(failReasonMsg, failReasonMsgLen, "Task ID %d does not exist.", _:taskID);
-	
 	return ScheduleTaskState_Failed;
 }
 
