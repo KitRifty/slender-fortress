@@ -124,6 +124,7 @@ enum ScheduleTask
 	TASK_ATTACK_BEST,
 	
 	TASK_SAVE_SCENT_TO_SAVEPOSITION,
+	TASK_SAVE_GLIMPSE_TO_SAVEPOSITION,
 	
 	TASK_MAX
 };
@@ -160,7 +161,8 @@ static const g_ScheduleTaskNames[][] =
 	"TASK_ATTACK",
 	"TASK_ATTACK_BEST",
 	
-	"TASK_SAVE_SCENT_TO_SAVEPOSITION"
+	"TASK_SAVE_SCENT_TO_SAVEPOSITION",
+	"TASK_SAVE_GLIMPSE_TO_SAVEPOSITION"
 };
 
 enum Schedule
@@ -211,6 +213,7 @@ static Float:g_flNPCAnimationFinishTime[MAX_BOSSES] = { -1.0, ... };
 #define SF2_INTERRUPTCOND_NEW_SCENT (1 << 17)
 #define SF2_INTERRUPTCOND_NEW_GLIMPSE (1 << 18)
 #define SF2_INTERRUPTCOND_SEE_GLIMPSE (1 << 19)
+#define SF2_INTERRUPTCOND_HEAR_GLIMPSE (1 << 20)
 
 static Handle:g_hSchedules = INVALID_HANDLE;
 static Handle:g_hScheduleNames = INVALID_HANDLE;
@@ -221,6 +224,7 @@ new Schedule:SCHED_IDLE_STAND;
 new Schedule:SCHED_CHASE_ENEMY;
 new Schedule:SCHED_INVESTIGATE_SCENT;
 new Schedule:SCHED_INVESTIGATE_GLIMPSE;
+new Schedule:SCHED_SEARCH_AROUND_GLIMPSE;
 new Schedule:SCHED_ATTACK_BEST;
 
 static InitializeScheduleSystem()
@@ -250,11 +254,20 @@ static InitializeScheduleSystem()
 	SetScheduleInterruptConditions(SCHED_INVESTIGATE_SCENT, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_SCENT | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
 	
 	SCHED_INVESTIGATE_GLIMPSE = StartScheduleDefinition("SCHED_INVESTIGATE_GLIMPSE");
-	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_GET_PATH_TO_GLIMPSE);
-	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
-	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_TRAVERSE_PATH);
-	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_WAIT, 2.0);
-	SetScheduleInterruptConditions(SCHED_INVESTIGATE_SCENT, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
+	AddTaskToSchedule(SCHED_INVESTIGATE_GLIMPSE, TASK_GET_PATH_TO_GLIMPSE);
+	AddTaskToSchedule(SCHED_INVESTIGATE_GLIMPSE, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
+	AddTaskToSchedule(SCHED_INVESTIGATE_GLIMPSE, TASK_TRAVERSE_PATH);
+	AddTaskToSchedule(SCHED_INVESTIGATE_GLIMPSE, TASK_WAIT, 2.0);
+	SetScheduleInterruptConditions(SCHED_INVESTIGATE_GLIMPSE, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
+	
+	SCHED_SEARCH_AROUND_GLIMPSE = StartScheduleDefinition("SCHED_SEARCH_AROUND_GLIMPSE");
+	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_SAVE_GLIMPSE_TO_SAVEPOSITION);
+	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_GET_PATH_TO_SAVEPOSITION);
+	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
+	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_TRAVERSE_PATH);
+	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_WAIT, 1.0);
+	SetScheduleInterruptConditions(SCHED_SEARCH_AROUND_GLIMPSE, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_HEAR_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
+	
 	
 	SCHED_ATTACK_BEST = StartScheduleDefinition("SCHED_ATTACK_BEST");
 	AddTaskToSchedule(SCHED_ATTACK_BEST, TASK_ATTACK_BEST);
@@ -1772,7 +1785,56 @@ static NPCAdvChaser_ClearSchedule(iNPCIndex)
 
 static Schedule:NPCAdvChaser_SelectSchedule(iNPCIndex)
 {
-	return INVALID_SCHEDULE;
+	new SF2AdvChaserState:preferredState = NPCAdvChaser_GetPreferredState(iNPCIndex); 
+	new interruptCond = NPCAdvChaser_GetInterruptConditions(iNPCIndex);
+	
+	if (interruptCond & SF2_INTERRUPTCOND_CAN_ATTACK)
+	{
+		return SCHED_ATTACK_BEST;
+	}
+	
+	new Schedule:lastSchedule = NPCAdvChaser_GetSchedule(iNPCIndex);
+	
+	switch (preferredState)
+	{
+		case SF2AdvChaserState_Idle:
+		{
+			new scentTarget = NPCAdvChaser_GetScentTarget(iNPCIndex);
+			if (scentTarget && scentTarget != INVALID_ENT_REFERENCE)
+			{
+				return SCHED_INVESTIGATE_SCENT;
+			}
+		}
+		case SF2AdvChaserState_Alert:
+		{
+			new glimpseTarget = NPCAdvChaser_GetGlimpseTarget(iNPCIndex);
+			if (glimpseTarget && glimpseTarget != INVALID_ENT_REFERENCE)
+			{
+				if (interruptCond & SF2_INTERRUPTCOND_SEE_GLIMPSE ||
+					interruptCond & SF2_INTERRUPTCOND_HEAR_GLIMPSE)
+				{
+					return SCHED_INVESTIGATE_GLIMPSE;
+				}
+				else
+				{
+					return SCHED_SEARCH_AROUND_GLIMPSE;
+				}
+			}
+		}
+		case SF2AdvChaserState_Combat:
+		{
+			if (lastSchedule == SCHED_ATTACK_BEST ||
+				interruptCond & SF2_INTERRUPTCOND_NEW_ENEMY ||
+				interruptCond & SF2_INTERRUPTCOND_SEE_ENEMY)
+			{
+				return SCHED_CHASE_ENEMY;
+			}
+		
+			return SCHED_SEARCH_AROUND_ENEMY;
+		}
+	}
+	
+	return SCHED_IDLE_STAND;
 }
 
 static NPCAdvChaser_MaintainSchedule(iNPCIndex)
@@ -1783,7 +1845,7 @@ static NPCAdvChaser_MaintainSchedule(iNPCIndex)
 	
 	if (currentSchedule != INVALID_SCHEDULE || NPCAdvChaser_GetState(iNPCIndex) != NPCAdvChaser_GetPreferredState(iNPCIndex))
 	{
-		new SF2AdvChaserState:preferredState = AIChaser_SelectPreferredState(iNPCIndex);
+		new SF2AdvChaserState:preferredState = NPCAdvChaser_SelectPreferredState(iNPCIndex);
 		NPCAdvChaser_SetPreferredState(iNPCIndex, preferredState);
 	}
 	
@@ -2187,31 +2249,40 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			return NPCAdvChaser_StartTask(iNPCIndex, TASK_ATTACK, bestAttackIndex, failReasonMsg, failReasonMsgLen);
 		}
-		case TASK_SAVE_SCENT_TO_SAVEPOSITION:
+		case TASK_SAVE_SCENT_TO_SAVEPOSITION, TASK_SAVE_GLIMPSE_TO_SAVEPOSITION:
 		{
-			new scentTarget = NPCAdvChaser_GetScentTarget(iNPCIndex);
-			if (!scentTarget || scentTarget == INVALID_ENT_REFERENCE)
+			new target = INVALID_ENT_REFERENCE;
+			if (taskID == TASK_SAVE_SCENT_TO_SAVEPOSITION)
 			{
-				Format(failReasonMsg, failReasonMsgLen, "Scent target does not exist.");
+				target = NPCAdvChaser_GetScentTarget(iNPCIndex);
+			}
+			else if (taskID == TASK_SAVE_GLIMPSE_TO_SAVEPOSITION)
+			{
+				target = NPCAdvChaser_GetGlimpseTarget(iNPCIndex);
+			}
+			
+			if (!target || target == INVALID_ENT_REFERENCE)
+			{
+				Format(failReasonMsg, failReasonMsgLen, "Specified target does not exist.");
 				return ScheduleTaskState_Failed;
 			}
 			
-			decl Float:vScentPos[3];
-			GetEntPropVector(scentTarget, Prop_Data, "m_vecAbsOrigin", vScentPos);
+			decl Float:vTargetPos[3];
+			NPCAdvChaser_GetEnemyPosInMemory(iNPCIndex, target, vTargetPos);
 			
-			new scentAreaIndex = NavMesh_GetNearestArea(vScentPos, _, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS);
-			if (scentAreaIndex == -1)
+			new targetAreaIndex = NavMesh_GetNearestArea(vTargetPos, _, SF2_NPC_ADVCHASER_NEARESTAREA_RADIUS);
+			if (targetAreaIndex == -1)
 			{
-				Format(failReasonMsg, failReasonMsgLen, "Scent target is not on the navmesh.");
+				Format(failReasonMsg, failReasonMsgLen, "Target is not on the navmesh.");
 				return ScheduleTaskState_Failed;
 			}
 			
-			// @TODO: Parameterize scentAreaRadius.
-			new Float:scentAreaRadius = 512.0;
+			// @TODO: Parameterize areaRadius with Scent and Glimpse.
+			new Float:areaRadius = 512.0;
 			
 			new Handle:hSurroundingAreas = CreateArray();
 			new Handle:hSurroundingAreaStack = CreateStack();
-			NavMesh_CollectSurroundingAreas(hSurroundingAreaStack, scentAreaIndex, scentAreaRadius);
+			NavMesh_CollectSurroundingAreas(hSurroundingAreaStack, targetAreaIndex, areaRadius);
 			
 			new areaIndex = -1;
 			new numAreas = 0;
@@ -2221,7 +2292,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 				PopStackCell(hSurroundingAreaStack, areaIndex);
 				new areaCost = NavMeshArea_GetCostSoFar(areaIndex);
 				
-				if (float(areaCost) < scentAreaRadius)
+				if (float(areaCost) < areaRadius)
 				{
 					PushArrayCell(hSurroundingAreas, areaIndex);
 				}
@@ -2232,7 +2303,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			if (!numAreas)
 			{
 				CloseHandle(hSurroundingAreas);
-				Format(failReasonMsg, failReasonMsgLen, "Failed to retrieve valid areas around scent target.");
+				Format(failReasonMsg, failReasonMsgLen, "Failed to retrieve valid areas around target.");
 				return ScheduleTaskState_Failed;
 			}
 			
@@ -2315,7 +2386,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			if (numTries == 50)
 			{
-				Format(failReasonMsg, failReasonMsgLen, "Failed to retrieve valid save position point in scent's area.");
+				Format(failReasonMsg, failReasonMsgLen, "Failed to retrieve valid save position point in target's area.");
 				return ScheduleTaskState_Failed;
 			}
 			
