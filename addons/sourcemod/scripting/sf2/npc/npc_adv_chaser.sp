@@ -123,8 +123,8 @@ enum ScheduleTask
 	TASK_ATTACK,
 	TASK_ATTACK_BEST,
 	
-	TASK_SAVE_SCENT_TO_SAVEPOSITION,
-	TASK_SAVE_GLIMPSE_TO_SAVEPOSITION,
+	TASK_STORE_SCENT_IN_SAVEPOSITION,
+	TASK_STORE_GLIMPSE_IN_SAVEPOSITION,
 	
 	TASK_MAX
 };
@@ -161,8 +161,8 @@ static const g_ScheduleTaskNames[][] =
 	"TASK_ATTACK",
 	"TASK_ATTACK_BEST",
 	
-	"TASK_SAVE_SCENT_TO_SAVEPOSITION",
-	"TASK_SAVE_GLIMPSE_TO_SAVEPOSITION"
+	"TASK_STORE_SCENT_IN_SAVEPOSITION",
+	"TASK_STORE_GLIMPSE_IN_SAVEPOSITION"
 };
 
 enum Schedule
@@ -246,7 +246,7 @@ static InitializeScheduleSystem()
 	SetScheduleInterruptConditions(SCHED_CHASE_ENEMY, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_ENEMY);
 	
 	SCHED_INVESTIGATE_SCENT = StartScheduleDefinition("SCHED_INVESTIGATE_SCENT");
-	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_SAVE_SCENT_TO_SAVEPOSITION);
+	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_STORE_SCENT_IN_SAVEPOSITION);
 	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_GET_PATH_TO_SAVEPOSITION);
 	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
 	AddTaskToSchedule(SCHED_INVESTIGATE_SCENT, TASK_TRAVERSE_PATH);
@@ -261,7 +261,7 @@ static InitializeScheduleSystem()
 	SetScheduleInterruptConditions(SCHED_INVESTIGATE_GLIMPSE, SF2_INTERRUPTCOND_CAN_ATTACK | SF2_INTERRUPTCOND_NEW_GLIMPSE | SF2_INTERRUPTCOND_NEW_ENEMY);
 	
 	SCHED_SEARCH_AROUND_GLIMPSE = StartScheduleDefinition("SCHED_SEARCH_AROUND_GLIMPSE");
-	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_SAVE_GLIMPSE_TO_SAVEPOSITION);
+	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_STORE_GLIMPSE_IN_SAVEPOSITION);
 	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_GET_PATH_TO_SAVEPOSITION);
 	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_SET_PREFERRED_ACTIVITY, SF2AdvChaserActivity_Walk);
 	AddTaskToSchedule(SCHED_SEARCH_AROUND_GLIMPSE, TASK_TRAVERSE_PATH);
@@ -1823,9 +1823,7 @@ static Schedule:NPCAdvChaser_SelectSchedule(iNPCIndex)
 		}
 		case SF2AdvChaserState_Combat:
 		{
-			if (lastSchedule == SCHED_ATTACK_BEST ||
-				interruptCond & SF2_INTERRUPTCOND_NEW_ENEMY ||
-				interruptCond & SF2_INTERRUPTCOND_SEE_ENEMY)
+			if (lastSchedule == SCHED_ATTACK_BEST || (interruptCond & SF2_INTERRUPTCOND_NEW_ENEMY || interruptCond & SF2_INTERRUPTCOND_SEE_ENEMY))
 			{
 				return SCHED_CHASE_ENEMY;
 			}
@@ -2125,7 +2123,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			NPCAdvChaser_ClearPath(iNPCIndex);
 			
-			new enemy = NPCGetEnemy(iNPCIndex);
+			new enemy = NPCAdvChaser_GetEnemy(iNPCIndex);
 			if (!enemy || enemy == INVALID_ENT_REFERENCE)
 			{
 				Format(failReasonMsg, failReasonMsgLen, "NPC does not have an enemy.");
@@ -2249,14 +2247,14 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			
 			return NPCAdvChaser_StartTask(iNPCIndex, TASK_ATTACK, bestAttackIndex, failReasonMsg, failReasonMsgLen);
 		}
-		case TASK_SAVE_SCENT_TO_SAVEPOSITION, TASK_SAVE_GLIMPSE_TO_SAVEPOSITION:
+		case TASK_STORE_SCENT_IN_SAVEPOSITION, TASK_STORE_GLIMPSE_IN_SAVEPOSITION:
 		{
 			new target = INVALID_ENT_REFERENCE;
-			if (taskID == TASK_SAVE_SCENT_TO_SAVEPOSITION)
+			if (taskID == TASK_STORE_SCENT_IN_SAVEPOSITION)
 			{
 				target = NPCAdvChaser_GetScentTarget(iNPCIndex);
 			}
-			else if (taskID == TASK_SAVE_GLIMPSE_TO_SAVEPOSITION)
+			else if (taskID == TASK_STORE_GLIMPSE_IN_SAVEPOSITION)
 			{
 				target = NPCAdvChaser_GetGlimpseTarget(iNPCIndex);
 			}
