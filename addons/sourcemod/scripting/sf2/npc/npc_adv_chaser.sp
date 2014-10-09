@@ -2305,13 +2305,13 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 				return ScheduleTaskState_Failed;
 			}
 			
-			new targetAreaIndex = GetArrayCell(hSurroundingAreas, GetRandomInt(0, GetArraySize(hSurroundingAreas) - 1));
+			new selectAreaIndex = GetArrayCell(hSurroundingAreas, GetRandomInt(0, GetArraySize(hSurroundingAreas) - 1));
 			CloseHandle(hSurroundingAreas);
 			
 			decl Float:vAreaExtentLow[3], Float:vAreaExtentHigh[3], Float:vAreaCenter[3];
-			NavMeshArea_GetExtentLow(targetAreaIndex, vAreaExtentLow);
-			NavMeshArea_GetExtentHigh(targetAreaIndex, vAreaExtentHigh);
-			NavMeshArea_GetCenter(targetAreaIndex, vAreaCenter);
+			NavMeshArea_GetExtentLow(selectAreaIndex, vAreaExtentLow);
+			NavMeshArea_GetExtentHigh(selectAreaIndex, vAreaExtentHigh);
+			NavMeshArea_GetCenter(selectAreaIndex, vAreaCenter);
 			
 			decl Float:vTestPos[3], Float:vMins[3], Float:vMaxs[3];
 			GetEntPropVector(npc, Prop_Send, "m_vecMins", vMins);
@@ -2328,7 +2328,7 @@ static ScheduleTaskState:NPCAdvChaser_StartTask(iNPCIndex, ScheduleTask:taskID, 
 			{
 				vTestPos[0] = vAreaCenter[0] + (GetRandomFloat(vAreaExtentLow[0], vAreaExtentHigh[0]));
 				vTestPos[1] = vAreaCenter[1] + (GetRandomFloat(vAreaExtentLow[1], vAreaExtentHigh[1]));
-				vTestPos[2] = NavMeshArea_GetZFromXAndY(targetAreaIndex, vTestPos[0], vTestPos[1]);
+				vTestPos[2] = NavMeshArea_GetZFromXAndY(selectAreaIndex, vTestPos[0], vTestPos[1]);
 				
 				// Get the ground point.
 				decl Float:vStartPos[3];
