@@ -3114,9 +3114,6 @@ public OnClientDisconnect(client)
 			}
 			else
 			{
-				// Reset my queue points.
-				ClientSetQueuePoints(client, 0);
-				
 				if (!IsRoundEnding()) 
 				{
 					CreateTimer(0.2, Timer_CheckRoundWinConditions, _, TIMER_FLAG_NO_MAPCHANGE);
@@ -3683,9 +3680,6 @@ ForceInNextPlayersInQueue(iAmount, bool:bShowMessage=false)
 					if (ClientGetPlayerGroup(iClient) == iGroupIndex)
 					{
 						PushArrayCell(hPlayers, iClient);
-						
-						// Set queue points to 0.
-						ClientSetQueuePoints(iClient, 0);
 					}
 				}
 				
@@ -3701,6 +3695,7 @@ ForceInNextPlayersInQueue(iAmount, bool:bShowMessage=false)
 	for (new i = 0, iSize = GetArraySize(hPlayers); i < iSize; i++)
 	{
 		new iClient = GetArrayCell(hPlayers, i);
+		ClientSetQueuePoints(iClient, 0);
 		SetClientPlayState(iClient, true);
 		
 		if (bShowMessage) CPrintToChat(iClient, "%T", "SF2 Force Play", iClient);
