@@ -4809,6 +4809,7 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 #endif
 	
 	new bool:bFake = bool:(GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER);
+	new inflictor = GetEventInt(event, "inflictor_entindex");
 	
 	if (!bFake)
 	{
@@ -4855,6 +4856,25 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 					g_bPlayerEliminated[client] = true;
 					g_bPlayerEscaped[client] = false;
 					g_hPlayerSwitchBlueTimer[client] = CreateTimer(0.5, Timer_PlayerSwitchToBlue, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+					
+					// If this player was killed by a boss, play a sound.
+					new npcIndex = NPCGetFromEntIndex(inflictor);
+					if (npcIndex != -1)
+					{
+						decl String:npcProfile[SF2_MAX_PROFILE_NAME_LENGTH], String:buffer[PLATFORM_MAX_PATH];
+						NPCGetProfile(npcIndex, npcProfile, sizeof(npcProfile));
+						
+						GetRandomStringFromProfile(npcProfile, "sound_attack_killed_all", buffer, sizeof(buffer));
+						if (strlen(buffer) > 0)
+						{
+							EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+						}
+						else
+						{
+							// No global sound. Do it locally instead.
+							SlenderPerformVoice(npcIndex, "sound_attack_killed");
+						}
+					}
 				}
 			}
 			else

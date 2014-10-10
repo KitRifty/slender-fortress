@@ -38,6 +38,8 @@ static Float:g_flNPCAngerAddOnPageGrabTimeDiff[MAX_BOSSES] = { 0.0, ... };
 static Float:g_flNPCSearchRadius[MAX_BOSSES] = { 0.0, ... };
 static Float:g_flNPCInstantKillRadius[MAX_BOSSES] = { 0.0, ... };
 
+static bool:g_bNPCDeathCamEnabled[MAX_BOSSES] = { false, ... };
+
 static g_iNPCEnemy[MAX_BOSSES] = { INVALID_ENT_REFERENCE, ... };
 
 #if defined METHODMAPS
@@ -144,6 +146,12 @@ methodmap SF2NPC_BaseNPC
 		public set(int entIndex) { NPCSetEnemy(this.Index, entIndex); }
 	}
 	
+	property bool DeathCamEnabled
+	{
+		public get() { return NPCHasDeathCamEnabled(this.Index); }
+		public set(bool state) { NPCSetDeathCamEnabled(this.Index, state); }
+	}
+	
 	public SF2NPC_BaseNPC(int index)
 	{
 		return SF2NPC_BaseNPC:index;
@@ -206,6 +214,16 @@ methodmap SF2NPC_BaseNPC
 }
 
 #endif
+
+bool:NPCHasDeathCamEnabled(iNPCIndex)
+{
+	return g_bNPCDeathCamEnabled[iNPCIndex];
+}
+
+NPCSetDeathCamEnabled(iNPCIndex, bool:state)
+{
+	g_bNPCDeathCamEnabled[iNPCIndex] = state;
+}
 
 public NPCInitialize()
 {
@@ -617,6 +635,9 @@ bool:SelectProfile(iBossIndex, const String:sProfile[], iAdditionalBossFlags=0, 
 	
 	g_iNPCEnemy[iBossIndex] = INVALID_ENT_REFERENCE;
 	
+	// Deathcam values.
+	NPCSetDeathCamEnabled(iBossIndex, bool:GetProfileNum(sProfile, "death_cam"));
+	
 	g_flSlenderAcceleration[iBossIndex] = GetProfileFloat(sProfile, "acceleration", 150.0);
 	g_hSlenderFakeTimer[iBossIndex] = INVALID_HANDLE;
 	g_hSlenderEntityThink[iBossIndex] = INVALID_HANDLE;
@@ -824,6 +845,8 @@ RemoveProfile(iBossIndex)
 	g_flNPCFieldOfView[iBossIndex] = 0.0;
 	
 	g_iNPCEnemy[iBossIndex] = INVALID_ENT_REFERENCE;
+	
+	NPCSetDeathCamEnabled(iBossIndex, false);
 	
 	g_iSlenderCopyMaster[iBossIndex] = -1;
 	g_iNPCUniqueID[iBossIndex] = -1;

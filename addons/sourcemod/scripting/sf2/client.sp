@@ -3238,7 +3238,6 @@ ClientResetDeathCam(client)
 ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 {
 	if (IsClientInDeathCam(client)) return;
-
 	if (!NPCIsValid(iBossIndex)) return;
 	
 	decl String:buffer[PLATFORM_MAX_PATH];
@@ -3252,11 +3251,35 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 		if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
 	}
 	
-	GetRandomStringFromProfile(sProfile, "sound_player_death", buffer, sizeof(buffer));
-	if (buffer[0]) EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	GetRandomStringFromProfile(sProfile, "sound_player_deathcam", buffer, sizeof(buffer));
+	if (strlen(buffer) > 0) 
+	{
+		EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	}
+	else
+	{
+		// Legacy support for "sound_player_death"
+		GetRandomStringFromProfile(sProfile, "sound_player_death", buffer, sizeof(buffer));
+		if (strlen(buffer) > 0)
+		{
+			EmitSoundToClient(client, buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+		}
+	}
 	
-	GetRandomStringFromProfile(sProfile, "sound_player_death_all", buffer, sizeof(buffer));
-	if (buffer[0]) EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
+	GetRandomStringFromProfile(sProfile, "sound_player_deathcam_all", buffer, sizeof(buffer));
+	if (strlen(buffer) > 0) 
+	{
+		EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+	}
+	else
+	{
+		// Legacy support for "sound_player_death_all"
+		GetRandomStringFromProfile(sProfile, "sound_player_death_all", buffer, sizeof(buffer));
+		if (strlen(buffer) > 0) 
+		{
+			EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
+		}
+	}
 	
 	// Call our forward.
 	Call_StartForward(fOnClientCaughtByBoss);
@@ -3264,7 +3287,7 @@ ClientStartDeathCam(client, iBossIndex, const Float:vecLookPos[3])
 	Call_PushCell(iBossIndex);
 	Call_Finish();
 	
-	if (!GetProfileNum(sProfile, "death_cam"))
+	if (!NPCHasDeathCamEnabled(iBossIndex))
 	{
 		SetEntProp(client, Prop_Data, "m_takedamage", 2); // We do this because the point_viewcontrol changes our lifestate.
 		
