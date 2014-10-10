@@ -2778,6 +2778,57 @@ NPCAdvChaser_OnSelectProfile(iNPCIndex)
 {
 }
 
+NPCAdvChaser_Spawn(iNPCIndex, const Float:vPos[3], const Float:vAng[3])
+{
+	new npc = CreateEntityByName("monster_generic");
+	if (npc == -1) return INVALID_ENT_REFERENCE;
+	
+	decl String:npcProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+	NPCGetProfile(iNPCIndex, npcProfile, sizeof(npcProfile));
+	
+	decl String:modelPath[PLATFORM_MAX_PATH];
+	GetProfileString(npcProfile, "model", modelPath, sizeof(modelPath));
+	
+	SetEntityModel(npc, modelPath);
+	TeleportEntity(npc, vPos, vAng, NULL_VECTOR);
+	DispatchSpawn(npc);
+	ActivateEntity(npc);
+	SetEntityRenderMode(npc, RENDER_TRANSCOLOR);
+	SetEntityRenderColor(npc, 0, 0, 0, 0);
+	
+	new npcModel = EntRefToEntIndex(g_iSlenderModel[iNPCIndex]);
+	if (npcModel && npcModel != INVALID_ENT_REFERENCE)
+	{
+		decl Float:vModelPos[3];
+		GetProfileVector(npcProfile, "pos_offset", vModelPos);
+		AddVectors(vModelPos, vPos, vModelPos);
+		TeleportEntity(npcModel, vPos, vAng, NULL_VECTOR);
+	
+		SetVariantString("!activator");
+		AcceptEntityInput(npcModel, "SetParent", npc);
+		AcceptEntityInput(npcModel, "EnableShadow");
+		SetEntProp(npcModel, Prop_Send, "m_usSolidFlags", FSOLID_NOT_SOLID | FSOLID_TRIGGER);
+	}
+	
+	AcceptEntityInput(npc, "DisableShadow");
+	SetEntPropFloat(npc, Prop_Data, "m_flFriction", 0.0);
+	
+	g_iSlender[iNPCIndex] = EntIndexToEntRef(npc);
+	
+	NPCAdvChaser_ClearSchedule(iNPCIndex);
+	NPCAdvChaser_ClearPath(iNPCIndex);
+	
+	NPCAdvChaser_SetEnemy(iNPCIndex, INVALID_ENT_REFERENCE);
+	NPCAdvChaser_SetGlimpseTarget(iNPCIndex, INVALID_ENT_REFERENCE);
+	NPCAdvChaser_SetScentTarget(iNPCIndex, INVALID_ENT_REFERENCE);
+	
+	NPCAdvChaser_InitializeEnemyMemory(iNPCIndex);
+	
+	NPCAdvChaser_SetState(iNPCIndex, SF2AdvChaserState_Invalid);
+	
+	return npc;
+}
+
 NPCAdvChaser_Think(iNPCIndex)
 {
 	// 1. Gather and select enemies.
