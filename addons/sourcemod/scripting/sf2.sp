@@ -22,7 +22,8 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.4a"
+#define PLUGIN_VERSION "0.2.4-git125-dev"
+#define PLUGIN_VERSION_DISPLAY "0.2.4a"
 
 public Plugin:myinfo = 
 {
@@ -947,7 +948,7 @@ static StartPlugin()
 	g_bPlayerViewbobSprintEnabled = GetConVarBool(g_cvPlayerViewbobSprintEnabled);
 	
 	decl String:sBuffer[64];
-	Format(sBuffer, sizeof(sBuffer), "Slender Fortress (%s)", PLUGIN_VERSION);
+	Format(sBuffer, sizeof(sBuffer), "Slender Fortress (%s)", PLUGIN_VERSION_DISPLAY);
 	Steam_SetGameDescription(sBuffer);
 	
 	PrecacheStuff();
@@ -2513,7 +2514,7 @@ public Action:Timer_RoundMessages(Handle:timer)
 	
 	switch (g_iRoundMessagesNum)
 	{
-		case 0: CPrintToChatAll("{olive}==== {lightgreen}Slender Fortress (%s){olive} coded by {lightgreen}Kit o' Rifty{olive} ====", PLUGIN_VERSION);
+		case 0: CPrintToChatAll("{olive}==== {lightgreen}Slender Fortress (%s){olive} coded by {lightgreen}Kit o' Rifty{olive} ====", PLUGIN_VERSION_DISPLAY);
 		case 1: CPrintToChatAll("%t", "SF2 Ad Message 1");
 		case 2: CPrintToChatAll("%t", "SF2 Ad Message 2");
 	}
@@ -4811,6 +4812,10 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 	new bool:bFake = bool:(GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER);
 	new inflictor = GetEventInt(event, "inflictor_entindex");
 	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("inflictor = %d", inflictor);
+#endif
+	
 	if (!bFake)
 	{
 		ClientDisableFakeLagCompensation(client);
@@ -4856,29 +4861,30 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 					g_bPlayerEliminated[client] = true;
 					g_bPlayerEscaped[client] = false;
 					g_hPlayerSwitchBlueTimer[client] = CreateTimer(0.5, Timer_PlayerSwitchToBlue, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
-					
-					// If this player was killed by a boss, play a sound.
-					new npcIndex = NPCGetFromEntIndex(inflictor);
-					if (npcIndex != -1)
-					{
-						decl String:npcProfile[SF2_MAX_PROFILE_NAME_LENGTH], String:buffer[PLATFORM_MAX_PATH];
-						NPCGetProfile(npcIndex, npcProfile, sizeof(npcProfile));
-						
-						GetRandomStringFromProfile(npcProfile, "sound_attack_killed_all", buffer, sizeof(buffer));
-						if (strlen(buffer) > 0)
-						{
-							EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_NONE);
-						}
-						else
-						{
-							// No global sound. Do it locally instead.
-							SlenderPerformVoice(npcIndex, "sound_attack_killed");
-						}
-					}
 				}
 			}
 			else
 			{
+			}
+			
+			{
+				// If this player was killed by a boss, play a sound.
+				new npcIndex = NPCGetFromEntIndex(inflictor);
+				if (npcIndex != -1)
+				{
+					decl String:npcProfile[SF2_MAX_PROFILE_NAME_LENGTH], String:buffer[PLATFORM_MAX_PATH];
+					NPCGetProfile(npcIndex, npcProfile, sizeof(npcProfile));
+					
+					if (GetRandomStringFromProfile(npcProfile, "sound_attack_killed_all", buffer, sizeof(buffer)) && strlen(buffer) > 0)
+					{
+						if (!g_bPlayerEliminated[client])
+						{
+							EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
+						}
+					}
+					
+					SlenderPerformVoice(npcIndex, "sound_attack_killed");
+				}
 			}
 			
 			CreateTimer(0.2, Timer_CheckRoundWinConditions, _, TIMER_FLAG_NO_MAPCHANGE);
