@@ -461,6 +461,17 @@
 		"en"	"Should {1} be able to teleport near RED?"
 	}
 	
+	"SF2 Admin Menu Override Boss"
+	{
+		"en"	"Set the next boss override"
+	}
+	
+	"SF2 Admin Menu Current Boss Override"
+	{
+		"#format"	"{1:s}"
+		"en"	"Current Boss Override: {1}"
+	}
+	
 	"SF2 Admin Menu Player Set Play State"
 	{
 		"en"	"Force player in/out of game"

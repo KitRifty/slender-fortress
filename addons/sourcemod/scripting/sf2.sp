@@ -22,7 +22,7 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.4-git125-dev"
+#define PLUGIN_VERSION "0.2.4-git126-dev"
 #define PLUGIN_VERSION_DISPLAY "0.2.4a"
 
 public Plugin:myinfo = 
@@ -379,7 +379,7 @@ new Handle:g_cvCampingNoStrikeSanity;
 new Handle:g_cvCampingNoStrikeBossDistance;
 new Handle:g_cvDifficulty;
 new Handle:g_cvBossMain;
-new Handle:g_cvProfileOverride;
+new Handle:g_cvBossProfileOverride;
 new Handle:g_cvPlayerBlinkRate;
 new Handle:g_cvPlayerBlinkHoldTime;
 new Handle:g_cvSpecialRoundBehavior;
@@ -660,7 +660,7 @@ public OnPluginStart()
 	g_cvCampingNoStrikeSanity = CreateConVar("sf2_anticamping_no_strike_sanity", "0.1", "The camping system will NOT give any strikes under any circumstances if the players's Sanity is missing at least this much of his maximum Sanity (max is 1.0).");
 	g_cvCampingNoStrikeBossDistance = CreateConVar("sf2_anticamping_no_strike_boss_distance", "512.0", "The camping system will NOT give any strikes under any circumstances if the player is this close to a boss (ignoring LOS).");
 	g_cvBossMain = CreateConVar("sf2_boss_main", "slenderman", "The name of the main boss (its profile name, not its display name)");
-	g_cvProfileOverride = CreateConVar("sf2_boss_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
+	g_cvBossProfileOverride = CreateConVar("sf2_boss_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
 	g_cvDifficulty = CreateConVar("sf2_difficulty", "1", "Difficulty of the game. 1 = Normal, 2 = Hard, 3 = Insane.", _, true, 1.0, true, 3.0);
 	HookConVarChange(g_cvDifficulty, OnConVarChanged);
 	
@@ -5304,7 +5304,7 @@ static InitializeMapEntities()
 			else if (!StrContains(targetName, "sf2_boss_override_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_boss_override_", "", false);
-				SetConVarString(g_cvProfileOverride, targetName);
+				SetConVarString(g_cvBossProfileOverride, targetName);
 				
 				LogSF2Message("Found sf2_boss_override entity, set boss profile override to %s", targetName);
 			}
@@ -5660,13 +5660,13 @@ static SelectStartingBossesForRound()
 
 	// Select which boss profile to use.
 	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH];
-	GetConVarString(g_cvProfileOverride, sProfileOverride, sizeof(sProfileOverride));
+	GetConVarString(g_cvBossProfileOverride, sProfileOverride, sizeof(sProfileOverride));
 	
 	if (strlen(sProfileOverride) > 0 && IsProfileValid(sProfileOverride))
 	{
 		// Pick the overridden boss.
 		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfileOverride);
-		SetConVarString(g_cvProfileOverride, "");
+		SetConVarString(g_cvBossProfileOverride, "");
 	}
 	else if (g_bNewBossRound)
 	{
@@ -5810,7 +5810,7 @@ InitializeNewGame()
 	
 	if (g_iRoundActiveCount == 1)
 	{
-		SetConVarString(g_cvProfileOverride, "");
+		SetConVarString(g_cvBossProfileOverride, "");
 	}
 	
 	HandleSpecialRoundState();

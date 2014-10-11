@@ -410,7 +410,7 @@ public Action:TF2_CalcIsAttackCritical(client, weapon, String:sWeaponName[], &bo
 		if (!GetConVarBool(g_cvPlayerFakeLagCompensation))
 		{
 			new bool:bNeedsManualDamage = false;
-		
+			
 			// Fake lag compensation isn't enabled; check to see if we need to deal damage manually.
 			for (new i = 0; i < sizeof(g_strPlayerLagCompensationWeapons); i++)
 			{
