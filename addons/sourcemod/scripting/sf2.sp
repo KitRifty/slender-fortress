@@ -22,7 +22,8 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.4a"
+#define PLUGIN_VERSION "0.2.4-git128"
+#define PLUGIN_VERSION_DISPLAY "0.2.4a"
 
 public Plugin:myinfo = 
 {
@@ -359,6 +360,7 @@ static Handle:g_hBossCountUpdateTimer = INVALID_HANDLE;
 static Handle:g_hClientAverageUpdateTimer = INVALID_HANDLE;
 
 // Server variables.
+new Handle:g_cvVersion;
 new Handle:g_cvEnabled;
 new Handle:g_cvSlenderMapsOnly;
 new Handle:g_cvPlayerViewbobEnabled;
@@ -378,7 +380,7 @@ new Handle:g_cvCampingNoStrikeSanity;
 new Handle:g_cvCampingNoStrikeBossDistance;
 new Handle:g_cvDifficulty;
 new Handle:g_cvBossMain;
-new Handle:g_cvProfileOverride;
+new Handle:g_cvBossProfileOverride;
 new Handle:g_cvPlayerBlinkRate;
 new Handle:g_cvPlayerBlinkHoldTime;
 new Handle:g_cvSpecialRoundBehavior;
@@ -601,7 +603,8 @@ public OnPluginStart()
 	g_hPageMusicRanges = CreateArray(3);
 	
 	// Register console variables.
-	CreateConVar("sf2_version", PLUGIN_VERSION, "The current version of Slender Fortress. DO NOT TOUCH!", FCVAR_PLUGIN | FCVAR_SPONLY | FCVAR_NOTIFY);
+	g_cvVersion = CreateConVar("sf2_version", PLUGIN_VERSION, "The current version of Slender Fortress. DO NOT TOUCH!", FCVAR_PLUGIN | FCVAR_SPONLY | FCVAR_NOTIFY);
+	SetConVarString(g_cvVersion, PLUGIN_VERSION);
 	
 	g_cvEnabled = CreateConVar("sf2_enabled", "1", "Enable/Disable the Slender Fortress gamemode. This will take effect on map change.");
 	g_cvSlenderMapsOnly = CreateConVar("sf2_slendermapsonly", "1", "Only enable the Slender Fortress gamemode on map names prefixed with \"slender_\" or \"sf2_\".");
@@ -659,7 +662,7 @@ public OnPluginStart()
 	g_cvCampingNoStrikeSanity = CreateConVar("sf2_anticamping_no_strike_sanity", "0.1", "The camping system will NOT give any strikes under any circumstances if the players's Sanity is missing at least this much of his maximum Sanity (max is 1.0).");
 	g_cvCampingNoStrikeBossDistance = CreateConVar("sf2_anticamping_no_strike_boss_distance", "512.0", "The camping system will NOT give any strikes under any circumstances if the player is this close to a boss (ignoring LOS).");
 	g_cvBossMain = CreateConVar("sf2_boss_main", "slenderman", "The name of the main boss (its profile name, not its display name)");
-	g_cvProfileOverride = CreateConVar("sf2_boss_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
+	g_cvBossProfileOverride = CreateConVar("sf2_boss_profile_override", "", "Overrides which boss will be chosen next. Only applies to the first boss being chosen.");
 	g_cvDifficulty = CreateConVar("sf2_difficulty", "1", "Difficulty of the game. 1 = Normal, 2 = Hard, 3 = Insane.", _, true, 1.0, true, 3.0);
 	HookConVarChange(g_cvDifficulty, OnConVarChanged);
 	
@@ -947,7 +950,7 @@ static StartPlugin()
 	g_bPlayerViewbobSprintEnabled = GetConVarBool(g_cvPlayerViewbobSprintEnabled);
 	
 	decl String:sBuffer[64];
-	Format(sBuffer, sizeof(sBuffer), "Slender Fortress (%s)", PLUGIN_VERSION);
+	Format(sBuffer, sizeof(sBuffer), "Slender Fortress (%s)", PLUGIN_VERSION_DISPLAY);
 	Steam_SetGameDescription(sBuffer);
 	
 	PrecacheStuff();
@@ -2513,7 +2516,7 @@ public Action:Timer_RoundMessages(Handle:timer)
 	
 	switch (g_iRoundMessagesNum)
 	{
-		case 0: CPrintToChatAll("{olive}==== {lightgreen}Slender Fortress (%s){olive} coded by {lightgreen}Kit o' Rifty{olive} ====", PLUGIN_VERSION);
+		case 0: CPrintToChatAll("{olive}==== {lightgreen}Slender Fortress (%s){olive} coded by {lightgreen}Kit o' Rifty{olive} ====", PLUGIN_VERSION_DISPLAY);
 		case 1: CPrintToChatAll("%t", "SF2 Ad Message 1");
 		case 2: CPrintToChatAll("%t", "SF2 Ad Message 2");
 	}
@@ -4809,6 +4812,11 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 #endif
 	
 	new bool:bFake = bool:(GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER);
+	new inflictor = GetEventInt(event, "inflictor_entindex");
+	
+#if defined DEBUG
+	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("inflictor = %d", inflictor);
+#endif
 	
 	if (!bFake)
 	{
@@ -4859,6 +4867,26 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dB)
 			}
 			else
 			{
+			}
+			
+			{
+				// If this player was killed by a boss, play a sound.
+				new npcIndex = NPCGetFromEntIndex(inflictor);
+				if (npcIndex != -1)
+				{
+					decl String:npcProfile[SF2_MAX_PROFILE_NAME_LENGTH], String:buffer[PLATFORM_MAX_PATH];
+					NPCGetProfile(npcIndex, npcProfile, sizeof(npcProfile));
+					
+					if (GetRandomStringFromProfile(npcProfile, "sound_attack_killed_all", buffer, sizeof(buffer)) && strlen(buffer) > 0)
+					{
+						if (!g_bPlayerEliminated[client])
+						{
+							EmitSoundToAll(buffer, _, MUSIC_CHAN, SNDLEVEL_HELICOPTER);
+						}
+					}
+					
+					SlenderPerformVoice(npcIndex, "sound_attack_killed");
+				}
 			}
 			
 			CreateTimer(0.2, Timer_CheckRoundWinConditions, _, TIMER_FLAG_NO_MAPCHANGE);
@@ -5278,7 +5306,7 @@ static InitializeMapEntities()
 			else if (!StrContains(targetName, "sf2_boss_override_", false))
 			{
 				ReplaceString(targetName, sizeof(targetName), "sf2_boss_override_", "", false);
-				SetConVarString(g_cvProfileOverride, targetName);
+				SetConVarString(g_cvBossProfileOverride, targetName);
 				
 				LogSF2Message("Found sf2_boss_override entity, set boss profile override to %s", targetName);
 			}
@@ -5634,13 +5662,13 @@ static SelectStartingBossesForRound()
 
 	// Select which boss profile to use.
 	decl String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH];
-	GetConVarString(g_cvProfileOverride, sProfileOverride, sizeof(sProfileOverride));
+	GetConVarString(g_cvBossProfileOverride, sProfileOverride, sizeof(sProfileOverride));
 	
 	if (strlen(sProfileOverride) > 0 && IsProfileValid(sProfileOverride))
 	{
 		// Pick the overridden boss.
 		strcopy(g_strRoundBossProfile, sizeof(g_strRoundBossProfile), sProfileOverride);
-		SetConVarString(g_cvProfileOverride, "");
+		SetConVarString(g_cvBossProfileOverride, "");
 	}
 	else if (g_bNewBossRound)
 	{
@@ -5784,7 +5812,7 @@ InitializeNewGame()
 	
 	if (g_iRoundActiveCount == 1)
 	{
-		SetConVarString(g_cvProfileOverride, "");
+		SetConVarString(g_cvBossProfileOverride, "");
 	}
 	
 	HandleSpecialRoundState();

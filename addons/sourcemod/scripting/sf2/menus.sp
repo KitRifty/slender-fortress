@@ -140,12 +140,12 @@ SetupMenus()
 	StrCat(buffer, sizeof(buffer), "Version: ");
 	StrCat(buffer, sizeof(buffer), PLUGIN_VERSION);
 	StrCat(buffer, sizeof(buffer), "\n \n");
-	StrCat(buffer, sizeof(buffer), "Mark J. Hadley (AgentParsec) - Creating Slender and the default music ambience\n");
+	StrCat(buffer, sizeof(buffer), "Mark J. Hadley (AgentParsec) - The creator of the Slender game!\n");
 	StrCat(buffer, sizeof(buffer), "Mark Steen - Composing the intro music");
 	StrCat(buffer, sizeof(buffer), "Mammoth Mogul - for being a GREAT test subject\n");
-	StrCat(buffer, sizeof(buffer), "Egosins - getting the first server to run this mod\n");
+	StrCat(buffer, sizeof(buffer), "Egosins - for offering to host this publicly\n");
 	StrCat(buffer, sizeof(buffer), "Somberguy - suggestions and support\n");
-	StrCat(buffer, sizeof(buffer), "Voonyl/Tristtess - materials, maps, importing current Slender Man model, and more!\n");
+	StrCat(buffer, sizeof(buffer), "Omi-Box - materials, maps, current Slender Man model, and more!\n");
 	StrCat(buffer, sizeof(buffer), "Narry Gewman - imported first Slender Man model\n");
 	StrCat(buffer, sizeof(buffer), "Simply Delicious - for the awesome camera overlay!\n");
 	StrCat(buffer, sizeof(buffer), "Jason278 - Page models");

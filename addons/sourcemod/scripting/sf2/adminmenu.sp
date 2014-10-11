@@ -280,6 +280,9 @@ static DisplayBossMainAdminMenu(client)
 	AddMenuItem(hMenu, "boss_attack_waiters", sBuffer);
 	Format(sBuffer, sizeof(sBuffer), "%T", "SF2 Admin Menu Boss Teleport", client);
 	AddMenuItem(hMenu, "boss_no_teleport", sBuffer);
+	Format(sBuffer, sizeof(sBuffer), "%T", "SF2 Admin Menu Override Boss", client);
+	AddMenuItem(hMenu, "override_boss", sBuffer);
+	
 	
 	SetMenuExitBackButton(hMenu, true);
 	DisplayMenu(hMenu, client, MENU_TIME_FOREVER);
@@ -325,6 +328,10 @@ public AdminMenu_BossMain(Handle:menu, MenuAction:action, param1, param2)
 		else if (StrEqual(sInfo, "boss_no_teleport"))
 		{
 			DisplayBossTeleportAdminMenu(param1);
+		}
+		else if (StrEqual(sInfo, "override_boss"))
+		{
+			DisplayOverrideBossAdminMenu(param1);
 		}
 	}
 }
@@ -828,5 +835,77 @@ public AdminMenu_BossTeleportConfirm(Handle:menu, MenuAction:action, param1, par
 		}
 		
 		DisplayBossTeleportAdminMenu(param1);
+	}
+}
+
+static bool:DisplayOverrideBossAdminMenu(client)
+{
+	if (g_hConfig != INVALID_HANDLE)
+	{
+		KvRewind(g_hConfig);
+		if (KvGotoFirstSubKey(g_hConfig))
+		{
+			new Handle:hMenu = CreateMenu(AdminMenu_OverrideBoss);
+			
+			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+			decl String:sDisplayName[SF2_MAX_NAME_LENGTH];
+			
+			do
+			{
+				KvGetSectionName(g_hConfig, sProfile, sizeof(sProfile));
+				KvGetString(g_hConfig, "name", sDisplayName, sizeof(sDisplayName));
+				if (!sDisplayName[0]) strcopy(sDisplayName, sizeof(sDisplayName), sProfile);
+				AddMenuItem(hMenu, sProfile, sDisplayName);
+			}
+			while (KvGotoNextKey(g_hConfig));
+			
+			SetMenuExitBackButton(hMenu, true);
+			
+			new String:sProfileOverride[SF2_MAX_PROFILE_NAME_LENGTH], String:sProfileDisplayName[SF2_MAX_PROFILE_NAME_LENGTH];
+			GetConVarString(g_cvBossProfileOverride, sProfileOverride, sizeof(sProfileOverride));
+			
+			if (strlen(sProfileOverride) > 0 && IsProfileValid(sProfileOverride))
+			{
+				GetProfileString(sProfileOverride, "name", sProfileDisplayName, sizeof(sProfileDisplayName));
+				
+				if (strlen(sProfileDisplayName) == 0)
+					strcopy(sProfileDisplayName, sizeof(sProfileDisplayName), sProfileOverride)
+			}
+			else
+				strcopy(sProfileDisplayName, sizeof(sProfileDisplayName), "---");
+			
+			SetMenuTitle(hMenu, "%t%T\n%T\n \n", "SF2 Prefix", "SF2 Admin Menu Override Boss", client, "SF2 Admin Menu Current Boss Override", client, sProfileDisplayName);
+			
+			DisplayMenu(hMenu, client, MENU_TIME_FOREVER);
+			
+			return true;
+		}
+	}
+	
+	DisplayBossMainAdminMenu(client);
+	return false;
+}
+
+public AdminMenu_OverrideBoss(Handle:menu, MenuAction:action, param1, param2)
+{
+	if (action == MenuAction_End)
+	{
+		CloseHandle(menu);
+	}
+	else if (action == MenuAction_Cancel)
+	{
+		if (param2 == MenuCancel_ExitBack)
+		{
+			DisplayBossMainAdminMenu(param1);
+		}
+	}
+	else if (action == MenuAction_Select)
+	{
+		decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
+		GetMenuItem(menu, param2, sProfile, sizeof(sProfile));
+		
+		FakeClientCommand(param1, "sm_cvar sf2_boss_profile_override %s", sProfile);
+		
+		DisplayOverrideBossAdminMenu(param1);
 	}
 }
