@@ -120,6 +120,12 @@
 		"en"	"You cannot toggle Ghost Mode right now."
 	}
 	
+	"SF2 Ghost Mode Bad Connection"
+	{
+		"#format"	"{1:d}"
+		"en"	"You were booted out of Ghost Mode due to timing out for {1} second(s)."
+	}
+	
 	"SF2 Prefix"
 	{
 		"en"	"[SF2] "
@@ -857,5 +863,16 @@
 	{
 		"#format"	"{1:d}"
 		"en"	"You've been chosen to be a Proxy!\nYou will be teleported to the RED area in {1} second(s)."
+	}
+	
+	"SF2 Boss Pack Vote Menu Title"
+	{
+		"en"	"Select the boss pack for the next map!"
+	}
+	
+	"SF2 Boss Pack Vote Successful"
+	{
+		"#format"	"{1:s}"
+		"en"	"Vote successful! The next boss pack to be loaded on the next map is: {1}"
 	}
 }
