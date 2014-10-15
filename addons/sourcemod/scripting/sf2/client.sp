@@ -3404,6 +3404,9 @@ public Action:Timer_ClientResetDeathCamEnd(Handle:timer, any:userid)
 
 static bool:g_bPlayerGhostMode[MAXPLAYERS + 1] = { false, ... };
 static g_iPlayerGhostModeTarget[MAXPLAYERS + 1] = { INVALID_ENT_REFERENCE, ... };
+static Handle:g_hPlayerGhostModeConnectionCheckTimer[MAXPLAYERS + 1] = { INVALID_HANDLE, ... };
+static Float:g_flPlayerGhostModeConnectionTimeOutTime[MAXPLAYERS + 1] = { -1.0, ... };
+static Float:g_flPlayerGhostModeConnectionBootTime[MAXPLAYERS + 1] = { -1.0, ... };
 
 /**
  *	Enables/Disables ghost mode on the player.
@@ -3420,17 +3423,70 @@ ClientSetGhostModeState(client, bool:bState)
 	if (bState)
 	{
 		ClientHandleGhostMode(client, true);
-	
+		
+		if (GetConVarBool(g_cvGhostModeConnectionCheck))
+		{
+			g_hPlayerGhostModeConnectionCheckTimer[client] = CreateTimer(0.0, Timer_GhostModeConnectionCheck, GetClientUserId(client), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_flPlayerGhostModeConnectionTimeOutTime[client] = -1.0;
+			g_flPlayerGhostModeConnectionBootTime[client] = -1.0;
+		}
+		
 		PvP_OnClientGhostModeEnable(client);
 	}
 	else
 	{
+		g_hPlayerGhostModeConnectionCheckTimer[client] = INVALID_HANDLE;
+		g_flPlayerGhostModeConnectionTimeOutTime[client] = -1.0;
+		g_flPlayerGhostModeConnectionBootTime[client] = -1.0;
+	
 		if (IsClientInGame(client))
 		{
 			TF2_RemoveCondition(client, TFCond_HalloweenGhostMode);
 			SetEntProp(client, Prop_Send, "m_CollisionGroup", COLLISION_GROUP_PLAYER);
 		}
 	}
+}
+
+public Action:Timer_GhostModeConnectionCheck(Handle:timer, any:userid)
+{
+	new client = GetClientOfUserId(userid);
+	if (client <= 0) return Plugin_Stop;
+	
+	if (timer != g_hPlayerGhostModeConnectionCheckTimer[client]) return Plugin_Stop;
+	
+	if (!IsFakeClient(client) && IsClientTimingOut(client))
+	{
+		new Float:bootTime = g_flPlayerGhostModeConnectionBootTime[client];
+		if (bootTime < 0.0)
+		{
+			bootTime = GetGameTime() + GetConVarFloat(g_cvGhostModeConnectionTolerance);
+			g_flPlayerGhostModeConnectionBootTime[client] = bootTime;
+			g_flPlayerGhostModeConnectionTimeOutTime[client] = GetGameTime();
+		}
+		
+		if (GetGameTime() >= bootTime)
+		{
+			ClientSetGhostModeState(client, false);
+			TF2_RespawnPlayer(client);
+			
+			decl String:authString[128];
+			GetClientAuthString(client, authString, sizeof(authString));
+			
+			LogSF2Message("Removed %N (%s) from ghost mode due to timing out for %f seconds", client, authString, GetConVarFloat(g_cvGhostModeConnectionTolerance));
+			
+			new Float:timeOutTime = g_flPlayerGhostModeConnectionTimeOutTime[client];
+			CPrintToChat(client, "%T", "SF2 Ghost Mode Bad Connection", client, RoundFloat(bootTime - timeOutTime));
+			
+			return Plugin_Stop;
+		}
+	}
+	else
+	{
+		// Player regained connection; reset.
+		g_flPlayerGhostModeConnectionBootTime[client] = -1.0;
+	}
+	
+	return Plugin_Continue;
 }
 
 /**

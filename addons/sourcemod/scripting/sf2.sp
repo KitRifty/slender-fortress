@@ -22,8 +22,8 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.4-git128"
-#define PLUGIN_VERSION_DISPLAY "0.2.4a"
+#define PLUGIN_VERSION "0.2.4-git129"
+#define PLUGIN_VERSION_DISPLAY "0.2.4b"
 
 public Plugin:myinfo = 
 {
@@ -315,6 +315,7 @@ static Handle:g_hVoteTimer = INVALID_HANDLE;
 static String:g_strRoundBossProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 
 static g_iRoundCount = 0;
+static g_iRoundEndCount = 0;
 static g_iRoundActiveCount = 0;
 static g_iRoundTime = 0;
 static g_iRoundTimeLimit = 0;
@@ -396,6 +397,8 @@ new Handle:g_cvUltravisionEnabled;
 new Handle:g_cvUltravisionRadiusRed;
 new Handle:g_cvUltravisionRadiusBlue;
 new Handle:g_cvUltravisionBrightness;
+new Handle:g_cvGhostModeConnectionCheck;
+new Handle:g_cvGhostModeConnectionTolerance;
 new Handle:g_cvIntroEnabled;
 new Handle:g_cvIntroDefaultHoldTime;
 new Handle:g_cvIntroDefaultFadeTime;
@@ -603,10 +606,10 @@ public OnPluginStart()
 	g_hPageMusicRanges = CreateArray(3);
 	
 	// Register console variables.
-	g_cvVersion = CreateConVar("sf2_version", PLUGIN_VERSION, "The current version of Slender Fortress. DO NOT TOUCH!", FCVAR_PLUGIN | FCVAR_SPONLY | FCVAR_NOTIFY);
+	g_cvVersion = CreateConVar("sf2_version", PLUGIN_VERSION, "The current version of Slender Fortress. DO NOT TOUCH!", FCVAR_SPONLY | FCVAR_NOTIFY | FCVAR_DONTRECORD);
 	SetConVarString(g_cvVersion, PLUGIN_VERSION);
 	
-	g_cvEnabled = CreateConVar("sf2_enabled", "1", "Enable/Disable the Slender Fortress gamemode. This will take effect on map change.");
+	g_cvEnabled = CreateConVar("sf2_enabled", "1", "Enable/Disable the Slender Fortress gamemode. This will take effect on map change.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
 	g_cvSlenderMapsOnly = CreateConVar("sf2_slendermapsonly", "1", "Only enable the Slender Fortress gamemode on map names prefixed with \"slender_\" or \"sf2_\".");
 	
 	g_cvGraceTime = CreateConVar("sf2_gracetime", "30.0");
@@ -645,6 +648,9 @@ public OnPluginStart()
 	g_cvUltravisionRadiusRed = CreateConVar("sf2_player_ultravision_radius_red", "512.0");
 	g_cvUltravisionRadiusBlue = CreateConVar("sf2_player_ultravision_radius_blue", "800.0");
 	g_cvUltravisionBrightness = CreateConVar("sf2_player_ultravision_brightness", "-4");
+	
+	g_cvGhostModeConnectionCheck = CreateConVar("sf2_ghostmode_check_connection", "1", "Checks a player's connection while in Ghost Mode. If the check fails, the client is booted out of Ghost Mode and the action and client's SteamID is logged in the main SF2 log.");
+	g_cvGhostModeConnectionTolerance = CreateConVar("sf2_ghostmode_connection_tolerance", "5.0", "If sf2_ghostmode_check_connection is set to 1 and the client has timed out for at least this amount of time, the client will be booted out of Ghost Mode.");
 	
 	g_cv20Dollars = CreateConVar("sf2_20dollarmode", "0", "Enable/Disable $20 mode.", _, true, 0.0, true, 1.0);
 	HookConVarChange(g_cv20Dollars, OnConVarChanged);
@@ -773,6 +779,9 @@ public OnPluginStart()
 	SetupPlayerGroups();
 	
 	PvP_Initialize();
+	
+	// @TODO: When cvars are finalized, set this to true.
+	AutoExecConfig(false);
 	
 #if defined DEBUG
 	InitializeDebug();
@@ -973,6 +982,7 @@ static StartPlugin()
 	
 	// Reset global round vars.
 	g_iRoundCount = 0;
+	g_iRoundEndCount = 0;
 	g_iRoundActiveCount = 0;
 	g_iRoundState = SF2RoundState_Invalid;
 	g_hRoundMessagesTimer = CreateTimer(200.0, Timer_RoundMessages, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
@@ -990,6 +1000,9 @@ static StartPlugin()
 	ReloadSpecialRounds();
 	
 	NPCOnConfigsExecuted();
+	
+	InitializeBossPackVotes();
+	SetupTimeLimitTimerForBossPackVote();
 	
 	// Late load compensation.
 	for (new i = 1; i <= MaxClients; i++)
@@ -1099,6 +1112,14 @@ static StopPlugin()
 public OnMapEnd()
 {
 	StopPlugin();
+}
+
+public OnMapTimeLeftChanged()
+{
+	if (g_bEnabled)
+	{
+		SetupTimeLimitTimerForBossPackVote();
+	}
 }
 
 public TF2_OnConditionAdded(client, TFCond:cond)
@@ -4294,6 +4315,9 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dB)
 	SetRoundState(SF2RoundState_Outro);
 	
 	DistributeQueuePointsToPlayers();
+	
+	g_iRoundEndCount++;	
+	CheckRoundLimitForBossPackVote(g_iRoundEndCount);
 	
 #if defined DEBUG
 	if (GetConVarInt(g_cvDebugDetail) > 0) DebugMessage("EVENT END: Event_RoundEnd");

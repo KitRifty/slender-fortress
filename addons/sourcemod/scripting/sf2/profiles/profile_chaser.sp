@@ -136,51 +136,49 @@ ClearChaserProfiles()
  *	Parses and stores the unique values of a chaser profile from the current position in the profiles config.
  *	Returns true if loading was successful, false if not.
  */
-bool:LoadChaserBossProfile(const String:sProfile[], &iUniqueProfileIndex, String:sLoadFailReasonBuffer[], iLoadFailReasonBufferLen)
+bool:LoadChaserBossProfile(Handle:kv, const String:sProfile[], &iUniqueProfileIndex, String:sLoadFailReasonBuffer[], iLoadFailReasonBufferLen)
 {
-	//decl String:sBuffer[PLATFORM_MAX_PATH];
-	
 	strcopy(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "");
 	
 	iUniqueProfileIndex = PushArrayCell(g_hChaserProfileData, -1);
 	SetTrieValue(g_hChaserProfileNames, sProfile, iUniqueProfileIndex);
 	
-	new Float:flBossStepSize = KvGetFloat(g_hConfig, "stepsize", 16.0);
+	new Float:flBossStepSize = KvGetFloat(kv, "stepsize", 16.0);
 	
-	new Float:flBossDefaultWalkSpeed = KvGetFloat(g_hConfig, "walkspeed", 30.0);
-	new Float:flBossWalkSpeedEasy = KvGetFloat(g_hConfig, "walkspeed_easy", flBossDefaultWalkSpeed);
-	new Float:flBossWalkSpeedHard = KvGetFloat(g_hConfig, "walkspeed_hard", flBossDefaultWalkSpeed);
-	new Float:flBossWalkSpeedInsane = KvGetFloat(g_hConfig, "walkspeed_insane", flBossDefaultWalkSpeed);
+	new Float:flBossDefaultWalkSpeed = KvGetFloat(kv, "walkspeed", 30.0);
+	new Float:flBossWalkSpeedEasy = KvGetFloat(kv, "walkspeed_easy", flBossDefaultWalkSpeed);
+	new Float:flBossWalkSpeedHard = KvGetFloat(kv, "walkspeed_hard", flBossDefaultWalkSpeed);
+	new Float:flBossWalkSpeedInsane = KvGetFloat(kv, "walkspeed_insane", flBossDefaultWalkSpeed);
 	
-	new Float:flBossDefaultAirSpeed = KvGetFloat(g_hConfig, "airspeed", 50.0);
-	new Float:flBossAirSpeedEasy = KvGetFloat(g_hConfig, "airspeed_easy", flBossDefaultAirSpeed);
-	new Float:flBossAirSpeedHard = KvGetFloat(g_hConfig, "airspeed_hard", flBossDefaultAirSpeed);
-	new Float:flBossAirSpeedInsane = KvGetFloat(g_hConfig, "airspeed_insane", flBossDefaultAirSpeed);
+	new Float:flBossDefaultAirSpeed = KvGetFloat(kv, "airspeed", 50.0);
+	new Float:flBossAirSpeedEasy = KvGetFloat(kv, "airspeed_easy", flBossDefaultAirSpeed);
+	new Float:flBossAirSpeedHard = KvGetFloat(kv, "airspeed_hard", flBossDefaultAirSpeed);
+	new Float:flBossAirSpeedInsane = KvGetFloat(kv, "airspeed_insane", flBossDefaultAirSpeed);
 	
-	new Float:flBossDefaultMaxWalkSpeed = KvGetFloat(g_hConfig, "walkspeed_max", 30.0);
-	new Float:flBossMaxWalkSpeedEasy = KvGetFloat(g_hConfig, "walkspeed_max_easy", flBossDefaultMaxWalkSpeed);
-	new Float:flBossMaxWalkSpeedHard = KvGetFloat(g_hConfig, "walkspeed_max_hard", flBossDefaultMaxWalkSpeed);
-	new Float:flBossMaxWalkSpeedInsane = KvGetFloat(g_hConfig, "walkspeed_max_insane", flBossDefaultMaxWalkSpeed);
+	new Float:flBossDefaultMaxWalkSpeed = KvGetFloat(kv, "walkspeed_max", 30.0);
+	new Float:flBossMaxWalkSpeedEasy = KvGetFloat(kv, "walkspeed_max_easy", flBossDefaultMaxWalkSpeed);
+	new Float:flBossMaxWalkSpeedHard = KvGetFloat(kv, "walkspeed_max_hard", flBossDefaultMaxWalkSpeed);
+	new Float:flBossMaxWalkSpeedInsane = KvGetFloat(kv, "walkspeed_max_insane", flBossDefaultMaxWalkSpeed);
 	
-	new Float:flBossDefaultMaxAirSpeed = KvGetFloat(g_hConfig, "airspeed_max", 50.0);
-	new Float:flBossMaxAirSpeedEasy = KvGetFloat(g_hConfig, "airspeed_max_easy", flBossDefaultMaxAirSpeed);
-	new Float:flBossMaxAirSpeedHard = KvGetFloat(g_hConfig, "airspeed_max_hard", flBossDefaultMaxAirSpeed);
-	new Float:flBossMaxAirSpeedInsane = KvGetFloat(g_hConfig, "airspeed_max_insane", flBossDefaultMaxAirSpeed);
+	new Float:flBossDefaultMaxAirSpeed = KvGetFloat(kv, "airspeed_max", 50.0);
+	new Float:flBossMaxAirSpeedEasy = KvGetFloat(kv, "airspeed_max_easy", flBossDefaultMaxAirSpeed);
+	new Float:flBossMaxAirSpeedHard = KvGetFloat(kv, "airspeed_max_hard", flBossDefaultMaxAirSpeed);
+	new Float:flBossMaxAirSpeedInsane = KvGetFloat(kv, "airspeed_max_insane", flBossDefaultMaxAirSpeed);
 	
-	new Float:flWakeRange = KvGetFloat(g_hConfig, "wake_radius");
+	new Float:flWakeRange = KvGetFloat(kv, "wake_radius");
 	if (flWakeRange < 0.0) flWakeRange = 0.0;
 	
-	new bool:bCanBeStunned = bool:KvGetNum(g_hConfig, "stun_enabled");
+	new bool:bCanBeStunned = bool:KvGetNum(kv, "stun_enabled");
 	
-	new Float:flStunDuration = KvGetFloat(g_hConfig, "stun_duration");
+	new Float:flStunDuration = KvGetFloat(kv, "stun_duration");
 	if (flStunDuration < 0.0) flStunDuration = 0.0;
 	
-	new Float:flStunHealth = KvGetFloat(g_hConfig, "stun_health");
+	new Float:flStunHealth = KvGetFloat(kv, "stun_health");
 	if (flStunHealth < 0.0) flStunHealth = 0.0;
 	
-	new bool:bStunTakeDamageFromFlashlight = bool:KvGetNum(g_hConfig, "stun_damage_flashlight_enabled");
+	new bool:bStunTakeDamageFromFlashlight = bool:KvGetNum(kv, "stun_damage_flashlight_enabled");
 	
-	new Float:flStunFlashlightDamage = KvGetFloat(g_hConfig, "stun_damage_flashlight");
+	new Float:flStunFlashlightDamage = KvGetFloat(kv, "stun_damage_flashlight");
 	
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, flBossStepSize, ChaserProfileData_StepSize);
 	
@@ -212,28 +210,28 @@ bool:LoadChaserBossProfile(const String:sProfile[], &iUniqueProfileIndex, String
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, bStunTakeDamageFromFlashlight, ChaserProfileData_CanBeStunnedByFlashlight);
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, flStunFlashlightDamage, ChaserProfileData_StunFlashlightDamage);
 	
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "memory_lifetime", 10.0), ChaserProfileData_MemoryLifeTime);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "memory_lifetime", 10.0), ChaserProfileData_MemoryLifeTime);
 	
-	new Float:flDefaultAwarenessIncreaseRate = KvGetFloat(g_hConfig, "awareness_rate_increase", 75.0);
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "awareness_rate_increase_easy", flDefaultAwarenessIncreaseRate), ChaserProfileData_AwarenessIncreaseRateEasy);
+	new Float:flDefaultAwarenessIncreaseRate = KvGetFloat(kv, "awareness_rate_increase", 75.0);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "awareness_rate_increase_easy", flDefaultAwarenessIncreaseRate), ChaserProfileData_AwarenessIncreaseRateEasy);
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, flDefaultAwarenessIncreaseRate, ChaserProfileData_AwarenessIncreaseRateNormal);
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "awareness_rate_increase_hard", flDefaultAwarenessIncreaseRate), ChaserProfileData_AwarenessIncreaseRateHard);
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "awareness_rate_increase_insane", flDefaultAwarenessIncreaseRate), ChaserProfileData_AwarenessIncreaseRateInsane);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "awareness_rate_increase_hard", flDefaultAwarenessIncreaseRate), ChaserProfileData_AwarenessIncreaseRateHard);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "awareness_rate_increase_insane", flDefaultAwarenessIncreaseRate), ChaserProfileData_AwarenessIncreaseRateInsane);
 	
-	new Float:flDefaultAwarenessDecreaseRate = KvGetFloat(g_hConfig, "awareness_rate_decrease", 150.0);
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "awareness_rate_decrease_easy", flDefaultAwarenessDecreaseRate), ChaserProfileData_AwarenessDecreaseRateEasy);
+	new Float:flDefaultAwarenessDecreaseRate = KvGetFloat(kv, "awareness_rate_decrease", 150.0);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "awareness_rate_decrease_easy", flDefaultAwarenessDecreaseRate), ChaserProfileData_AwarenessDecreaseRateEasy);
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, flDefaultAwarenessDecreaseRate, ChaserProfileData_AwarenessDecreaseRateNormal);
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "awareness_rate_decrease_hard", flDefaultAwarenessDecreaseRate), ChaserProfileData_AwarenessDecreaseRateHard);
-	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(g_hConfig, "awareness_rate_decrease_insane", flDefaultAwarenessDecreaseRate), ChaserProfileData_AwarenessDecreaseRateInsane);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "awareness_rate_decrease_hard", flDefaultAwarenessDecreaseRate), ChaserProfileData_AwarenessDecreaseRateHard);
+	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, KvGetFloat(kv, "awareness_rate_decrease_insane", flDefaultAwarenessDecreaseRate), ChaserProfileData_AwarenessDecreaseRateInsane);
 	
-	ParseChaserProfileAttacks(iUniqueProfileIndex);
+	ParseChaserProfileAttacks(kv, iUniqueProfileIndex);
 	
-	ParseChaserProfileAnimations(iUniqueProfileIndex);
+	ParseChaserProfileAnimations(kv, iUniqueProfileIndex);
 	
 	return true;
 }
 
-static ParseChaserProfileAttacks(iUniqueProfileIndex)
+static ParseChaserProfileAttacks(Handle:kv, iUniqueProfileIndex)
 {
 	decl String:sBuffer[PLATFORM_MAX_PATH];
 	
@@ -241,41 +239,41 @@ static ParseChaserProfileAttacks(iUniqueProfileIndex)
 	new Handle:hAttacks = CreateArray(ChaserProfileAttackData_MaxStats);
 	SetArrayCell(g_hChaserProfileData, iUniqueProfileIndex, hAttacks, ChaserProfileData_Attacks);
 	
-	//new iAttackType = KvGetNum(g_hConfig, "attack_type");
+	//new iAttackType = KvGetNum(kv, "attack_type");
 	new iAttackType = SF2BossAttackType_Melee;
 	
-	new Float:flAttackRange = KvGetFloat(g_hConfig, "attack_range");
+	new Float:flAttackRange = KvGetFloat(kv, "attack_range");
 	if (flAttackRange < 0.0) flAttackRange = 0.0;
 	
-	new Float:flAttackDamage = KvGetFloat(g_hConfig, "attack_damage");
-	new Float:flAttackDamageVsProps = KvGetFloat(g_hConfig, "attack_damage_vs_props", flAttackDamage);
-	new Float:flAttackDamageForce = KvGetFloat(g_hConfig, "attack_damageforce");
+	new Float:flAttackDamage = KvGetFloat(kv, "attack_damage");
+	new Float:flAttackDamageVsProps = KvGetFloat(kv, "attack_damage_vs_props", flAttackDamage);
+	new Float:flAttackDamageForce = KvGetFloat(kv, "attack_damageforce");
 	
-	new iAttackDamageType = KvGetNum(g_hConfig, "attack_damagetype");
+	new iAttackDamageType = KvGetNum(kv, "attack_damagetype");
 	if (iAttackDamageType < 0) iAttackDamageType = 0;
 	
-	new Float:flAttackDamageDelay = KvGetFloat(g_hConfig, "attack_delay");
+	new Float:flAttackDamageDelay = KvGetFloat(kv, "attack_delay");
 	if (flAttackDamageDelay < 0.0) flAttackDamageDelay = 0.0;
 	
-	new Float:flAttackDuration = KvGetFloat(g_hConfig, "attack_duration");
+	new Float:flAttackDuration = KvGetFloat(kv, "attack_duration");
 	if (flAttackDuration < 0.0) flAttackDuration = 0.0;
 	
-	new bool:bAttackProps = bool:KvGetNum(g_hConfig, "attack_props");
+	new bool:bAttackProps = bool:KvGetNum(kv, "attack_props");
 	
-	new Float:flAttackSpreadOld = KvGetFloat(g_hConfig, "attack_fov", 45.0);
-	new Float:flAttackSpread = KvGetFloat(g_hConfig, "attack_spread", flAttackSpreadOld);
+	new Float:flAttackSpreadOld = KvGetFloat(kv, "attack_fov", 45.0);
+	new Float:flAttackSpread = KvGetFloat(kv, "attack_spread", flAttackSpreadOld);
 	
 	if (flAttackSpread < 0.0) flAttackSpread = 0.0;
 	else if (flAttackSpread > 360.0) flAttackSpread = 360.0;
 	
-	new Float:flAttackBeginRange = KvGetFloat(g_hConfig, "attack_begin_range", flAttackRange);
+	new Float:flAttackBeginRange = KvGetFloat(kv, "attack_begin_range", flAttackRange);
 	if (flAttackBeginRange < 0.0) flAttackBeginRange = 0.0;
 	
-	new Float:flAttackBeginFOV = KvGetFloat(g_hConfig, "attack_begin_fov", flAttackSpread);
+	new Float:flAttackBeginFOV = KvGetFloat(kv, "attack_begin_fov", flAttackSpread);
 	if (flAttackBeginFOV < 0.0) flAttackBeginFOV = 0.0;
 	else if (flAttackBeginFOV > 360.0) flAttackBeginFOV = 360.0;
 	
-	new Float:flAttackCooldown = KvGetFloat(g_hConfig, "attack_cooldown");
+	new Float:flAttackCooldown = KvGetFloat(kv, "attack_cooldown");
 	if (flAttackCooldown < 0.0) flAttackCooldown = 0.0;
 	
 	new iAttackIndex = PushArrayCell(hAttacks, -1);
@@ -298,7 +296,7 @@ static ParseChaserProfileAttacks(iUniqueProfileIndex)
 /**
  *	Parses and stores the default animations of a chaser boss profile.
  */
-static ParseChaserProfileAnimations(iUniqueProfileIndex)
+static ParseChaserProfileAnimations(Handle:kv, iUniqueProfileIndex)
 {
 	new Handle:hAnimations = CreateArray(64);
 	for (new i = 0; i < ChaserAnimationType_Max / 2; i++)
@@ -313,8 +311,8 @@ static ParseChaserProfileAnimations(iUniqueProfileIndex)
 	decl Float:flAnimationPlaybackRate;
 	new animationCount = 0;
 	
-	KvGetString(g_hConfig, "animation_idle", sAnimation, sizeof(sAnimation));
-	flAnimationPlaybackRate = KvGetFloat(g_hConfig, "animation_idle_playbackrate", 1.0);
+	KvGetString(kv, "animation_idle", sAnimation, sizeof(sAnimation));
+	flAnimationPlaybackRate = KvGetFloat(kv, "animation_idle_playbackrate", 1.0);
 	if (sAnimation[0])
 	{
 		animationCount++;
@@ -322,8 +320,8 @@ static ParseChaserProfileAnimations(iUniqueProfileIndex)
 		SetArrayCell(hAnimations, ChaserAnimationType_IdlePlaybackRate, flAnimationPlaybackRate);
 	}
 	
-	KvGetString(g_hConfig, "animation_walk", sAnimation, sizeof(sAnimation));
-	flAnimationPlaybackRate = KvGetFloat(g_hConfig, "animation_walk_playbackrate", 1.0);
+	KvGetString(kv, "animation_walk", sAnimation, sizeof(sAnimation));
+	flAnimationPlaybackRate = KvGetFloat(kv, "animation_walk_playbackrate", 1.0);
 	if (sAnimation[0])
 	{
 		animationCount++;
@@ -331,8 +329,8 @@ static ParseChaserProfileAnimations(iUniqueProfileIndex)
 		SetArrayCell(hAnimations, ChaserAnimationType_WalkPlaybackRate, flAnimationPlaybackRate);
 	}
 	
-	KvGetString(g_hConfig, "animation_run", sAnimation, sizeof(sAnimation));
-	flAnimationPlaybackRate = KvGetFloat(g_hConfig, "animation_run_playbackrate", 1.0);
+	KvGetString(kv, "animation_run", sAnimation, sizeof(sAnimation));
+	flAnimationPlaybackRate = KvGetFloat(kv, "animation_run_playbackrate", 1.0);
 	if (sAnimation[0])
 	{
 		animationCount++;
@@ -340,8 +338,8 @@ static ParseChaserProfileAnimations(iUniqueProfileIndex)
 		SetArrayCell(hAnimations, ChaserAnimationType_RunPlaybackRate, flAnimationPlaybackRate);
 	}
 	
-	KvGetString(g_hConfig, "animation_attack", sAnimation, sizeof(sAnimation));
-	flAnimationPlaybackRate = KvGetFloat(g_hConfig, "animation_attack_playbackrate", 1.0);
+	KvGetString(kv, "animation_attack", sAnimation, sizeof(sAnimation));
+	flAnimationPlaybackRate = KvGetFloat(kv, "animation_attack_playbackrate", 1.0);
 	if (sAnimation[0])
 	{
 		animationCount++;
@@ -349,8 +347,8 @@ static ParseChaserProfileAnimations(iUniqueProfileIndex)
 		SetArrayCell(hAnimations, ChaserAnimationType_AttackPlaybackRate, flAnimationPlaybackRate);
 	}
 	
-	KvGetString(g_hConfig, "animation_stun", sAnimation, sizeof(sAnimation));
-	flAnimationPlaybackRate = KvGetFloat(g_hConfig, "animation_stun_playbackrate", 1.0);
+	KvGetString(kv, "animation_stun", sAnimation, sizeof(sAnimation));
+	flAnimationPlaybackRate = KvGetFloat(kv, "animation_stun_playbackrate", 1.0);
 	if (sAnimation[0])
 	{
 		animationCount++;
@@ -358,8 +356,8 @@ static ParseChaserProfileAnimations(iUniqueProfileIndex)
 		SetArrayCell(hAnimations, ChaserAnimationType_StunnedPlaybackRate, flAnimationPlaybackRate);
 	}
 	
-	KvGetString(g_hConfig, "animation_death", sAnimation, sizeof(sAnimation));
-	flAnimationPlaybackRate = KvGetFloat(g_hConfig, "animation_death_playbackrate", 1.0);
+	KvGetString(kv, "animation_death", sAnimation, sizeof(sAnimation));
+	flAnimationPlaybackRate = KvGetFloat(kv, "animation_death_playbackrate", 1.0);
 	if (sAnimation[0])
 	{
 		animationCount++;
