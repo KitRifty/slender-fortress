@@ -4,12 +4,26 @@
 #define _sf2_profiles_included
 
 #define FILE_PROFILES "configs/sf2/profiles.cfg"
+#define FILE_PROFILES_PACKS "configs/sf2/profiles_packs.cfg"
+#define FILE_PROFILES_PACKS_DIR "configs/sf2/profiles/packs"
 
 static Handle:g_hBossProfileList = INVALID_HANDLE;
 static Handle:g_hSelectableBossProfileList = INVALID_HANDLE;
 
 static Handle:g_hBossProfileNames = INVALID_HANDLE;
 static Handle:g_hBossProfileData = INVALID_HANDLE;
+
+new Handle:g_cvBossProfilePack = INVALID_HANDLE;
+new Handle:g_cvBossProfilePackDefault = INVALID_HANDLE;
+
+new Handle:g_hBossPackConfig = INVALID_HANDLE;
+
+new Handle:g_cvBossPackEndOfMapVote;
+new Handle:g_cvBossPackVoteStartTime;
+new Handle:g_cvBossPackVoteStartRound;
+new Handle:g_cvBossPackVoteShuffle;
+
+static bool:g_bBossPackVoteEnabled = false;
 
 #if defined METHODMAPS
 
@@ -190,6 +204,13 @@ InitializeBossProfiles()
 	g_hBossProfileNames = CreateTrie();
 	g_hBossProfileData = CreateArray(BossProfileData_MaxStats);
 	
+	g_cvBossProfilePack = CreateConVar("sf2_boss_profile_pack", "", "The boss pack referenced in profiles_packs.cfg that should be loaded.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
+	g_cvBossProfilePackDefault = CreateConVar("sf2_boss_profile_pack_default", "", "If the boss pack defined in sf2_boss_profile_pack is blank or could not be loaded, this pack will be used instead.", FCVAR_NOTIFY);
+	g_cvBossPackEndOfMapVote = CreateConVar("sf2_boss_profile_pack_endvote", "0", "Enables/Disables a boss pack vote at the end of the map.");
+	g_cvBossPackVoteStartTime = CreateConVar("sf2_boss_profile_pack_endvote_start", "4", "Specifies when to start the vote based on time remaining on the map, in minutes.", FCVAR_NOTIFY);
+	g_cvBossPackVoteStartRound = CreateConVar("sf2_boss_profile_pack_endvote_startround", "2", "Specifies when to start the vote based on rounds remaining on the map.", FCVAR_NOTIFY);
+	g_cvBossPackVoteShuffle = CreateConVar("sf2_boss_profile_pack_endvote_shuffle", "0", "Shuffles the menu options of boss pack endvotes if enabled.");
+	
 	InitializeChaserProfiles();
 }
 
@@ -229,8 +250,17 @@ ReloadBossProfiles()
 		g_hConfig = INVALID_HANDLE;
 	}
 	
+	if (g_hBossPackConfig != INVALID_HANDLE)
+	{
+		CloseHandle(g_hBossPackConfig);
+		g_hBossPackConfig = INVALID_HANDLE;
+	}
+	
 	// Clear and reload the lists.
 	ClearBossProfiles();
+	
+	g_hConfig = CreateKeyValues("root");
+	g_hBossPackConfig = CreateKeyValues("root");
 	
 	if (g_hBossProfileList == INVALID_HANDLE)
 	{
@@ -242,23 +272,122 @@ ReloadBossProfiles()
 		g_hSelectableBossProfileList = CreateArray(SF2_MAX_PROFILE_NAME_LENGTH);
 	}
 	
-	decl String:buffer[PLATFORM_MAX_PATH];
-	BuildPath(Path_SM, buffer, sizeof(buffer), FILE_PROFILES);
-	new Handle:kv = CreateKeyValues("root");
-	if (!FileToKeyValues(kv, buffer))
+	decl String:configPath[PLATFORM_MAX_PATH];
+	
+	// First load from configs/sf2/profiles.cfg
+	BuildPath(Path_SM, configPath, sizeof(configPath), FILE_PROFILES);
+	LoadProfilesFromFile(configPath);
+	
+	BuildPath(Path_SM, configPath, sizeof(configPath), FILE_PROFILES_PACKS);
+	FileToKeyValues(g_hBossPackConfig, configPath);
+	
+	g_bBossPackVoteEnabled = true;
+	
+	// Try loading boss packs, if they're set to load.
+	KvRewind(g_hBossPackConfig);
+	if (KvJumpToKey(g_hBossPackConfig, "packs"))
 	{
-		CloseHandle(kv);
-		LogSF2Message("Boss profiles config file not found! No boss profiles will be loaded.");
+		if (KvGotoFirstSubKey(g_hBossPackConfig))
+		{
+			new endVoteItemCount = 0;
+		
+			decl String:forceLoadBossPackName[128];
+			GetConVarString(g_cvBossProfilePack, forceLoadBossPackName, sizeof(forceLoadBossPackName));
+			
+			new bool:voteBossPackLoaded = false;
+			
+			do
+			{
+				decl String:bossPackName[128];
+				KvGetSectionName(g_hBossPackConfig, bossPackName, sizeof(bossPackName));
+				
+				new bool:autoLoad = bool:KvGetNum(g_hBossPackConfig, "autoload");
+				
+				if (autoLoad || (strlen(forceLoadBossPackName) > 0 && StrEqual(forceLoadBossPackName, bossPackName)))
+				{
+					decl String:packConfigFile[PLATFORM_MAX_PATH];
+					KvGetString(g_hBossPackConfig, "file", packConfigFile, sizeof(packConfigFile));
+					
+					decl String:packConfigFilePath[PLATFORM_MAX_PATH];
+					Format(packConfigFilePath, sizeof(packConfigFilePath), "%s/%s", FILE_PROFILES_PACKS_DIR, packConfigFile);
+					
+					BuildPath(Path_SM, configPath, sizeof(configPath), packConfigFilePath);
+					LoadProfilesFromFile(configPath);
+					
+					if (!voteBossPackLoaded)
+					{
+						if (StrEqual(forceLoadBossPackName, bossPackName))
+						{
+							voteBossPackLoaded = true;
+						}
+					}
+				}
+				
+				if (!autoLoad)
+				{
+					endVoteItemCount++; 
+				}
+			}
+			while (KvGotoNextKey(g_hBossPackConfig));
+			
+			KvGoBack(g_hBossPackConfig);
+			
+			if (!voteBossPackLoaded)
+			{
+				GetConVarString(g_cvBossProfilePackDefault, forceLoadBossPackName, sizeof(forceLoadBossPackName));
+				if (strlen(forceLoadBossPackName) > 0)
+				{
+					if (KvJumpToKey(g_hBossPackConfig, forceLoadBossPackName))
+					{
+						decl String:packConfigFile[PLATFORM_MAX_PATH];
+						KvGetString(g_hBossPackConfig, "file", packConfigFile, sizeof(packConfigFile));
+						
+						decl String:packConfigFilePath[PLATFORM_MAX_PATH];
+						Format(packConfigFilePath, sizeof(packConfigFilePath), "%s/%s", FILE_PROFILES_PACKS_DIR, packConfigFile);
+						
+						BuildPath(Path_SM, configPath, sizeof(configPath), packConfigFilePath);
+						LoadProfilesFromFile(configPath);
+					}
+				}
+			}
+			
+			if (endVoteItemCount <= 0)
+			{
+				g_bBossPackVoteEnabled = false;
+			}
+		}
+		else
+		{
+			g_bBossPackVoteEnabled = false;
+		}
 	}
 	else
 	{
-		LogSF2Message("Loading boss profiles from config file...");
+		g_bBossPackVoteEnabled = false;
+	}
+}
+
+static LoadProfilesFromFile(const String:configPath[])
+{
+	LogSF2Message("Loading boss profiles from file %s...", configPath);
 	
-		KvRewind(kv);
+	if (!FileExists(configPath))
+	{
+		LogSF2Message("File not found! Skipping...");
+		return;
+	}
+	
+	new Handle:kv = CreateKeyValues("root");
+	if (!FileToKeyValues(kv, configPath))
+	{
+		CloseHandle(kv);
+		LogSF2Message("Unexpected error while reading file! Skipping...");
+		return;
+	}
+	else
+	{
 		if (KvGotoFirstSubKey(kv))
 		{
-			g_hConfig = kv;
-			
 			decl String:sProfile[SF2_MAX_PROFILE_NAME_LENGTH];
 			decl String:sProfileLoadFailReason[512];
 			
@@ -266,8 +395,8 @@ ReloadBossProfiles()
 			
 			do
 			{
-				KvGetSectionName(g_hConfig, sProfile, sizeof(sProfile));
-				if (LoadBossProfile(sProfile, sProfileLoadFailReason, sizeof(sProfileLoadFailReason)))
+				KvGetSectionName(kv, sProfile, sizeof(sProfile));
+				if (LoadBossProfile(kv, sProfile, sProfileLoadFailReason, sizeof(sProfileLoadFailReason)))
 				{
 					iLoadedCount++;
 					LogSF2Message("%s...", sProfile);
@@ -277,81 +406,81 @@ ReloadBossProfiles()
 					LogSF2Message("%s...FAILED (reason: %s)", sProfile, sProfileLoadFailReason);
 				}
 			}
-			while (KvGotoNextKey(g_hConfig));
+			while (KvGotoNextKey(kv));
 			
-			LogSF2Message("Loaded %d boss profile(s) from config file!", iLoadedCount);
+			LogSF2Message("Loaded %d boss profile(s) from file!", iLoadedCount);
 		}
 		else
 		{
-			CloseHandle(kv);
-			
-			LogSF2Message("No boss profiles detected in config file! No boss profiles will be loaded.");
+			LogSF2Message("No boss profiles loaded from file!");
 		}
+		
+		CloseHandle(kv);
 	}
 }
 
 /**
- *	Loads a profile in the current KeyValues position in g_hConfig.
+ *	Loads a profile in the current KeyValues position in kv.
  */
-static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffer[], iLoadFailReasonBufferLen)
+static bool:LoadBossProfile(Handle:kv, const String:sProfile[], String:sLoadFailReasonBuffer[], iLoadFailReasonBufferLen)
 {
-	new iBossType = KvGetNum(g_hConfig, "type", SF2BossType_Unknown);
+	new iBossType = KvGetNum(kv, "type", SF2BossType_Unknown);
 	if (iBossType == SF2BossType_Unknown || iBossType >= SF2BossType_MaxTypes) 
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "boss type is unknown!");
 		return false;
 	}
 	
-	new Float:flBossModelScale = KvGetFloat(g_hConfig, "model_scale", 1.0);
+	new Float:flBossModelScale = KvGetFloat(kv, "model_scale", 1.0);
 	if (flBossModelScale <= 0.0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "model_scale must be a value greater than 0!");
 		return false;
 	}
 	
-	new iBossSkin = KvGetNum(g_hConfig, "skin");
+	new iBossSkin = KvGetNum(kv, "skin");
 	if (iBossSkin < 0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "skin must be a value that is at least 0!");
 		return false;
 	}
 	
-	new iBossBodyGroups = KvGetNum(g_hConfig, "body");
+	new iBossBodyGroups = KvGetNum(kv, "body");
 	if (iBossBodyGroups < 0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "body must be a value that is at least 0!");
 		return false;
 	}
 	
-	new Float:flBossAngerStart = KvGetFloat(g_hConfig, "anger_start", 1.0);
+	new Float:flBossAngerStart = KvGetFloat(kv, "anger_start", 1.0);
 	if (flBossAngerStart < 0.0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "anger_start must be a value that is at least 0!");
 		return false;
 	}
 	
-	new Float:flBossInstantKillRadius = KvGetFloat(g_hConfig, "kill_radius");
+	new Float:flBossInstantKillRadius = KvGetFloat(kv, "kill_radius");
 	if (flBossInstantKillRadius < 0.0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "kill_radius must be a value that is at least 0!");
 		return false;
 	}
 	
-	new Float:flBossScareRadius = KvGetFloat(g_hConfig, "scare_radius");
+	new Float:flBossScareRadius = KvGetFloat(kv, "scare_radius");
 	if (flBossScareRadius < 0.0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "scare_radius must be a value that is at least 0!");
 		return false;
 	}
 	
-	new iBossTeleportType = KvGetNum(g_hConfig, "teleport_type");
+	new iBossTeleportType = KvGetNum(kv, "teleport_type");
 	if (iBossTeleportType < 0)
 	{
 		Format(sLoadFailReasonBuffer, iLoadFailReasonBufferLen, "unknown teleport type!");
 		return false;
 	}
 	
-	new Float:flBossFOV = KvGetFloat(g_hConfig, "fov", 90.0);
+	new Float:flBossFOV = KvGetFloat(kv, "fov", 90.0);
 	if (flBossFOV < 0.0)
 	{
 		flBossFOV = 0.0;
@@ -361,77 +490,77 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 		flBossFOV = 360.0;
 	}
 	
-	new Float:flBossMaxTurnRate = KvGetFloat(g_hConfig, "turnrate", 90.0);
+	new Float:flBossMaxTurnRate = KvGetFloat(kv, "turnrate", 90.0);
 	if (flBossMaxTurnRate < 0.0)
 	{
 		flBossMaxTurnRate = 0.0;
 	}
 	
-	new Float:flBossScareCooldown = KvGetFloat(g_hConfig, "scare_cooldown");
+	new Float:flBossScareCooldown = KvGetFloat(kv, "scare_cooldown");
 	if (flBossScareCooldown < 0.0)
 	{
 		// clamp value 
 		flBossScareCooldown = 0.0;
 	}
 	
-	new Float:flBossAngerAddOnPageGrab = KvGetFloat(g_hConfig, "anger_add_on_page_grab", -1.0);
+	new Float:flBossAngerAddOnPageGrab = KvGetFloat(kv, "anger_add_on_page_grab", -1.0);
 	if (flBossAngerAddOnPageGrab < 0.0)
 	{
-		flBossAngerAddOnPageGrab = KvGetFloat(g_hConfig, "anger_page_add", -1.0);		// backwards compatibility
+		flBossAngerAddOnPageGrab = KvGetFloat(kv, "anger_page_add", -1.0);		// backwards compatibility
 		if (flBossAngerAddOnPageGrab < 0.0)
 		{
 			flBossAngerAddOnPageGrab = 0.0;
 		}
 	}
 	
-	new Float:flBossAngerPageGrabTimeDiffReq = KvGetFloat(g_hConfig, "anger_req_page_grab_time_diff", -1.0);
+	new Float:flBossAngerPageGrabTimeDiffReq = KvGetFloat(kv, "anger_req_page_grab_time_diff", -1.0);
 	if (flBossAngerPageGrabTimeDiffReq < 0.0)
 	{
-		flBossAngerPageGrabTimeDiffReq = KvGetFloat(g_hConfig, "anger_page_time_diff", -1.0);		// backwards compatibility
+		flBossAngerPageGrabTimeDiffReq = KvGetFloat(kv, "anger_page_time_diff", -1.0);		// backwards compatibility
 		if (flBossAngerPageGrabTimeDiffReq < 0.0)
 		{
 			flBossAngerPageGrabTimeDiffReq = 0.0;
 		}
 	}
 	
-	new Float:flBossSearchRadius = KvGetFloat(g_hConfig, "search_radius", -1.0);
+	new Float:flBossSearchRadius = KvGetFloat(kv, "search_radius", -1.0);
 	if (flBossSearchRadius < 0.0)
 	{
-		flBossSearchRadius = KvGetFloat(g_hConfig, "search_range", -1.0);		// backwards compatibility
+		flBossSearchRadius = KvGetFloat(kv, "search_range", -1.0);		// backwards compatibility
 		if (flBossSearchRadius < 0.0)
 		{
 			flBossSearchRadius = 0.0;
 		}
 	}
 	
-	new Float:flBossDefaultSpeed = KvGetFloat(g_hConfig, "speed", 150.0);
-	new Float:flBossSpeedEasy = KvGetFloat(g_hConfig, "speed_easy", flBossDefaultSpeed);
-	new Float:flBossSpeedHard = KvGetFloat(g_hConfig, "speed_hard", flBossDefaultSpeed);
-	new Float:flBossSpeedInsane = KvGetFloat(g_hConfig, "speed_insane", flBossDefaultSpeed);
+	new Float:flBossDefaultSpeed = KvGetFloat(kv, "speed", 150.0);
+	new Float:flBossSpeedEasy = KvGetFloat(kv, "speed_easy", flBossDefaultSpeed);
+	new Float:flBossSpeedHard = KvGetFloat(kv, "speed_hard", flBossDefaultSpeed);
+	new Float:flBossSpeedInsane = KvGetFloat(kv, "speed_insane", flBossDefaultSpeed);
 	
-	new Float:flBossDefaultMaxSpeed = KvGetFloat(g_hConfig, "speed_max", 150.0);
-	new Float:flBossMaxSpeedEasy = KvGetFloat(g_hConfig, "speed_max_easy", flBossDefaultMaxSpeed);
-	new Float:flBossMaxSpeedHard = KvGetFloat(g_hConfig, "speed_max_hard", flBossDefaultMaxSpeed);
-	new Float:flBossMaxSpeedInsane = KvGetFloat(g_hConfig, "speed_max_insane", flBossDefaultMaxSpeed);
+	new Float:flBossDefaultMaxSpeed = KvGetFloat(kv, "speed_max", 150.0);
+	new Float:flBossMaxSpeedEasy = KvGetFloat(kv, "speed_max_easy", flBossDefaultMaxSpeed);
+	new Float:flBossMaxSpeedHard = KvGetFloat(kv, "speed_max_hard", flBossDefaultMaxSpeed);
+	new Float:flBossMaxSpeedInsane = KvGetFloat(kv, "speed_max_insane", flBossDefaultMaxSpeed);
 	
 	decl Float:flBossEyePosOffset[3];
-	KvGetVector(g_hConfig, "eye_pos", flBossEyePosOffset);
+	KvGetVector(kv, "eye_pos", flBossEyePosOffset);
 	
 	decl Float:flBossEyeAngOffset[3];
-	KvGetVector(g_hConfig, "eye_ang_offset", flBossEyeAngOffset);
+	KvGetVector(kv, "eye_ang_offset", flBossEyeAngOffset);
 	
 	// Parse through flags.
 	new iBossFlags = 0;
-	if (KvGetNum(g_hConfig, "static_shake")) iBossFlags |= SFF_HASSTATICSHAKE;
-	if (KvGetNum(g_hConfig, "static_on_look")) iBossFlags |= SFF_STATICONLOOK;
-	if (KvGetNum(g_hConfig, "static_on_radius")) iBossFlags |= SFF_STATICONRADIUS;
-	if (KvGetNum(g_hConfig, "proxies")) iBossFlags |= SFF_PROXIES;
-	if (KvGetNum(g_hConfig, "jumpscare")) iBossFlags |= SFF_HASJUMPSCARE;
-	if (KvGetNum(g_hConfig, "sound_sight_enabled")) iBossFlags |= SFF_HASSIGHTSOUNDS;
-	if (KvGetNum(g_hConfig, "sound_static_loop_local_enabled")) iBossFlags |= SFF_HASSTATICLOOPLOCALSOUND;
-	if (KvGetNum(g_hConfig, "view_shake", 1)) iBossFlags |= SFF_HASVIEWSHAKE;
-	if (KvGetNum(g_hConfig, "copy")) iBossFlags |= SFF_COPIES;
-	if (KvGetNum(g_hConfig, "wander_move", 1)) iBossFlags |= SFF_WANDERMOVE;
+	if (KvGetNum(kv, "static_shake")) iBossFlags |= SFF_HASSTATICSHAKE;
+	if (KvGetNum(kv, "static_on_look")) iBossFlags |= SFF_STATICONLOOK;
+	if (KvGetNum(kv, "static_on_radius")) iBossFlags |= SFF_STATICONRADIUS;
+	if (KvGetNum(kv, "proxies")) iBossFlags |= SFF_PROXIES;
+	if (KvGetNum(kv, "jumpscare")) iBossFlags |= SFF_HASJUMPSCARE;
+	if (KvGetNum(kv, "sound_sight_enabled")) iBossFlags |= SFF_HASSIGHTSOUNDS;
+	if (KvGetNum(kv, "sound_static_loop_local_enabled")) iBossFlags |= SFF_HASSTATICLOOPLOCALSOUND;
+	if (KvGetNum(kv, "view_shake", 1)) iBossFlags |= SFF_HASVIEWSHAKE;
+	if (KvGetNum(kv, "copy")) iBossFlags |= SFF_COPIES;
+	if (KvGetNum(kv, "wander_move", 1)) iBossFlags |= SFF_WANDERMOVE;
 	
 	// Try validating unique profile.
 	new iUniqueProfileIndex = -1;
@@ -440,16 +569,34 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 	{
 		case SF2BossType_Chaser:
 		{
-			if (!LoadChaserBossProfile(sProfile, iUniqueProfileIndex, sLoadFailReasonBuffer, iLoadFailReasonBufferLen))
+			if (!LoadChaserBossProfile(kv, sProfile, iUniqueProfileIndex, sLoadFailReasonBuffer, iLoadFailReasonBufferLen))
 			{
 				return false;
 			}
 		}
 	}
 	
-	// Add to our array.
-	new iIndex = PushArrayCell(g_hBossProfileData, -1);
-	SetTrieValue(g_hBossProfileNames, sProfile, iIndex);
+	// Add the section to our config.
+	KvRewind(g_hConfig);
+	KvJumpToKey(g_hConfig, sProfile, true);
+	KvCopySubkeys(kv, g_hConfig);
+	
+	new bool:createNewBoss = false;
+	new iIndex = FindStringInArray(GetBossProfileList(), sProfile);
+	if (iIndex == -1)
+	{
+		createNewBoss = true;
+	}
+	
+	// Add to/Modify our array.
+	if (createNewBoss)
+	{
+		iIndex = PushArrayCell(g_hBossProfileData, -1);
+		SetTrieValue(g_hBossProfileNames, sProfile, iIndex);
+		
+		// Add to the boss list since it's not there already.
+		PushArrayString(GetBossProfileList(), sProfile);
+	}
 	
 	SetArrayCell(g_hBossProfileData, iIndex, iUniqueProfileIndex, BossProfileData_UniqueProfileIndex);
 	
@@ -493,29 +640,37 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 	SetArrayCell(g_hBossProfileData, iIndex, flBossFOV, BossProfileData_FieldOfView);
 	SetArrayCell(g_hBossProfileData, iIndex, flBossMaxTurnRate, BossProfileData_TurnRate);
 	
-	// Add to the boss list.
-	PushArrayString(GetBossProfileList(), sProfile);
-	
-	if (bool:KvGetNum(g_hConfig, "enable_random_selection", 1))
+	if (bool:KvGetNum(kv, "enable_random_selection", 1))
 	{
-		// Add to the selectable boss list.
-		PushArrayString(GetSelectableBossProfileList(), sProfile);
+		if (FindStringInArray(GetSelectableBossProfileList(), sProfile) == -1)
+		{
+			// Add to the selectable boss list if it isn't there already.
+			PushArrayString(GetSelectableBossProfileList(), sProfile);
+		}
+	}
+	else
+	{
+		new selectIndex = FindStringInArray(GetSelectableBossProfileList(), sProfile);
+		if (selectIndex != -1)
+		{
+			RemoveFromArray(GetSelectableBossProfileList(), selectIndex);
+		}
 	}
 	
-	if (KvGotoFirstSubKey(g_hConfig))
+	if (KvGotoFirstSubKey(kv))
 	{
 		decl String:s2[64], String:s3[64], String:s4[PLATFORM_MAX_PATH], String:s5[PLATFORM_MAX_PATH];
 		
 		do
 		{
-			KvGetSectionName(g_hConfig, s2, sizeof(s2));
+			KvGetSectionName(kv, s2, sizeof(s2));
 			
 			if (!StrContains(s2, "sound_"))
 			{
 				for (new i = 1;; i++)
 				{
 					IntToString(i, s3, sizeof(s3));
-					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					KvGetString(kv, s3, s4, sizeof(s4));
 					if (!s4[0]) break;
 					
 					PrecacheSound2(s4);
@@ -526,7 +681,7 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 				for (new i = 1;; i++)
 				{
 					IntToString(i, s3, sizeof(s3));
-					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					KvGetString(kv, s3, s4, sizeof(s4));
 					if (!s4[0]) break;
 					
 					AddFileToDownloadsTable(s4);
@@ -537,7 +692,7 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 				for (new i = 1;; i++)
 				{
 					IntToString(i, s3, sizeof(s3));
-					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					KvGetString(kv, s3, s4, sizeof(s4));
 					if (!s4[0]) break;
 					
 					PrecacheModel(s4, true);
@@ -548,7 +703,7 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 				for (new i = 1;; i++)
 				{
 					IntToString(i, s3, sizeof(s3));
-					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					KvGetString(kv, s3, s4, sizeof(s4));
 					if (!s4[0]) break;
 					
 					Format(s5, sizeof(s5), "%s.vtf", s4);
@@ -564,7 +719,7 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 				for (new i = 1;; i++)
 				{
 					IntToString(i, s3, sizeof(s3));
-					KvGetString(g_hConfig, s3, s4, sizeof(s4));
+					KvGetString(kv, s3, s4, sizeof(s4));
 					if (!s4[0]) break;
 					
 					for (new is = 0; is < sizeof(extensions); is++)
@@ -575,12 +730,207 @@ static bool:LoadBossProfile(const String:sProfile[], String:sLoadFailReasonBuffe
 				}
 			}
 		}
-		while (KvGotoNextKey(g_hConfig));
+		while (KvGotoNextKey(kv));
 		
-		KvGoBack(g_hConfig);
+		KvGoBack(kv);
 	}
 	
 	return true;
+}
+
+static Handle:g_hBossPackVoteMapTimer;
+static Handle:g_hBossPackVoteTimer;
+static bool:g_bBossPackVoteCompleted;
+static bool:g_bBossPackVoteStarted;
+
+InitializeBossPackVotes()
+{
+	g_hBossPackVoteMapTimer = INVALID_HANDLE;
+	g_hBossPackVoteTimer = INVALID_HANDLE;
+	g_bBossPackVoteCompleted = false;
+	g_bBossPackVoteStarted = false;
+}
+
+SetupTimeLimitTimerForBossPackVote()
+{
+	new time;
+	if (GetMapTimeLeft(time) && time > 0)
+	{
+		if (GetConVarBool(g_cvBossPackEndOfMapVote) && g_bBossPackVoteEnabled && !g_bBossPackVoteCompleted && !g_bBossPackVoteStarted)
+		{
+			new startTime = GetConVarInt(g_cvBossPackVoteStartTime) * 60;
+			if ((time - startTime) <= 0)
+			{
+				if (!IsVoteInProgress())
+				{
+					InitiateBossPackVote();
+				}
+				else
+				{
+					g_hBossPackVoteTimer = CreateTimer(5.0, Timer_BossPackVoteLoop, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+				}
+			}
+			else
+			{
+				if (g_hBossPackVoteMapTimer != INVALID_HANDLE)
+				{
+					CloseHandle(g_hBossPackVoteMapTimer);
+					g_hBossPackVoteMapTimer = INVALID_HANDLE;
+				}
+				
+				g_hBossPackVoteMapTimer = CreateTimer(float(time - startTime), Timer_StartBossPackVote, _, TIMER_FLAG_NO_MAPCHANGE);
+			}
+		}
+	}
+}
+
+CheckRoundLimitForBossPackVote(roundCount)
+{
+	if (!GetConVarBool(g_cvBossPackEndOfMapVote) || !g_bBossPackVoteEnabled || g_bBossPackVoteStarted || g_bBossPackVoteCompleted) return;
+	
+	if (g_cvMaxRounds == INVALID_HANDLE) return;
+	
+	if (GetConVarInt(g_cvMaxRounds) > 0)
+	{
+		if (roundCount >= (GetConVarInt(g_cvMaxRounds) - GetConVarInt(g_cvBossPackVoteStartRound)))
+		{
+			if (!IsVoteInProgress())
+			{
+				InitiateBossPackVote();
+			}
+			else
+			{
+				g_hBossPackVoteTimer = CreateTimer(5.0, Timer_BossPackVoteLoop, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			}
+		}
+	}
+	
+	CloseHandle(g_cvMaxRounds);
+}
+
+InitiateBossPackVote()
+{
+	if (g_bBossPackVoteStarted || g_bBossPackVoteCompleted || IsVoteInProgress()) return;
+	
+	// Gather boss packs, if any.
+	if (g_hBossPackConfig == INVALID_HANDLE) return;
+	
+	KvRewind(g_hBossPackConfig);
+	if (!KvJumpToKey(g_hBossPackConfig, "packs")) return;
+	if (!KvGotoFirstSubKey(g_hBossPackConfig)) return;
+	
+	new Handle:voteMenu = CreateMenu(Menu_BossPackVote);
+	SetMenuTitle(voteMenu, "%t%t\n \n", "SF2 Prefix", "SF2 Boss Pack Vote Menu Title");
+	SetMenuExitBackButton(voteMenu, false);
+	SetMenuExitButton(voteMenu, false);
+	
+	new Handle:menuDisplayNamesTrie = CreateTrie();
+	new Handle:menuOptionsInfo = CreateArray(128);
+	
+	do
+	{
+		if (!bool:KvGetNum(g_hBossPackConfig, "autoload") && bool:KvGetNum(g_hBossPackConfig, "show_in_vote", 1))
+		{
+			decl String:bossPack[128];
+			KvGetSectionName(g_hBossPackConfig, bossPack, sizeof(bossPack));
+			
+			decl String:bossPackName[64];
+			KvGetString(g_hBossPackConfig, "name", bossPackName, sizeof(bossPackName), bossPack);
+			
+			SetTrieString(menuDisplayNamesTrie, bossPack, bossPackName);
+			PushArrayString(menuOptionsInfo, bossPack);
+		}
+	}
+	while (KvGotoNextKey(g_hBossPackConfig));
+	
+	if (GetArraySize(menuOptionsInfo) == 0)
+	{
+		CloseHandle(menuDisplayNamesTrie);
+		CloseHandle(menuOptionsInfo);
+		CloseHandle(voteMenu);
+		return;
+	}
+	
+	if (GetConVarBool(g_cvBossPackVoteShuffle))
+	{
+		SortADTArray(menuOptionsInfo, Sort_Random, Sort_String);
+	}
+	
+	for (new i = 0; i < GetArraySize(menuOptionsInfo); i++)
+	{
+		decl String:bossPack[128], String:bossPackName[64];
+		GetArrayString(menuOptionsInfo, i, bossPack, sizeof(bossPack));
+		GetTrieString(menuDisplayNamesTrie, bossPack, bossPackName, sizeof(bossPackName));
+		
+		AddMenuItem(voteMenu, bossPack, bossPackName);
+	}
+	
+	CloseHandle(menuDisplayNamesTrie);
+	CloseHandle(menuOptionsInfo);
+	
+	g_bBossPackVoteStarted = true;
+	if (g_hBossPackVoteMapTimer != INVALID_HANDLE)
+	{
+		CloseHandle(g_hBossPackVoteMapTimer);
+		g_hBossPackVoteMapTimer = INVALID_HANDLE;
+	}
+	
+	if (g_hBossPackVoteTimer != INVALID_HANDLE)
+	{
+		CloseHandle(g_hBossPackVoteTimer);
+		g_hBossPackVoteTimer = INVALID_HANDLE;
+	}
+	
+	VoteMenuToAll(voteMenu, 20);
+}
+
+public Menu_BossPackVote(Handle:menu, MenuAction:action, param1, param2)
+{
+	switch (action)
+	{
+		case MenuAction_VoteStart:
+		{
+			g_bBossPackVoteStarted = true;
+		}
+		case MenuAction_VoteEnd:
+		{
+			g_bBossPackVoteCompleted = true;
+		
+			decl String:bossPack[128], String:bossPackName[64];
+			GetMenuItem(menu, param1, bossPack, sizeof(bossPack), _, bossPackName, sizeof(bossPackName));
+			
+			SetConVarString(g_cvBossProfilePack, bossPack);
+			
+			CPrintToChatAll("%t%t", "SF2 Prefix", "SF2 Boss Pack Vote Successful", bossPackName);
+		}
+		case MenuAction_End:
+		{
+			g_bBossPackVoteStarted = false;
+			CloseHandle(menu);
+		}
+	}
+}
+
+public Action:Timer_StartBossPackVote(Handle:timer)
+{
+	if (timer != g_hBossPackVoteMapTimer) return;
+	
+	g_hBossPackVoteTimer = CreateTimer(5.0, Timer_BossPackVoteLoop, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	TriggerTimer(g_hBossPackVoteTimer, true);
+}
+
+public Action:Timer_BossPackVoteLoop(Handle:timer)
+{
+	if (timer != g_hBossPackVoteTimer || g_bBossPackVoteCompleted || g_bBossPackVoteStarted) return Plugin_Stop;
+	
+	if (!IsVoteInProgress())
+	{
+		g_hBossPackVoteTimer = INVALID_HANDLE;
+		InitiateBossPackVote();
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
 }
 
 bool:IsProfileValid(const String:sProfile[])
