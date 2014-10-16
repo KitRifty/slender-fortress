@@ -22,8 +22,8 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.4-git129"
-#define PLUGIN_VERSION_DISPLAY "0.2.4b"
+#define PLUGIN_VERSION "0.2.5-git132"
+#define PLUGIN_VERSION_DISPLAY "0.2.5"
 
 public Plugin:myinfo = 
 {
@@ -422,6 +422,8 @@ new Handle:g_cvPlayerInfiniteBlinkOverride;
 new Handle:g_cvGravity;
 new Float:g_flGravity;
 
+new Handle:g_cvMaxRounds;
+
 new bool:g_b20Dollars;
 
 new bool:g_bPlayerShakeEnabled;
@@ -696,6 +698,8 @@ public OnPluginStart()
 	g_cvPlayerInfiniteSprintOverride = CreateConVar("sf2_player_infinite_sprint_override", "-1", "1 = infinite sprint, 0 = never have infinite sprint, -1 = let the game choose.", _, true, -1.0, true, 1.0);
 	g_cvPlayerInfiniteFlashlightOverride = CreateConVar("sf2_player_infinite_flashlight_override", "-1", "1 = infinite flashlight, 0 = never have infinite flashlight, -1 = let the game choose.", _, true, -1.0, true, 1.0);
 	g_cvPlayerInfiniteBlinkOverride = CreateConVar("sf2_player_infinite_blink_override", "-1", "1 = infinite blink, 0 = never have infinite blink, -1 = let the game choose.", _, true, -1.0, true, 1.0);
+	
+	g_cvMaxRounds = FindConVar("mp_maxrounds");
 	
 	g_hHudSync = CreateHudSynchronizer();
 	g_hHudSync2 = CreateHudSynchronizer();

@@ -21,6 +21,7 @@ new Handle:g_hBossPackConfig = INVALID_HANDLE;
 new Handle:g_cvBossPackEndOfMapVote;
 new Handle:g_cvBossPackVoteStartTime;
 new Handle:g_cvBossPackVoteStartRound;
+new Handle:g_cvBossPackVoteShuffle;
 
 static bool:g_bBossPackVoteEnabled = false;
 
@@ -208,6 +209,7 @@ InitializeBossProfiles()
 	g_cvBossPackEndOfMapVote = CreateConVar("sf2_boss_profile_pack_endvote", "0", "Enables/Disables a boss pack vote at the end of the map.");
 	g_cvBossPackVoteStartTime = CreateConVar("sf2_boss_profile_pack_endvote_start", "4", "Specifies when to start the vote based on time remaining on the map, in minutes.", FCVAR_NOTIFY);
 	g_cvBossPackVoteStartRound = CreateConVar("sf2_boss_profile_pack_endvote_startround", "2", "Specifies when to start the vote based on rounds remaining on the map.", FCVAR_NOTIFY);
+	g_cvBossPackVoteShuffle = CreateConVar("sf2_boss_profile_pack_endvote_shuffle", "0", "Shuffles the menu options of boss pack endvotes if enabled.");
 	
 	InitializeChaserProfiles();
 }
@@ -784,17 +786,26 @@ SetupTimeLimitTimerForBossPackVote()
 
 CheckRoundLimitForBossPackVote(roundCount)
 {
-	if (!GetConVarBool(g_cvBossPackEndOfMapVote) || !g_bBossPackVoteEnabled || IsVoteInProgress() || g_bBossPackVoteStarted || g_bBossPackVoteCompleted) return;
+	if (!GetConVarBool(g_cvBossPackEndOfMapVote) || !g_bBossPackVoteEnabled || g_bBossPackVoteStarted || g_bBossPackVoteCompleted) return;
 	
-	new Handle:mp_maxrounds = FindConVar("mp_maxrounds");
-	if (mp_maxrounds == INVALID_HANDLE) return;
+	if (g_cvMaxRounds == INVALID_HANDLE) return;
 	
-	if (roundCount >= (GetConVarInt(mp_maxrounds) - GetConVarInt(g_cvBossPackVoteStartRound)))
+	if (GetConVarInt(g_cvMaxRounds) > 0)
 	{
-		InitiateBossPackVote();
+		if (roundCount >= (GetConVarInt(g_cvMaxRounds) - GetConVarInt(g_cvBossPackVoteStartRound)))
+		{
+			if (!IsVoteInProgress())
+			{
+				InitiateBossPackVote();
+			}
+			else
+			{
+				g_hBossPackVoteTimer = CreateTimer(5.0, Timer_BossPackVoteLoop, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			}
+		}
 	}
 	
-	CloseHandle(mp_maxrounds);
+	CloseHandle(g_cvMaxRounds);
 }
 
 InitiateBossPackVote()
@@ -813,11 +824,12 @@ InitiateBossPackVote()
 	SetMenuExitBackButton(voteMenu, false);
 	SetMenuExitButton(voteMenu, false);
 	
-	new itemCount = 0;
+	new Handle:menuDisplayNamesTrie = CreateTrie();
+	new Handle:menuOptionsInfo = CreateArray(128);
 	
 	do
 	{
-		if (!bool:KvGetNum(g_hBossPackConfig, "autoload"))
+		if (!bool:KvGetNum(g_hBossPackConfig, "autoload") && bool:KvGetNum(g_hBossPackConfig, "show_in_vote", 1))
 		{
 			decl String:bossPack[128];
 			KvGetSectionName(g_hBossPackConfig, bossPack, sizeof(bossPack));
@@ -825,18 +837,36 @@ InitiateBossPackVote()
 			decl String:bossPackName[64];
 			KvGetString(g_hBossPackConfig, "name", bossPackName, sizeof(bossPackName), bossPack);
 			
-			AddMenuItem(voteMenu, bossPack, bossPackName);
-			
-			itemCount++;
+			SetTrieString(menuDisplayNamesTrie, bossPack, bossPackName);
+			PushArrayString(menuOptionsInfo, bossPack);
 		}
 	}
 	while (KvGotoNextKey(g_hBossPackConfig));
 	
-	if (!itemCount)
+	if (GetArraySize(menuOptionsInfo) == 0)
 	{
+		CloseHandle(menuDisplayNamesTrie);
+		CloseHandle(menuOptionsInfo);
 		CloseHandle(voteMenu);
 		return;
 	}
+	
+	if (GetConVarBool(g_cvBossPackVoteShuffle))
+	{
+		SortADTArray(menuOptionsInfo, Sort_Random, Sort_String);
+	}
+	
+	for (new i = 0; i < GetArraySize(menuOptionsInfo); i++)
+	{
+		decl String:bossPack[128], String:bossPackName[64];
+		GetArrayString(menuOptionsInfo, i, bossPack, sizeof(bossPack));
+		GetTrieString(menuDisplayNamesTrie, bossPack, bossPackName, sizeof(bossPackName));
+		
+		AddMenuItem(voteMenu, bossPack, bossPackName);
+	}
+	
+	CloseHandle(menuDisplayNamesTrie);
+	CloseHandle(menuOptionsInfo);
 	
 	g_bBossPackVoteStarted = true;
 	if (g_hBossPackVoteMapTimer != INVALID_HANDLE)
