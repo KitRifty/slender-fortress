@@ -3123,7 +3123,7 @@ ClientOnButtonPress(client, button)
 		}
 		case IN_JUMP:
 		{
-			if (IsPlayerAlive(client))
+			if (IsPlayerAlive(client) && !(GetEntityFlags(client) & FL_FROZEN))
 			{
 				if (!bool:GetEntProp(client, Prop_Send, "m_bDucked") && 
 					(GetEntityFlags(client) & FL_ONGROUND) &&

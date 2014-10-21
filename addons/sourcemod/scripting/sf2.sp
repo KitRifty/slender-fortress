@@ -22,8 +22,8 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.5-git132"
-#define PLUGIN_VERSION_DISPLAY "0.2.5"
+#define PLUGIN_VERSION "0.2.6-git133"
+#define PLUGIN_VERSION_DISPLAY "0.2.6"
 
 public Plugin:myinfo = 
 {
@@ -553,6 +553,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	CreateNative("SF2_SetClientProxyControlAmount", Native_SetClientProxyControlAmount);
 	CreateNative("SF2_SetClientProxyControlRate", Native_SetClientProxyControlRate);
 	CreateNative("SF2_IsClientLookingAtBoss", Native_IsClientLookingAtBoss);
+	CreateNative("SF2_CollectAsPage", Native_CollectAsPage);
 	CreateNative("SF2_GetMaxBossCount", Native_GetMaxBosses);
 	CreateNative("SF2_EntIndexToBossIndex", Native_EntIndexToBossIndex);
 	CreateNative("SF2_BossIndexToEntIndex", Native_BossIndexToEntIndex);
@@ -2891,23 +2892,28 @@ public Action:Hook_PageOnTakeDamage(page, &attacker, &inflictor, &Float:damage, 
 		{
 			if (damagetype & 0x80) // 0x80 == melee damage
 			{
-				SetPageCount(g_iPageCount + 1);
-				g_iPlayerPageCount[attacker] += 1;
-				EmitSoundToAll(PAGE_GRABSOUND, attacker, SNDCHAN_ITEM, SNDLEVEL_SCREAMING);
-				
-				// Gives points. Credit to the makers of VSH/FF2.
-				new Handle:hEvent = CreateEvent("player_escort_score", true);
-				SetEventInt(hEvent, "player", attacker);
-				SetEventInt(hEvent, "points", 1);
-				FireEvent(hEvent);
-				
-				AcceptEntityInput(page, "FireUser1");
-				AcceptEntityInput(page, "Kill");
+				CollectPage(page, attacker);
 			}
 		}
 	}
 	
 	return Plugin_Continue;
+}
+
+static CollectPage(page, activator)
+{
+	SetPageCount(g_iPageCount + 1);
+	g_iPlayerPageCount[activator] += 1;
+	EmitSoundToAll(PAGE_GRABSOUND, activator, SNDCHAN_ITEM, SNDLEVEL_SCREAMING);
+	
+	// Gives points. Credit to the makers of VSH/FF2.
+	new Handle:hEvent = CreateEvent("player_escort_score", true);
+	SetEventInt(hEvent, "player", activator);
+	SetEventInt(hEvent, "points", 1);
+	FireEvent(hEvent);
+	
+	AcceptEntityInput(page, "FireUser1");
+	AcceptEntityInput(page, "Kill");
 }
 
 //	==========================================================
@@ -6210,6 +6216,11 @@ public Native_SetClientProxyControlRate(Handle:plugin, numParams)
 public Native_IsClientLookingAtBoss(Handle:plugin, numParams)
 {
 	return g_bPlayerSeesSlender[GetNativeCell(1)][GetNativeCell(2)];
+}
+
+public Native_CollectAsPage(Handle:plugin, numParams)
+{
+	CollectPage(GetNativeCell(1), GetNativeCell(2));
 }
 
 public Native_GetMaxBosses(Handle:plugin, numParams)

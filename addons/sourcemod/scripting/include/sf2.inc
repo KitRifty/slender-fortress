@@ -279,6 +279,8 @@ native SF2_SetClientProxyControlAmount(client, iAmount);
 
 native SF2_SetClientProxyControlRate(client, Float:flAmount);
 
+native SF2_CollectAsPage(pageEnt, client);
+
 native SF2_GetMaxBossCount();
 
 native SF2_EntIndexToBossIndex(iEntIndex);

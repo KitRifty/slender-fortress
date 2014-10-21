@@ -143,6 +143,11 @@ stock EntitySetAnimation(iEntity, const String:sAnimation[], bool:bDefaultAnimat
 		SetVariantString(sAnimation);
 		AcceptEntityInput(iEntity, "SetDefaultAnimation");
 	}
+	else
+	{
+		SetVariantString("");
+		AcceptEntityInput(iEntity, "SetDefaultAnimation");
+	}
 	
 	SetVariantString(sAnimation);
 	AcceptEntityInput(iEntity, "SetAnimation");
