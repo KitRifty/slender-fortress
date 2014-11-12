@@ -22,7 +22,7 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.6-git133"
+#define PLUGIN_VERSION "0.2.6-git134"
 #define PLUGIN_VERSION_DISPLAY "0.2.6"
 
 public Plugin:myinfo = 
@@ -4022,7 +4022,7 @@ static GetPageMusicRanges()
 			if (iIndex != -1)
 			{
 				new iMin = StringToInt(sPageRanges[0]);
-				new iMax = StringToInt(sPageRanges[0]);
+				new iMax = StringToInt(sPageRanges[1]);
 				
 #if defined DEBUG
 				DebugMessage("Page range found: entity %d, iMin = %d, iMax = %d", ent, iMin, iMax);
