@@ -22,7 +22,7 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.6-git134"
+#define PLUGIN_VERSION "0.2.6-git135"
 #define PLUGIN_VERSION_DISPLAY "0.2.6"
 
 public Plugin:myinfo = 
@@ -231,9 +231,11 @@ enum PlayerPreferences
 {
 	bool:PlayerPreference_PvPAutoSpawn,
 	MuteMode:PlayerPreference_MuteMode,
+	bool:PlayerPreference_FilmGrain,
 	bool:PlayerPreference_ShowHints,
 	bool:PlayerPreference_EnableProxySelection,
-	bool:PlayerPreference_ProjectedFlashlight
+	bool:PlayerPreference_ProjectedFlashlight,
+	bool:PlayerPreference_GhostOverlay
 };
 
 new bool:g_bPlayerHints[MAXPLAYERS + 1][PlayerHint_MaxNum];
@@ -1052,7 +1054,9 @@ static PrecacheStuff()
 	PrecacheSound2(SR_SOUND_SELECT);
 	PrecacheSound2(SF2_INTRO_DEFAULT_MUSIC);
 	
-	PrecacheMaterial2(BLACK_OVERLAY);
+	PrecacheMaterial2(SF2_OVERLAY_DEFAULT);
+	PrecacheMaterial2(SF2_OVERLAY_DEFAULT_NO_FILMGRAIN);
+	PrecacheMaterial2(SF2_OVERLAY_GHOST);
 	
 	AddFileToDownloadsTable("models/slender/sheet.mdl");
 	AddFileToDownloadsTable("models/slender/sheet.dx80.vtx");
@@ -2974,24 +2978,31 @@ public OnClientCookiesCached(client)
 	new String:sCookie[64];
 	GetClientCookie(client, g_hCookie, sCookie, sizeof(sCookie));
 	
-	if (!sCookie[0])
-	{
-		g_iPlayerQueuePoints[client] = 0;
-		
-		g_iPlayerPreferences[client][PlayerPreference_ShowHints] = true;
-		g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode_Normal;
-		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = true;
-	}
-	else
+	g_iPlayerQueuePoints[client] = 0;
+	
+	g_iPlayerPreferences[client][PlayerPreference_ShowHints] = true;
+	g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode_Normal;
+	g_iPlayerPreferences[client][PlayerPreference_FilmGrain] = true;
+	g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = true;
+	g_iPlayerPreferences[client][PlayerPreference_GhostOverlay] = true;
+	
+	if (sCookie[0])
 	{
 		new String:s2[12][32];
-		ExplodeString(sCookie, " ; ", s2, 12, 32);
+		new count = ExplodeString(sCookie, " ; ", s2, 12, 32);
 		
-		g_iPlayerQueuePoints[client] = StringToInt(s2[0]);
-		
-		g_iPlayerPreferences[client][PlayerPreference_ShowHints] = bool:StringToInt(s2[1]);
-		g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode:StringToInt(s2[2]);
-		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = bool:StringToInt(s2[4]);
+		if (count > 0)
+			g_iPlayerQueuePoints[client] = StringToInt(s2[0]);
+		if (count > 1)
+			g_iPlayerPreferences[client][PlayerPreference_ShowHints] = bool:StringToInt(s2[1]);
+		if (count > 2)
+			g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode:StringToInt(s2[2]);
+		if (count > 3)
+			g_iPlayerPreferences[client][PlayerPreference_FilmGrain] = bool:StringToInt(s2[3]);
+		if (count > 4)
+			g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = bool:StringToInt(s2[4]);
+		if (count > 5)
+			g_iPlayerPreferences[client][PlayerPreference_GhostOverlay] = bool:StringToInt(s2[5]);
 	}
 }
 
@@ -3124,6 +3135,7 @@ public OnClientDisconnect(client)
 	// Reset variables.
 	g_iPlayerPreferences[client][PlayerPreference_ShowHints] = true;
 	g_iPlayerPreferences[client][PlayerPreference_MuteMode] = MuteMode_Normal;
+	g_iPlayerPreferences[client][PlayerPreference_FilmGrain] = true;
 	g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection] = true;
 	g_iPlayerPreferences[client][PlayerPreference_ProjectedFlashlight] = false;
 	

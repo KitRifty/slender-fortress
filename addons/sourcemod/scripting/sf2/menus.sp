@@ -129,7 +129,11 @@ SetupMenus()
 	AddMenuItem(g_hMenuSettings, "0", buffer);
 	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Mute Mode Menu Title");
 	AddMenuItem(g_hMenuSettings, "0", buffer);
+	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Film Grain Menu Title");
+	AddMenuItem(g_hMenuSettings, "0", buffer);
 	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Proxy Menu Title");
+	AddMenuItem(g_hMenuSettings, "0", buffer);
+	Format(buffer, sizeof(buffer), "%t", "SF2 Settings Ghost Overlay Menu Title");
 	AddMenuItem(g_hMenuSettings, "0", buffer);
 	SetMenuExitBackButton(g_hMenuSettings, true);
 	
@@ -430,6 +434,22 @@ public Menu_Settings(Handle:menu, MenuAction:action, param1, param2)
 			case 3:
 			{
 				decl String:sBuffer[512];
+				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings Film Grain Menu Title", param1);
+				
+				new Handle:hPanel = CreatePanel();
+				SetPanelTitle(hPanel, sBuffer);
+				
+				Format(sBuffer, sizeof(sBuffer), "%T", "Yes", param1);
+				DrawPanelItem(hPanel, sBuffer);
+				Format(sBuffer, sizeof(sBuffer), "%T", "No", param1);
+				DrawPanelItem(hPanel, sBuffer);
+				
+				SendPanelToClient(hPanel, param1, Panel_SettingsFilmGrain, 30);
+				CloseHandle(hPanel);
+			}
+			case 4:
+			{
+				decl String:sBuffer[512];
 				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings Proxy Menu Title", param1);
 				
 				new Handle:hPanel = CreatePanel();
@@ -443,6 +463,22 @@ public Menu_Settings(Handle:menu, MenuAction:action, param1, param2)
 				SendPanelToClient(hPanel, param1, Panel_SettingsProxy, 30);
 				CloseHandle(hPanel);
 			}
+			case 5:
+			{
+				decl String:sBuffer[512];
+				Format(sBuffer, sizeof(sBuffer), "%T\n \n", "SF2 Settings Ghost Overlay Menu Title", param1);
+				
+				new Handle:hPanel = CreatePanel();
+				SetPanelTitle(hPanel, sBuffer);
+				
+				Format(sBuffer, sizeof(sBuffer), "%T", "Yes", param1);
+				DrawPanelItem(hPanel, sBuffer);
+				Format(sBuffer, sizeof(sBuffer), "%T", "No", param1);
+				DrawPanelItem(hPanel, sBuffer);
+				
+				SendPanelToClient(hPanel, param1, Panel_SettingsGhostOverlay, 30);
+				CloseHandle(hPanel);
+			}
 		}
 	}
 	else if (action == MenuAction_Cancel)
@@ -451,6 +487,30 @@ public Menu_Settings(Handle:menu, MenuAction:action, param1, param2)
 		{
 			DisplayMenu(g_hMenuMain, param1, 30);
 		}
+	}
+}
+
+public Panel_SettingsFilmGrain(Handle:menu, MenuAction:action, param1, param2)
+{
+	if (action == MenuAction_Select)
+	{
+		switch (param2)
+		{
+			case 1:
+			{
+				g_iPlayerPreferences[param1][PlayerPreference_FilmGrain] = true;
+				ClientSaveCookies(param1);
+				CPrintToChat(param1, "%T", "SF2 Enabled Film Grain", param1);
+			}
+			case 2:
+			{
+				g_iPlayerPreferences[param1][PlayerPreference_FilmGrain] = false;
+				ClientSaveCookies(param1);
+				CPrintToChat(param1, "%T", "SF2 Disabled Film Grain", param1);
+			}
+		}
+		
+		DisplayMenu(g_hMenuSettings, param1, 30);
 	}
 }
 
@@ -495,6 +555,30 @@ public Panel_SettingsProxy(Handle:menu, MenuAction:action, param1, param2)
 				g_iPlayerPreferences[param1][PlayerPreference_EnableProxySelection] = false;
 				ClientSaveCookies(param1);
 				CPrintToChat(param1, "%T", "SF2 Disabled Proxy", param1);
+			}
+		}
+		
+		DisplayMenu(g_hMenuSettings, param1, 30);
+	}
+}
+
+public Panel_SettingsGhostOverlay(Handle:menu, MenuAction:action, param1, param2)
+{
+	if (action == MenuAction_Select)
+	{
+		switch (param2)
+		{
+			case 1:
+			{
+				g_iPlayerPreferences[param1][PlayerPreference_GhostOverlay] = true;
+				ClientSaveCookies(param1);
+				CPrintToChat(param1, "%T", "SF2 Enabled Ghost Overlay", param1);
+			}
+			case 2:
+			{
+				g_iPlayerPreferences[param1][PlayerPreference_GhostOverlay] = false;
+				ClientSaveCookies(param1);
+				CPrintToChat(param1, "%T", "SF2 Disabled Ghost Overlay", param1);
 			}
 		}
 		

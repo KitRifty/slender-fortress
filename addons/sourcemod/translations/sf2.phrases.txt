@@ -316,9 +316,19 @@
 		"en"	"Set mute mode"
 	}
 	
+	"SF2 Settings Film Grain Menu Title"
+	{
+		"en"	"Toggle film grain"
+	}
+	
 	"SF2 Settings Proxy Menu Title"
 	{
 		"en"	"Allow being picked as a proxy"
+	}
+	
+	"SF2 Settings Ghost Overlay Menu Title"
+	{
+		"en"	"Toggle Ghost Mode overlay"
 	}
 	
 	"SF2 Ad Message 1"
@@ -365,6 +375,26 @@
 	"SF2 Disabled Hints"
 	{
 		"en"	"{lightgreen}Disabled hints."
+	}
+	
+	"SF2 Enabled Film Grain"
+	{
+		"en"	"{lightgreen}Enabled film grain."
+	}
+	
+	"SF2 Disabled Film Grain"
+	{
+		"en"	"{lightgreen}Disabled film grain."
+	}
+	
+	"SF2 Enabled Ghost Overlay"
+	{
+		"en"	"{lightgreen}Enabled Ghost Mode overlay."
+	}
+	
+	"SF2 Disabled Ghost Overlay"
+	{
+		"en"	"{lightgreen}Disabled Ghost Mode overlay."
 	}
 	
 	"SF2 Enabled Proxy"

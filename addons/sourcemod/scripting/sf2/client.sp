@@ -4,7 +4,9 @@
 #define _sf2_client_included
 
 #define GHOST_MODEL "models/props_halloween/ghost_no_hat.mdl"
-#define BLACK_OVERLAY "overlays/slender/newcamerahud"
+#define SF2_OVERLAY_DEFAULT "overlays/slender/newcamerahud_3"
+#define SF2_OVERLAY_DEFAULT_NO_FILMGRAIN "overlays/slender/nofilmgrain"
+#define SF2_OVERLAY_GHOST "overlays/slender/ghostcamera"
 
 #define SF2_FLASHLIGHT_WIDTH 512.0 // How wide the player's Flashlight should be in world units.
 #define SF2_FLASHLIGHT_LENGTH 1024.0 // How far the player's Flashlight can reach in world units.
@@ -4019,7 +4021,10 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 	}
 	else
 	{
-		strcopy(sMaterial, sizeof(sMaterial), BLACK_OVERLAY);
+		if (!g_iPlayerPreferences[client][PlayerPreference_FilmGrain])
+			strcopy(sMaterial, sizeof(sMaterial), SF2_OVERLAY_DEFAULT_NO_FILMGRAIN);
+		else
+			strcopy(sMaterial, sizeof(sMaterial), SF2_OVERLAY_DEFAULT);
 	}
 	
 	ClientCommand(client, "r_screenoverlay %s", sMaterial);
@@ -5364,10 +5369,12 @@ ClientSaveCookies(client)
 	
 	// Save and reset our queue points.
 	decl String:s[64];
-	Format(s, sizeof(s), "%d ; %d ; %d ; 0 ; %d", g_iPlayerQueuePoints[client], 
+	Format(s, sizeof(s), "%d ; %d ; %d ; %d ; %d ; %d", g_iPlayerQueuePoints[client], 
 		g_iPlayerPreferences[client][PlayerPreference_ShowHints], 
 		g_iPlayerPreferences[client][PlayerPreference_MuteMode], 
-		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection]);
+		g_iPlayerPreferences[client][PlayerPreference_FilmGrain],
+		g_iPlayerPreferences[client][PlayerPreference_EnableProxySelection],
+		g_iPlayerPreferences[client][PlayerPreference_GhostOverlay]);
 		
 	SetClientCookie(client, g_hCookie, s);
 }
