@@ -4015,6 +4015,10 @@ public Action:Timer_PlayerOverlayCheck(Handle:timer, any:userid)
 		NPCGetProfile(iJumpScareBoss, sProfile, sizeof(sProfile));
 		GetRandomStringFromProfile(sProfile, "overlay_jumpscare", sMaterial, sizeof(sMaterial), 1);
 	}
+	else if (IsClientInGhostMode(client))
+	{
+		strcopy(sMaterial, sizeof(sMaterial), SF2_OVERLAY_GHOST);
+	}
 	else if (IsRoundInWarmup() || g_bPlayerEliminated[client] || DidClientEscape(client) && !IsClientInGhostMode(client))
 	{
 		return Plugin_Continue;

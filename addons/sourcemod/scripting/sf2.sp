@@ -22,7 +22,7 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.6-git135"
+#define PLUGIN_VERSION "0.2.6-git136"
 #define PLUGIN_VERSION_DISPLAY "0.2.6"
 
 public Plugin:myinfo = 

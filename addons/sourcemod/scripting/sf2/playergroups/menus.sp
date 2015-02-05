@@ -63,7 +63,7 @@ DisplayCreateGroupMenuToClient(client)
 	}
 	
 	new Handle:hMenu = CreateMenu(Menu_CreateGroup);
-	SetMenuTitle(hMenu, "%t%T\n \n%T\n \n", "SF2 Prefix", "SF2 Create Group Menu Title", client, "SF2 Create Group Menu Description", client, GetConVarInt(g_cvMaxPlayers), g_iPlayerQueuePoints[client]);
+	SetMenuTitle(hMenu, "%t%T\n \n%T\n \n", "SF2 Prefix", "SF2 Create Group Menu Title", client, "SF2 Create Group Menu Description", client, GetMaxPlayersForRound(), g_iPlayerQueuePoints[client]);
 	
 	decl String:sBuffer[256];
 	Format(sBuffer, sizeof(sBuffer), "%T", "Yes", client);
@@ -181,7 +181,7 @@ DisplayAdminGroupMenuToClient(client)
 	else strcopy(sLeaderName, sizeof(sLeaderName), "---");
 	
 	new iMemberCount = GetPlayerGroupMemberCount(iGroupIndex);
-	new iMaxPlayers = GetConVarInt(g_cvMaxPlayers);
+	new iMaxPlayers = GetMaxPlayersForRound();
 	new iQueuePoints = GetPlayerGroupQueuePoints(iGroupIndex);
 	
 	new Handle:hMenu = CreateMenu(Menu_AdminGroup);
@@ -546,7 +546,7 @@ DisplayInviteToGroupMenuToClient(client)
 		return;
 	}
 	
-	if (GetPlayerGroupMemberCount(iGroupIndex) >= GetConVarInt(g_cvMaxPlayers))
+	if (GetPlayerGroupMemberCount(iGroupIndex) >= GetMaxPlayersForRound())
 	{
 		// His group is full!
 		DisplayAdminGroupMenuToClient(client);
