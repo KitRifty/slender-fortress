@@ -900,6 +900,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 				
 				if (bBlockingProp)
 				{
+					//PrintToChatAll("A prop is blocking me let's attack it");
 					iState = STATE_ATTACK;
 				}
 			}
@@ -953,6 +954,45 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 						else if (bIsDeathPosVisible)
 						{
 							iState = STATE_IDLE;
+						}
+						else if( iState == STATE_CHASE )
+						{
+							new bool:bBlockingProp = false;
+							
+							if (NPCGetFlags(iBossIndex) & SFF_ATTACKPROPS)
+							{
+								new prop = -1;
+								while ((prop = FindEntityByClassname(prop, "prop_physics")) != -1)
+								{
+									if (NPCAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+									{
+										bBlockingProp = true;
+										break;
+									}
+								}
+								
+								if (!bBlockingProp)
+								{
+									prop = -1;
+									while ((prop = FindEntityByClassname(prop, "prop_dynamic")) != -1)
+									{
+										if (GetEntProp(prop, Prop_Data, "m_iHealth") > 0)
+										{
+											if (NPCAttackValidateTarget(iBossIndex, prop, flAttackRange, flAttackFOV))
+											{
+												bBlockingProp = true;
+												break;
+											}
+										}
+									}
+								}
+							}
+							
+							if (bBlockingProp)
+							{
+								//PrintToChatAll("A prop is blocking me let's attack it");
+								iState = STATE_ATTACK;
+							}
 						}
 						else if (iInterruptConditions & COND_CHASETARGETINVALIDATED)
 						{
@@ -1012,6 +1052,7 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 							
 							if (bBlockingProp)
 							{
+								//PrintToChatAll("A prop is blocking me let's attack it");
 								iState = STATE_ATTACK;
 							}
 							else if (GetGameTime() >= g_flSlenderNextPathTime[iBossIndex])
@@ -1085,7 +1126,6 @@ public Action:Timer_SlenderChaseBossThink(Handle:timer, any:entref)
 					// need to set the persistency value to the chase initial value.
 					bDoChasePersistencyInit = true;
 				}
-				
 				iState = STATE_STUN;
 			}
 		}
@@ -2315,6 +2355,13 @@ public Action:Timer_SlenderChaseBossAttack(Handle:timer, any:entref)
 			{
 				bHit = true;
 				SDKHooks_TakeDamage(prop, slender, slender, flDamageVsProps, iDamageType, _, _, flMyEyePos);
+				new Float:SpreadVel = 1300.0;
+				new Float:VertVel = 800.0;
+				new Float:vel[3];
+				vel[0] = ((GetURandomFloat() + 0.1) * SpreadVel - SpreadVel / 2.0) * ((GetURandomFloat() + 0.1) * 2);
+				vel[1] = ((GetURandomFloat() + 0.1) * SpreadVel - SpreadVel / 2.0) * ((GetURandomFloat() + 0.1) * 2);
+				vel[2] = ((GetURandomFloat() + 0.1) * VertVel) * ((GetURandomFloat() + 0.1) * 2);
+				TeleportEntity(prop, NULL_VECTOR, NULL_VECTOR, vel);
 			}
 		}
 		
