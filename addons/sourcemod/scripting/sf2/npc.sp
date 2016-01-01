@@ -2504,6 +2504,10 @@ stock SpawnSlenderModel(iBossIndex, const Float:pos[3])
 	NPCGetProfile(iBossIndex, sProfile, sizeof(sProfile));
 	
 	GetProfileString(sProfile, "model", buffer, sizeof(buffer));
+	//Props attacks fix by Benoist3012
+	new prop = GetProfileNum(sProfile,"attack_props",0);
+	if(prop==1)
+		NPCSetFlags(iBossIndex,SFF_ATTACKPROPS);
 	if (!buffer[0])
 	{
 		LogError("Could not spawn boss model: model is invalid!");

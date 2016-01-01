@@ -22,8 +22,8 @@
 // If compiling with SM 1.7+, uncomment to compile and use SF2 methodmaps.
 //#define METHODMAPS
 
-#define PLUGIN_VERSION "0.2.6-git136"
-#define PLUGIN_VERSION_DISPLAY "0.2.6"
+#define PLUGIN_VERSION "0.2.6-git137"
+#define PLUGIN_VERSION_DISPLAY "0.2.6b"
 
 public Plugin:myinfo = 
 {
@@ -2546,7 +2546,7 @@ public Action:Timer_RoundMessages(Handle:timer)
 	
 	switch (g_iRoundMessagesNum)
 	{
-		case 0: CPrintToChatAll("{olive}==== {lightgreen}Slender Fortress (%s){olive} coded by {lightgreen}Kit o' Rifty{olive} ====", PLUGIN_VERSION_DISPLAY);
+		case 0: CPrintToChatAll("{olive}== {lightgreen}Slender Fortress{olive} coded by {lightgreen}Kit o' Rifty{olive}==\n== New versions by {lightgreen}Benoist3012{olive}, current version {lightgreen}%s{olive}==", PLUGIN_VERSION_DISPLAY);
 		case 1: CPrintToChatAll("%t", "SF2 Ad Message 1");
 		case 2: CPrintToChatAll("%t", "SF2 Ad Message 2");
 	}
